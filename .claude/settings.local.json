@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm info:*)",
+      "Bash(echo \"exit: $?\")",
+      "Bash(npm pack:*)",
+      "Read(//private/tmp/**)",
+      "Bash(tar -tzf electron-vite-5.0.0.tgz)",
+      "Bash(grep -E \"\\\\.d\\\\.ts$\")",
+      "Bash(tar -xzf electron-vite-5.0.0.tgz package/dist/index.d.ts)",
+      "Read(//tmp/package/dist/**)",
+      "Bash(npm install:*)",
+      "Bash(npm run:*)",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(json.dumps\\({k: d.get\\(k\\) for k in [''''dependencies'''',''''devDependencies'''']}, indent=2\\)\\)\")",
+      "Bash(copilot --version)",
+      "Bash(gh --version)",
+      "Bash(gh copilot:*)",
+      "Read(//Users/jasonhumphrey/.copilot/**)",
+      "Read(//Users/jasonhumphrey/.config/**)",
+      "Read(//Users/jasonhumphrey/**)",
+      "Bash(\"/Users/jasonhumphrey/Library/Application Support/Code/User/globalStorage/github.copilot-chat/copilotCli/copilot\" --version)",
+      "Bash(echo $PATH)",
+      "Bash(gh extension:*)",
+      "Bash(node -e \"const { execSync } = require\\(''''child_process''''\\); console.log\\(execSync\\(''''/bin/zsh -l -c \"\"which copilot 2>&1; echo PATH=$PATH\"\"''''\\).toString\\(\\)\\)\")",
+      "Bash(node -e \":*)"
+    ]
+  }
+}
