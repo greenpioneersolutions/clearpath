@@ -1,6 +1,6 @@
 {
   "name": "clear-path",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "Jason Humphrey",
   "description": "ClearPathAI — Desktop control tower for AI coding agents",
   "main": "out/main/index.js",

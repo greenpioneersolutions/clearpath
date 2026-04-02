@@ -21,7 +21,7 @@
 
 ## Why ClearPathAI Exists
 
-AI tools are incredible — if you're allowed to use them. In the enterprise world, that's a big "if." Most organizations have locked things down to GitHub Copilot, and the most powerful way to use it is through the CLI. But here's the reality: the majority of people on your team — project managers, designers, analysts, junior developers — are never going to open a terminal and type `copilot --experimental --model claude-sonnet-4.5 --allow-tool "shell(git:*)"`. They just won't. And that means they're getting a fraction of the value from tools the company is already paying for.
+AI tools are incredible — if you're allowed to use them. In the enterprise world, that's a big "if." Most organizations have locked things down to GitHub Copilot, and the most powerful way to use it is through the CLI. But here's the reality: the majority of people on your team — project managers, designers, analysts — are never going to open a terminal and type `copilot --experimental --model claude-sonnet-4.5 --allow-tool "shell(git:*)"`. They just won't. And that means they're getting a fraction of the value from tools the company is already paying for.
 
 I built ClearPathAI because I ran into this exact problem. I watched talented people get left behind — not because they lacked ability, but because the tools assumed everyone thinks in flags and shell commands. The open-source world has beautiful AI interfaces, but when you're inside an enterprise with compliance requirements, budget constraints, and approved tooling, you need something that works within those walls while still feeling modern.
 
