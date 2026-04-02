@@ -2,10 +2,15 @@
 
 All notable changes to ClearPathAI will be documented in this file.
 
+## [1.1.2] - 2026-04-02
+
+### Fixed
+- **GitHub Actions release job** — Reverted `softprops/action-gh-release` to v2 (v3 does not exist). Node.js 24 compatibility handled via `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24` env var
+
 ## [1.1.1] - 2026-04-02
 
 ### Fixed
-- **GitHub Actions Node.js 24 compatibility** — Bumped all actions to v5 (`checkout`, `setup-node`, `upload-artifact`, `download-artifact`) and `softprops/action-gh-release` to v3. Added `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24` env var to eliminate deprecation warnings
+- **GitHub Actions Node.js 24 compatibility** — Bumped actions to v5 (`checkout`, `setup-node`, `upload-artifact`, `download-artifact`). Added `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24` env var to eliminate deprecation warnings
 - **macOS download instructions** — Added `xattr -cr` command to README for clearing quarantine flag on unsigned `.dmg` downloads ("damaged and can't be opened" error)
 
 ## [1.1.0] - 2026-04-02
