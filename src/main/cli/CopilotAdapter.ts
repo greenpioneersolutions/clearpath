@@ -40,7 +40,11 @@ export class CopilotAdapter implements ICLIAdapter {
     const args: string[] = []
 
     // ── Mode ──────────────────────────────────────────────────────────────────
-    if (options.mode === 'prompt') args.push('--prompt')
+    // --prompt requires the text as its argument: copilot --prompt "query"
+    if (options.mode === 'prompt') {
+      if (options.prompt) args.push('--prompt', options.prompt)
+      else args.push('--prompt')
+    }
     if (options.acp) args.push('--acp')
 
     // ── Session resumption ────────────────────────────────────────────────────
@@ -193,9 +197,9 @@ export class CopilotAdapter implements ICLIAdapter {
       env: getSpawnEnv(),
     })
 
-    // In prompt/headless mode the initial prompt goes to stdin then closes
-    if (options.mode === 'prompt' && options.prompt) {
-      proc.stdin?.write(options.prompt + '\n')
+    // Copilot's --prompt takes the text as a CLI argument (not stdin), so
+    // nothing to write here. Close stdin to prevent the process hanging.
+    if (options.mode === 'prompt') {
       proc.stdin?.end()
     }
 

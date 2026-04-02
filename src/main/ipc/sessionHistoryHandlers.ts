@@ -15,7 +15,7 @@ interface HistoryStore {
 }
 
 const store = new Store<HistoryStore>({
-  name: 'copilot-commander-history',
+  name: 'clear-path-history',
   defaults: { sessions: [] },
 })
 

@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 
 const COPILOT_SLASH_COMMANDS = [
   '/allow-all',
@@ -43,31 +43,13 @@ const CLAUDE_SLASH_COMMANDS = [
   '/rewind',
 ]
 
-// Commands that take no arguments — submit immediately on selection
+// Commands that take no arguments — safe to submit immediately on selection
 const SELF_CONTAINED = new Set([
-  '/clear',
-  '/compact',
-  '/context',
-  '/cost',
-  '/exit',
-  '/experimental',
-  '/fast',
-  '/fleet',
-  '/help',
-  '/list-dirs',
-  '/list-files',
-  '/login',
-  '/mcp',
-  '/permissions',
-  '/plan',
-  '/rewind',
-  '/review',
-  '/session',
-  '/usage',
-  '/yolo',
-  '/allow-all',
-  '/config',
-  '/effort',
+  '/clear', '/compact', '/context', '/cost', '/exit',
+  '/experimental', '/fast', '/fleet', '/help', '/list-dirs',
+  '/list-files', '/login', '/mcp', '/permissions', '/plan',
+  '/rewind', '/review', '/session', '/usage', '/yolo',
+  '/allow-all', '/config', '/effort',
 ])
 
 interface Props {
@@ -75,6 +57,7 @@ interface Props {
   onSend: (input: string) => void
   onSlashCommand: (command: string) => void
   disabled?: boolean
+  processing?: boolean
 }
 
 export default function CommandInput({
@@ -82,13 +65,23 @@ export default function CommandInput({
   onSend,
   onSlashCommand,
   disabled,
+  processing,
 }: Props): JSX.Element {
   const [value, setValue] = useState('')
   const [suggestions, setSuggestions] = useState<string[]>([])
   const [selectedIdx, setSelectedIdx] = useState(-1)
-  const inputRef = useRef<HTMLInputElement>(null)
+  const [justAccepted, setJustAccepted] = useState(false)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   const commands = cli === 'copilot' ? COPILOT_SLASH_COMMANDS : CLAUDE_SLASH_COMMANDS
+
+  // Auto-resize textarea
+  useEffect(() => {
+    const el = textareaRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = Math.min(el.scrollHeight, 160) + 'px'
+  }, [value])
 
   const submit = useCallback(
     (text: string) => {
@@ -97,6 +90,7 @@ export default function CommandInput({
       setValue('')
       setSuggestions([])
       setSelectedIdx(-1)
+      setJustAccepted(false)
 
       if (trimmed.startsWith('/')) {
         onSlashCommand(trimmed)
@@ -107,13 +101,29 @@ export default function CommandInput({
     [onSend, onSlashCommand]
   )
 
+  const acceptSuggestion = useCallback(
+    (cmd: string) => {
+      if (SELF_CONTAINED.has(cmd)) {
+        submit(cmd)
+      } else {
+        setValue(cmd + ' ')
+        setSuggestions([])
+        setSelectedIdx(-1)
+        setJustAccepted(true)
+        textareaRef.current?.focus()
+      }
+    },
+    [submit]
+  )
+
   const handleChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
+    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
       const val = e.target.value
       setValue(val)
       setSelectedIdx(-1)
+      setJustAccepted(false)
 
-      if (val.startsWith('/')) {
+      if (val.startsWith('/') && !val.includes(' ')) {
         setSuggestions(commands.filter((c) => c.startsWith(val)))
       } else {
         setSuggestions([])
@@ -123,21 +133,23 @@ export default function CommandInput({
   )
 
   const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLInputElement>) => {
+    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault()
-        if (selectedIdx >= 0 && suggestions[selectedIdx]) {
-          const cmd = suggestions[selectedIdx]
-          if (SELF_CONTAINED.has(cmd)) {
-            submit(cmd)
-          } else {
-            setValue(cmd + ' ')
-            setSuggestions([])
-            setSelectedIdx(-1)
-          }
-        } else {
-          submit(value)
+
+        if (suggestions.length > 0) {
+          const idx = selectedIdx >= 0 ? selectedIdx : 0
+          acceptSuggestion(suggestions[idx])
+          return
         }
+
+        if (justAccepted) {
+          setJustAccepted(false)
+          const afterCommand = value.replace(/^\/\S+\s*/, '')
+          if (!afterCommand.trim()) return
+        }
+
+        submit(value)
         return
       }
 
@@ -155,80 +167,77 @@ export default function CommandInput({
       } else if (e.key === 'Tab') {
         e.preventDefault()
         const idx = selectedIdx >= 0 ? selectedIdx : 0
-        const cmd = suggestions[idx]
-        if (SELF_CONTAINED.has(cmd)) {
-          submit(cmd)
-        } else {
-          setValue(cmd + ' ')
-          setSuggestions([])
-          setSelectedIdx(-1)
-        }
+        acceptSuggestion(suggestions[idx])
       }
     },
-    [value, suggestions, selectedIdx, submit]
+    [value, suggestions, selectedIdx, justAccepted, submit, acceptSuggestion]
   )
 
-  const promptChar = value.startsWith('!') ? '!' : '›'
-
   return (
-    <div className="relative border-t border-gray-800 bg-gray-900 flex-shrink-0">
+    <div className="relative border-t border-gray-800 bg-gray-900/80 backdrop-blur-sm flex-shrink-0">
+      {/* Slash command suggestions */}
       {suggestions.length > 0 && (
-        <div className="absolute bottom-full left-0 right-0 bg-gray-800 border border-gray-700 border-b-0 rounded-t-lg overflow-hidden max-h-52 overflow-y-auto shadow-xl">
+        <div className="absolute bottom-full left-4 right-4 mb-2 bg-gray-800/95 backdrop-blur-sm border border-gray-700 rounded-xl overflow-hidden max-h-52 overflow-y-auto shadow-2xl">
           {suggestions.map((cmd, i) => (
             <button
               key={cmd}
-              className={`w-full text-left px-4 py-2 text-sm font-mono transition-colors ${
+              className={`w-full text-left px-4 py-2.5 text-sm transition-colors flex items-center justify-between ${
                 i === selectedIdx
-                  ? 'bg-indigo-700 text-white'
-                  : 'text-gray-300 hover:bg-gray-700'
+                  ? 'bg-indigo-600/20 text-white'
+                  : 'text-gray-300 hover:bg-gray-700/50'
               }`}
               onMouseDown={(e) => {
                 e.preventDefault()
-                if (SELF_CONTAINED.has(cmd)) {
-                  submit(cmd)
-                } else {
-                  setValue(cmd + ' ')
-                  setSuggestions([])
-                  setSelectedIdx(-1)
-                  inputRef.current?.focus()
-                }
+                acceptSuggestion(cmd)
               }}
             >
-              <span className="text-indigo-400">{cmd}</span>
-              {SELF_CONTAINED.has(cmd) && (
-                <span className="ml-2 text-gray-500 text-xs">↵</span>
+              <span className="font-medium text-indigo-400">{cmd}</span>
+              {SELF_CONTAINED.has(cmd) ? (
+                <span className="text-gray-500 text-xs bg-gray-700/50 px-2 py-0.5 rounded-full">instant</span>
+              ) : (
+                <span className="text-gray-500 text-xs bg-gray-700/50 px-2 py-0.5 rounded-full">+ args</span>
               )}
             </button>
           ))}
         </div>
       )}
 
-      <div className="flex items-center gap-2 px-3 py-2.5">
-        <span className="text-gray-500 font-mono text-base select-none w-4 text-center flex-shrink-0">
-          {promptChar}
-        </span>
-        <input
-          ref={inputRef}
-          type="text"
-          value={value}
-          onChange={handleChange}
-          onKeyDown={handleKeyDown}
-          disabled={disabled}
-          placeholder={
-            disabled
-              ? 'Session stopped'
-              : 'Message, /command, or !shell…'
-          }
-          className="flex-1 bg-transparent text-gray-100 text-sm font-mono placeholder-gray-600 outline-none disabled:opacity-50"
-          autoFocus
-        />
-        <button
-          onClick={() => submit(value)}
-          disabled={disabled || !value.trim()}
-          className="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-30 text-white text-xs font-medium rounded-md transition-colors flex-shrink-0"
-        >
-          Send
-        </button>
+      {/* Input area */}
+      <div className="max-w-3xl mx-auto px-4 py-3">
+        <div className={`flex items-end gap-2 bg-gray-800/60 border rounded-2xl px-4 py-2.5 transition-colors ${
+          disabled ? 'border-gray-800 opacity-60' : 'border-gray-700 focus-within:border-indigo-500/50 focus-within:ring-1 focus-within:ring-indigo-500/20'
+        }`}>
+          <textarea
+            ref={textareaRef}
+            value={value}
+            onChange={handleChange}
+            onKeyDown={handleKeyDown}
+            disabled={disabled}
+            rows={1}
+            placeholder={
+              processing
+                ? 'Waiting for response...'
+                : disabled
+                  ? 'Session stopped'
+                  : 'Type a message... (/ for commands, & to delegate)'
+            }
+            className="flex-1 bg-transparent text-gray-100 text-sm placeholder-gray-500 outline-none resize-none min-h-[24px] max-h-[160px] leading-relaxed"
+            autoFocus
+          />
+          <button
+            onClick={() => submit(value)}
+            disabled={disabled || !value.trim()}
+            className="p-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-30 disabled:hover:bg-indigo-600 text-white transition-all flex-shrink-0 shadow-sm"
+            title="Send message"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
+            </svg>
+          </button>
+        </div>
+        <p className="text-[10px] text-gray-600 mt-1.5 text-center">
+          Press Enter to send, Shift+Enter for new line
+        </p>
       </div>
     </div>
   )

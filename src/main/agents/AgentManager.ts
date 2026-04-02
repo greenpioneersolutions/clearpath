@@ -201,7 +201,7 @@ export class AgentManager {
   private get store(): Store<AgentStoreSchema> {
     if (!this._store) {
       this._store = new Store<AgentStoreSchema>({
-        name: 'copilot-commander-agents',
+        name: 'clear-path-agents',
         defaults: {
           profiles: [],
           enabledAgentIds: COPILOT_BUILTIN.map((a) => a.id),

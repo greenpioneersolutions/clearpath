@@ -1,9 +1,54 @@
+# Dependencies
 node_modules/
+.npm
+.yarn
+
+# Build output
 dist/
 dist-electron/
 out/
-.DS_Store
-*.local
-*.log
+*.tsbuildinfo
+
+# Electron packaging
+*.dmg
+*.AppImage
+*.exe
+*.snap
+
+# Environment & secrets
 .env
 .env.*
+*.local
+
+# Local config (contains personal paths)
+.claude/settings.local.json
+
+# App data (user-specific, generated at runtime)
+.clear-path/
+
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Editor / IDE
+.idea/
+.vscode/
+*.swp
+*~
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# Logs
+*.log
+npm-debug.log*
+yarn-error.log*
+
+# Testing
+coverage/
+
+# Misc
+.cache/
+.temp/

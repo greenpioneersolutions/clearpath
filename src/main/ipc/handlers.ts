@@ -62,4 +62,39 @@ export function registerIpcHandlers(
   ipcMain.handle('cli:get-session', (_event, { sessionId }: { sessionId: string }) =>
     cliManager.getSession(sessionId)
   )
+
+  ipcMain.handle('cli:get-message-log', (_event, { sessionId }: { sessionId: string }) => {
+    // Try in-memory first (active sessions), fall back to persisted store
+    const inMemory = cliManager.getSessionMessageLog(sessionId)
+    if (inMemory.length > 0) return inMemory
+    return cliManager.getPersistedMessageLog(sessionId)
+  })
+
+  // Persisted session history (survives app restart)
+  ipcMain.handle('cli:get-persisted-sessions', () =>
+    cliManager.getPersistedSessions()
+  )
+
+  // Session management operations
+  ipcMain.handle('cli:delete-session', (_event, { sessionId }: { sessionId: string }) =>
+    cliManager.deletePersistedSession(sessionId)
+  )
+
+  ipcMain.handle('cli:delete-sessions', (_event, { sessionIds }: { sessionIds: string[] }) =>
+    cliManager.deletePersistedSessions(sessionIds)
+  )
+
+  ipcMain.handle('cli:archive-session', (_event, { sessionId, archived }: { sessionId: string; archived: boolean }) =>
+    cliManager.archivePersistedSession(sessionId, archived)
+  )
+
+  ipcMain.handle('cli:rename-session', (_event, { sessionId, name }: { sessionId: string; name: string }) =>
+    cliManager.renamePersistedSession(sessionId, name)
+  )
+
+  ipcMain.handle('cli:search-sessions', (_event, { query, useRegex }: { query: string; useRegex?: boolean }) =>
+    cliManager.searchSessions(query, useRegex ?? false)
+  )
+
+  ipcMain.handle('app:get-cwd', () => process.cwd())
 }

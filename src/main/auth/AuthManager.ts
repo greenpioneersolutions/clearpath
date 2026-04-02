@@ -28,7 +28,7 @@ export class AuthManager {
   private get store(): Store<StoreSchema> {
     if (!this._store) {
       this._store = new Store<StoreSchema>({
-        name: 'copilot-commander-auth',
+        name: 'clear-path-auth',
         defaults: { authCache: { copilot: { ...EMPTY_STATUS }, claude: { ...EMPTY_STATUS } } },
       })
     }

@@ -28,12 +28,27 @@ export async function initShellEnv(): Promise<void> {
   }
 }
 
+/** Extra env vars to merge into every spawned process (set by settings). */
+let _customEnv: Record<string, string> = {}
+
+/** Called by settings handlers to inject custom env vars from electron-store. */
+export function setCustomEnvVars(vars: Record<string, string>): void {
+  _customEnv = { ...vars }
+}
+
 /**
  * Return an env object suitable for child-process spawning.
  * Falls back to process.env if initShellEnv() hasn't resolved yet.
+ * Merges any custom env vars set via setCustomEnvVars().
  */
 export function getSpawnEnv(): NodeJS.ProcessEnv {
-  return _env ?? { ...process.env }
+  const base = _env ?? { ...process.env }
+  // Only merge non-empty custom vars
+  const extras: Record<string, string> = {}
+  for (const [k, v] of Object.entries(_customEnv)) {
+    if (v) extras[k] = v
+  }
+  return { ...base, ...extras }
 }
 
 /**

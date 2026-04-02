@@ -13,6 +13,7 @@ interface ActiveSessionState {
   messages: OutputMessage[]
   mode: SessionMode
   msgIdCounter: number
+  processing: boolean
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -63,6 +64,7 @@ export default function Sessions(): JSX.Element {
       _event: IpcRendererEvent,
       { sessionId, output }: { sessionId: string; output: ParsedOutput }
     ) => {
+      console.log('[Sessions] cli:output', sessionId.slice(0, 8), output.type, JSON.stringify(output.content.slice(0, 80)))
       setSessions((prev) => {
         const session = prev.get(sessionId)
         if (!session) return prev
@@ -84,6 +86,7 @@ export default function Sessions(): JSX.Element {
       _event: IpcRendererEvent,
       { sessionId, error }: { sessionId: string; error: string }
     ) => {
+      console.log('[Sessions] cli:error', sessionId.slice(0, 8), JSON.stringify(error.slice(0, 200)))
       setSessions((prev) => {
         const session = prev.get(sessionId)
         if (!session) return prev
@@ -105,6 +108,7 @@ export default function Sessions(): JSX.Element {
       _event: IpcRendererEvent,
       { sessionId, code }: { sessionId: string; code: number }
     ) => {
+      console.log('[Sessions] cli:exit', sessionId.slice(0, 8), 'code', code)
       setSessions((prev) => {
         const session = prev.get(sessionId)
         if (!session) return prev
@@ -156,11 +160,41 @@ export default function Sessions(): JSX.Element {
       })
     }
 
+    const handleTurnStart = (
+      _event: IpcRendererEvent,
+      { sessionId }: { sessionId: string }
+    ) => {
+      console.log('[Sessions] cli:turn-start', sessionId.slice(0, 8))
+      setSessions((prev) => {
+        const session = prev.get(sessionId)
+        if (!session) return prev
+        const updated = new Map(prev)
+        updated.set(sessionId, { ...session, processing: true })
+        return updated
+      })
+    }
+
+    const handleTurnEnd = (
+      _event: IpcRendererEvent,
+      { sessionId }: { sessionId: string }
+    ) => {
+      console.log('[Sessions] cli:turn-end', sessionId.slice(0, 8))
+      setSessions((prev) => {
+        const session = prev.get(sessionId)
+        if (!session) return prev
+        const updated = new Map(prev)
+        updated.set(sessionId, { ...session, processing: false })
+        return updated
+      })
+    }
+
     const cleanup = [
       window.electronAPI.on('cli:output', handleOutput),
       window.electronAPI.on('cli:error', handleError),
       window.electronAPI.on('cli:exit', handleExit),
       window.electronAPI.on('cli:permission-request', handlePermission),
+      window.electronAPI.on('cli:turn-start', handleTurnStart),
+      window.electronAPI.on('cli:turn-end', handleTurnEnd),
     ]
 
     return () => cleanup.forEach((fn) => fn())
@@ -174,13 +208,15 @@ export default function Sessions(): JSX.Element {
       workingDirectory?: string
       initialPrompt?: string
     }) => {
-      const { sessionId } = (await window.electronAPI.invoke('cli:start-session', {
+      console.log('[Sessions] starting session', opts)
+    const { sessionId } = (await window.electronAPI.invoke('cli:start-session', {
         cli: opts.cli,
         mode: 'interactive',
         name: opts.name,
         workingDirectory: opts.workingDirectory,
         prompt: opts.initialPrompt,
       })) as { sessionId: string }
+    console.log('[Sessions] session started', sessionId)
 
       const info: SessionInfo = {
         sessionId,
@@ -206,6 +242,7 @@ export default function Sessions(): JSX.Element {
           messages: initial,
           mode: 'normal',
           msgIdCounter: initial.length,
+          processing: !!opts.initialPrompt,
         })
         return updated
       })
@@ -255,6 +292,7 @@ export default function Sessions(): JSX.Element {
         ],
         mode: 'normal',
         msgIdCounter: 1,
+        processing: false,
       })
       return updated
     })
@@ -291,7 +329,6 @@ export default function Sessions(): JSX.Element {
     (input: string) => {
       if (!selectedId) return
       window.electronAPI.invoke('cli:send-input', { sessionId: selectedId, input })
-      // Echo user input into the message list
       setSessions((prev) => {
         const session = prev.get(selectedId)
         if (!session) return prev
@@ -304,6 +341,7 @@ export default function Sessions(): JSX.Element {
           ...session,
           messages: [...session.messages, msg],
           msgIdCounter: session.msgIdCounter + 1,
+          processing: true,
         })
         return updated
       })
@@ -468,6 +506,12 @@ export default function Sessions(): JSX.Element {
                 mode={selectedSession.mode}
                 onToggle={handleModeToggle}
               />
+              {selectedSession.processing && (
+                <span className="flex items-center gap-1.5 text-xs text-yellow-400 flex-shrink-0">
+                  <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse" />
+                  Thinking…
+                </span>
+              )}
               {selectedSession.info.status === 'running' ? (
                 <button
                   onClick={() => void stopSession(selectedSession.info.sessionId)}
@@ -491,7 +535,8 @@ export default function Sessions(): JSX.Element {
               cli={selectedSession.info.cli}
               onSend={handleSend}
               onSlashCommand={handleSlashCommand}
-              disabled={selectedSession.info.status !== 'running'}
+              disabled={selectedSession.info.status !== 'running' || selectedSession.processing}
+              processing={selectedSession.processing}
             />
           </>
         ) : (
