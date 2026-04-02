@@ -70,21 +70,35 @@ npm install
 npm run dev
 ```
 
-## Building the App
+## Download
+
+Grab the latest release for your platform from the [Releases page](../../releases):
+
+| Platform | File |
+|----------|------|
+| macOS | `ClearPathAI-x.x.x-arm64.dmg` |
+| Windows | `ClearPathAI Setup x.x.x.exe` |
+| Linux | `ClearPathAI-x.x.x.AppImage` |
+
+> **macOS note:** The app is not code-signed. On first launch, right-click the app → Open → Open.
+
+**Prerequisites:** Install the CLI(s) you want to use:
+- [GitHub Copilot CLI](https://docs.github.com/en/copilot/github-copilot-in-the-cli) — `npm install -g @github/copilot`
+- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) — `npm install -g @anthropic-ai/claude-code`
+
+## Building from Source
 
 ```bash
 # Package for your current platform (macOS, Linux, or Windows)
 npm run package
 
 # Or target a specific platform
-npm run package:mac     # → dist-electron/ClearPathAI-1.0.0.dmg
-npm run package:linux   # → dist-electron/ClearPathAI-1.0.0.AppImage
-npm run package:win     # → dist-electron/ClearPathAI Setup 1.0.0.exe
+npm run package:mac     # → dist-electron/ClearPathAI-x.x.x.dmg
+npm run package:linux   # → dist-electron/ClearPathAI-x.x.x.AppImage
+npm run package:win     # → dist-electron/ClearPathAI Setup x.x.x.exe
 ```
 
-**Prerequisites:** Node.js 18+ and the relevant CLI(s) you want to use:
-- [GitHub Copilot CLI](https://docs.github.com/en/copilot/github-copilot-in-the-cli) — `npm install -g @github/copilot`
-- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) — `npm install -g @anthropic-ai/claude-code`
+Releases are built automatically via GitHub Actions for all three platforms when a version tag is pushed.
 
 ## Tech Stack
 
