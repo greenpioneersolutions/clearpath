@@ -86,7 +86,11 @@ Grab the latest release for your platform from the [Releases page](../../release
 | Windows | `ClearPathAI Setup x.x.x.exe` |
 | Linux | `ClearPathAI-x.x.x.AppImage` |
 
-> **macOS note:** The app is not code-signed. On first launch, right-click the app → Open → Open.
+> **macOS note:** The app is not code-signed. After downloading, run this in Terminal before opening:
+> ```bash
+> xattr -cr ~/Downloads/ClearPathAI-*.dmg
+> ```
+> Then open the `.dmg` and drag ClearPathAI to Applications. On first launch you may need to right-click → Open → Open.
 
 **Prerequisites:** Install the CLI(s) you want to use:
 - [GitHub Copilot CLI](https://docs.github.com/en/copilot/github-copilot-in-the-cli) — `npm install -g @github/copilot`
