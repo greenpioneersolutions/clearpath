@@ -1,6 +1,6 @@
 {
   "name": "clear-path",
-  "version": "1.1.2",
+  "version": "1.2.0",
   "author": "Jason Humphrey",
   "description": "ClearPathAI — Desktop control tower for AI coding agents",
   "main": "out/main/index.js",
@@ -19,6 +19,7 @@
     "@uiw/react-codemirror": "^4.25.9",
     "electron-store": "^8.2.0",
     "node-cron": "^4.2.1",
+    "octokit": "^5.0.5",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-grid-layout": "^2.2.3",

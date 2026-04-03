@@ -133,4 +133,78 @@ export function registerWorkspaceHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('workspace:activity-feed', (_e, args: { paths: string[]; limit?: number }) =>
     getActivityFeed(args.paths, args.limit),
   )
+
+  // Clone a repo from URL into a workspace
+  ipcMain.handle('workspace:clone-repo', async (_e, args: { workspaceId: string; url: string; targetDir?: string }) => {
+    const workspaces = store.get('workspaces')
+    const ws = workspaces.find((w) => w.id === args.workspaceId)
+    if (!ws) return { success: false, error: 'Workspace not found' }
+
+    // Derive repo name from URL
+    const repoName = args.url.replace(/\.git$/, '').split('/').pop() ?? 'repo'
+
+    // Determine target directory
+    let cloneDir: string
+    if (args.targetDir) {
+      cloneDir = args.targetDir
+    } else {
+      // Default to ~/ClearPath-repos/<workspace-name>/<repo-name>
+      const home = require('os').homedir()
+      const { join } = require('path')
+      const safeWsName = ws.name.replace(/[^a-zA-Z0-9_-]/g, '-')
+      cloneDir = join(home, 'ClearPath-repos', safeWsName, repoName)
+    }
+
+    // Check if already exists
+    if (existsSync(cloneDir)) {
+      // Directory exists — check if it's the same repo, if so just add it
+      try {
+        const { stdout } = await execFileAsync('git', ['remote', 'get-url', 'origin'], {
+          cwd: cloneDir, timeout: 5000, env: getSpawnEnv(),
+        })
+        if (stdout.trim() === args.url || stdout.trim() === args.url.replace(/\.git$/, '')) {
+          // Same repo, just add to workspace
+          if (!ws.repoPaths.includes(cloneDir)) {
+            ws.repoPaths.push(cloneDir)
+            store.set('workspaces', workspaces)
+          }
+          return { success: true, path: cloneDir, alreadyExisted: true }
+        }
+      } catch { /* not a git repo or different remote */ }
+      return { success: false, error: `Directory already exists: ${cloneDir}` }
+    }
+
+    // Clone
+    try {
+      const { mkdirSync } = require('fs')
+      const { dirname } = require('path')
+      mkdirSync(dirname(cloneDir), { recursive: true })
+
+      await execFileAsync('git', ['clone', args.url, cloneDir], {
+        timeout: 120_000, // 2 minutes for large repos
+        env: getSpawnEnv(),
+      })
+
+      // Add to workspace
+      if (!ws.repoPaths.includes(cloneDir)) {
+        ws.repoPaths.push(cloneDir)
+        store.set('workspaces', workspaces)
+      }
+
+      return { success: true, path: cloneDir }
+    } catch (err) {
+      return { success: false, error: String(err) }
+    }
+  })
+
+  // Update workspace metadata
+  ipcMain.handle('workspace:update', (_e, args: { id: string; name?: string; description?: string }) => {
+    const workspaces = store.get('workspaces')
+    const ws = workspaces.find((w) => w.id === args.id)
+    if (!ws) return { error: 'Workspace not found' }
+    if (args.name !== undefined) ws.name = args.name
+    if (args.description !== undefined) ws.description = args.description
+    store.set('workspaces', workspaces)
+    return { success: true }
+  })
 }

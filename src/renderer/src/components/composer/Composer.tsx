@@ -12,14 +12,28 @@ interface StepExecution {
   error?: string
 }
 
+interface SessionOption {
+  id: string
+  name: string
+  cli: 'copilot' | 'claude'
+  status: string
+}
+
 interface Props {
   /** Send a prompt to the active CLI session */
   onSendToSession: (prompt: string) => void
+  /** Create a brand new session and send the prompt there */
+  onSendToNewSession: (prompt: string) => void
   /** The active session's CLI backend */
   cli: 'copilot' | 'claude'
+  /** Active sessions available for targeting */
+  sessions?: SessionOption[]
+  /** Whether there's an active selected session */
+  hasActiveSession?: boolean
+  activeSessionName?: string
 }
 
-export default function Composer({ onSendToSession, cli }: Props): JSX.Element {
+export default function Composer({ onSendToSession, onSendToNewSession, cli, sessions, hasActiveSession, activeSessionName }: Props): JSX.Element {
   const [steps, setSteps] = useState<WorkflowStep[]>([])
   const [hasStarted, setHasStarted] = useState(false)
   const [showTemplatePicker, setShowTemplatePicker] = useState(false)
@@ -28,6 +42,7 @@ export default function Composer({ onSendToSession, cli }: Props): JSX.Element {
   const [saveDialog, setSaveDialog] = useState(false)
   const [saveName, setSaveName] = useState('')
   const [saveDesc, setSaveDesc] = useState('')
+  const [targetMode, setTargetMode] = useState<'new' | 'existing'>('new')
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
@@ -53,7 +68,11 @@ export default function Composer({ onSendToSession, cli }: Props): JSX.Element {
   }
 
   const handleRunNow = (hydratedPrompt: string) => {
-    onSendToSession(hydratedPrompt)
+    if (targetMode === 'existing' && hasActiveSession) {
+      onSendToSession(hydratedPrompt)
+    } else {
+      onSendToNewSession(hydratedPrompt)
+    }
   }
 
   const handleAddFromTemplate = () => {
@@ -143,7 +162,11 @@ export default function Composer({ onSendToSession, cli }: Props): JSX.Element {
 
         try {
           if (step.executionType === 'session') {
-            onSendToSession(finalPrompt)
+            if (targetMode === 'existing' && hasActiveSession) {
+              onSendToSession(finalPrompt)
+            } else {
+              onSendToNewSession(finalPrompt)
+            }
             await new Promise((r) => setTimeout(r, 1000))
             setExecutions((prev) => prev.map((e) =>
               e.stepId === step.id ? { ...e, status: 'completed', output: 'Sent to session', elapsed: Date.now() - startTime } : e
@@ -270,27 +293,68 @@ export default function Composer({ onSendToSession, cli }: Props): JSX.Element {
     )
   }
 
+  const targetBanner = (
+    <div className="bg-white border-b border-gray-200 px-5 py-3 flex items-center justify-between flex-shrink-0">
+      <div className="flex items-center gap-3">
+        <span className="text-xs font-medium text-gray-500">Send output to:</span>
+        <div className="flex rounded-lg bg-gray-100 p-0.5">
+          <button
+            onClick={() => setTargetMode('new')}
+            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+              targetMode === 'new' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >New Session</button>
+          <button
+            onClick={() => setTargetMode('existing')}
+            disabled={!hasActiveSession}
+            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+              targetMode === 'existing' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+            } ${!hasActiveSession ? 'opacity-40 cursor-not-allowed' : ''}`}
+          >Current Session</button>
+        </div>
+      </div>
+      {targetMode === 'existing' && hasActiveSession && activeSessionName && (
+        <span className="text-xs text-gray-400">
+          Targeting: <span className="text-gray-600 font-medium">{activeSessionName}</span>
+        </span>
+      )}
+      {targetMode === 'new' && (
+        <span className="text-xs text-gray-400">A new session will be created</span>
+      )}
+    </div>
+  )
+
   // Landing state — no steps yet
   if (!hasStarted) {
     return (
-      <TemplateLauncher
-        onStartFromTemplate={handleStartFromTemplate}
-        onStartFromScratch={handleStartFromScratch}
-        onRunNow={handleRunNow}
-      />
+      <div className="flex flex-col h-full">
+        {targetBanner}
+        <div className="flex-1 overflow-y-auto">
+          <TemplateLauncher
+            onStartFromTemplate={handleStartFromTemplate}
+            onStartFromScratch={handleStartFromScratch}
+            onRunNow={handleRunNow}
+          />
+        </div>
+      </div>
     )
   }
 
   // Canvas with steps
   return (
-    <WorkflowCanvas
-      steps={steps}
-      onStepsChange={setSteps}
-      onExecute={(s) => void executeWorkflow(s)}
-      onSaveWorkflow={() => setSaveDialog(true)}
-      onAddFromTemplate={handleAddFromTemplate}
-      executions={executions}
-      isExecuting={isExecuting}
-    />
+    <div className="flex flex-col h-full">
+      {targetBanner}
+      <div className="flex-1 overflow-y-auto">
+        <WorkflowCanvas
+          steps={steps}
+          onStepsChange={setSteps}
+          onExecute={(s) => void executeWorkflow(s)}
+          onSaveWorkflow={() => setSaveDialog(true)}
+          onAddFromTemplate={handleAddFromTemplate}
+          executions={executions}
+          isExecuting={isExecuting}
+        />
+      </div>
+    </div>
   )
 }

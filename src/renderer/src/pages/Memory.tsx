@@ -4,19 +4,21 @@ import InstructionsEditor from '../components/memory/InstructionsEditor'
 import MemoryViewer from '../components/memory/MemoryViewer'
 import ContextUsage from '../components/memory/ContextUsage'
 import NewFileWizard from '../components/memory/NewFileWizard'
+import NotesManager from '../components/memory/NotesManager'
 import type { SessionInfo } from '../types/ipc'
 
-type Tab = 'files' | 'instructions' | 'memory' | 'context'
+type Tab = 'notes' | 'files' | 'instructions' | 'memory' | 'context'
 
 const TABS: { key: Tab; label: string }[] = [
+  { key: 'notes', label: 'Notes' },
   { key: 'files', label: 'Config Files' },
   { key: 'instructions', label: 'Instructions' },
-  { key: 'memory', label: 'Memory Entries' },
+  { key: 'memory', label: 'CLI Memory' },
   { key: 'context', label: 'Context Usage' },
 ]
 
 export default function Memory(): JSX.Element {
-  const [tab, setTab] = useState<Tab>('files')
+  const [tab, setTab] = useState<Tab>('notes')
   const [cli, setCli] = useState<'copilot' | 'claude'>('copilot')
   const [showWizard, setShowWizard] = useState(false)
   const [activeSessions, setActiveSessions] = useState<SessionInfo[]>([])
@@ -87,7 +89,11 @@ export default function Memory(): JSX.Element {
 
       {/* Tab content */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        {showWizard ? (
+        {tab === 'notes' ? (
+          <div className="p-6">
+            <NotesManager />
+          </div>
+        ) : showWizard ? (
           <div className="p-6">
             <NewFileWizard
               workingDirectory={workingDirectory}

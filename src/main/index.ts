@@ -27,6 +27,9 @@ import { registerLocalModelHandlers } from './ipc/localModelHandlers'
 import { registerWorkflowHandlers } from './ipc/workflowHandlers'
 import { registerLearnHandlers } from './ipc/learnHandlers'
 import { registerSkillHandlers } from './ipc/skillHandlers'
+import { registerIntegrationHandlers } from './ipc/integrationHandlers'
+import { registerWizardHandlers } from './ipc/wizardHandlers'
+import { registerNoteHandlers } from './ipc/noteHandlers'
 import { CLIManager } from './cli/CLIManager'
 import { AuthManager } from './auth/AuthManager'
 import { AgentManager } from './agents/AgentManager'
@@ -77,6 +80,9 @@ registerLocalModelHandlers(ipcMain)
 registerWorkflowHandlers(ipcMain)
 registerLearnHandlers(ipcMain)
 registerSkillHandlers(ipcMain)
+registerIntegrationHandlers(ipcMain)
+registerWizardHandlers(ipcMain)
+registerNoteHandlers(ipcMain)
 
 // Wire CLIManager to emit notifications through the central hub
 cliManager.setNotifyCallback((args) => {

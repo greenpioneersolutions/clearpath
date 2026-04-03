@@ -9,6 +9,7 @@
 <p align="center">
   <a href="#key-features">Features</a> &middot;
   <a href="#quick-start">Quick Start</a> &middot;
+  <a href="#enterprise-ready">Enterprise</a> &middot;
   <a href="#architecture">Architecture</a> &middot;
   <a href="#brand">Brand</a>
 </p>
@@ -134,11 +135,22 @@ Managers see 4 screens, not 18 pages. Power users access everything through cont
 
 ## Enterprise Ready
 
-- **Policy guardrails** prevent unauthorized tool use, enforce permission modes, and cap budgets
-- **Compliance tracking** with append-only audit log and one-click snapshot export
-- **Sensitive data scanning** catches credentials before they reach the AI
-- **Team config sharing** via export/import bundles — no server required
-- **ROI tracking** with estimated hours saved metrics
+ClearPathAI is built for organizations that need AI tooling they can control, audit, and deploy within their own walls. No SaaS dependency, no server infrastructure, no data leaving your environment unless you decide it should. You take it, you own it, you make it yours.
+
+| Capability | What It Means |
+|-----------|---------------|
+| **Policy guardrails** | Prevent unauthorized tool use, enforce permission modes, cap budgets, protect sensitive files |
+| **Compliance & audit** | Append-only audit log of every AI interaction, one-click compliance snapshot export |
+| **Sensitive data scanning** | Catches credentials, API keys, and PII in prompts before they reach the AI |
+| **Team onboarding** | Built-in Learning Center with role-based paths, interactive lessons, and progress tracking |
+| **Cost governance** | Real-time cost tracking, budget alerts, auto-pause at limits, ROI analytics |
+| **Config sharing** | Export/import settings, policies, templates, and agents as team bundles — no server required |
+| **Air-gapped deployment** | Full offline operation with local models via Ollama — zero external network calls |
+| **Open source (MIT)** | Read every line. Fork it. Rebrand it. Customize it. No vendor lock-in, ever. |
+
+The entire point is that you can bring this inside your organization, customize it to your needs, and have complete control. Your IT team reviews the code. Your compliance team sets the policies. Your team members get a modern AI interface without opening a terminal.
+
+**→ [Read the full Enterprise Guide](ENTERPRISE.md)** for deployment options, security model, compliance details, and a step-by-step getting started checklist.
 
 ## Brand
 

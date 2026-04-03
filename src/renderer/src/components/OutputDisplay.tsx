@@ -8,6 +8,7 @@ export interface OutputMessage {
   id: string
   output: ParsedOutput
   sender?: 'user' | 'ai' | 'system'
+  timestamp?: number  // ms since epoch — when the message was added
 }
 
 export interface UsageStats {
@@ -22,13 +23,19 @@ export interface UsageStats {
 interface Props {
   messages: OutputMessage[]
   onPermissionResponse: (response: 'y' | 'n') => void
+  onSaveAsNote?: (content: string) => void
   processing?: boolean
   usageHistory?: UsageStats[]
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-/** Group consecutive AI text messages into a single bubble */
+/**
+ * Group messages for display. Each message is its own group UNLESS they are
+ * consecutive AI text messages that arrived within 2 seconds of each other
+ * (streaming fragments from the same response). This prevents separate AI
+ * responses from different turns being merged into one giant bubble.
+ */
 function groupMessages(messages: OutputMessage[]): OutputMessage[][] {
   const groups: OutputMessage[][] = []
   let current: OutputMessage[] = []
@@ -41,7 +48,18 @@ function groupMessages(messages: OutputMessage[]): OutputMessage[][] {
       current[0].output.type === 'text'
 
     if (isAiText && lastIsAiText) {
-      current.push(msg)
+      // Only group if timestamps are within 2 seconds (streaming fragments)
+      const lastMsg = current[current.length - 1]
+      const timeDiff = (msg.timestamp && lastMsg.timestamp)
+        ? msg.timestamp - lastMsg.timestamp
+        : 0
+      if (timeDiff < 2000) {
+        current.push(msg)
+      } else {
+        // Different turn — start a new group
+        if (current.length) groups.push(current)
+        current = [msg]
+      }
     } else {
       if (current.length) groups.push(current)
       current = [msg]
@@ -70,7 +88,7 @@ const THINKING_PHRASES = [
 
 // ── Main component ──────────────────────────────────────────────────────────
 
-export default function OutputDisplay({ messages, onPermissionResponse, processing, usageHistory }: Props): JSX.Element {
+export default function OutputDisplay({ messages, onPermissionResponse, onSaveAsNote, processing, usageHistory }: Props): JSX.Element {
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -116,14 +134,14 @@ export default function OutputDisplay({ messages, onPermissionResponse, processi
                   : null
                 usageIdx++
                 return badge
-                  ? <div key={`turn-${first.id}`}>{badge}<UserBubble content={first.output.content} /></div>
-                  : <UserBubble key={first.id} content={first.output.content} />
+                  ? <div key={`turn-${first.id}`}>{badge}<UserBubble content={first.output.content} timestamp={first.timestamp} /></div>
+                  : <UserBubble key={first.id} content={first.output.content} timestamp={first.timestamp} />
               }
 
-              // Grouped AI text messages
+              // Grouped AI text messages (only groups streaming fragments from same response)
               if (first.output.type === 'text' && group.length > 0) {
                 const combined = group.map((m) => m.output.content).join('\n\n')
-                return <AIBubble key={first.id} content={combined} />
+                return <AIBubble key={first.id} content={combined} onSaveAsNote={onSaveAsNote} timestamp={first.timestamp} />
               }
 
               // Single non-text messages
@@ -156,10 +174,17 @@ export default function OutputDisplay({ messages, onPermissionResponse, processi
 
 // ── User bubble ─────────────────────────────────────────────────────────────
 
-function UserBubble({ content }: { content: string }): JSX.Element {
+function formatTime(ts?: number): string {
+  if (!ts) return ''
+  const d = new Date(ts)
+  return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+}
+
+function UserBubble({ content, timestamp }: { content: string; timestamp?: number }): JSX.Element {
   return (
     <div className="flex justify-end animate-fadeIn">
       <div className="max-w-[80%] flex items-end gap-2.5">
+        {timestamp && <span className="text-[10px] text-gray-600 mb-1 flex-shrink-0">{formatTime(timestamp)}</span>}
         <div className="bg-indigo-600 text-white rounded-2xl rounded-br-md px-4 py-2.5 shadow-sm">
           <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{content}</p>
         </div>
@@ -175,20 +200,58 @@ function UserBubble({ content }: { content: string }): JSX.Element {
 
 // ── AI bubble with markdown ─────────────────────────────────────────────────
 
-function AIBubble({ content }: { content: string }): JSX.Element {
+function AIBubble({ content, onSaveAsNote, timestamp }: { content: string; onSaveAsNote?: (content: string) => void; timestamp?: number }): JSX.Element {
+  const [saved, setSaved] = useState(false)
+
   if (!content?.trim()) return <></>
+
+  const handleSave = () => {
+    onSaveAsNote?.(content)
+    setSaved(true)
+    setTimeout(() => setSaved(false), 2000)
+  }
+
   return (
-    <div className="flex justify-start animate-fadeIn">
+    <div className="flex justify-start animate-fadeIn group/ai">
       <div className="max-w-[85%] flex items-start gap-2.5">
-        <div className="w-7 h-7 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center flex-shrink-0 mt-0.5">
-          <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-          </svg>
-        </div>
-        <div className="bg-gray-900 border border-gray-800 rounded-2xl rounded-tl-md px-4 py-3 shadow-sm">
-          <div className="prose-chat text-sm leading-relaxed">
-            <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{content}</ReactMarkdown>
+        <div className="flex flex-col items-center gap-1 flex-shrink-0">
+          <div className="w-7 h-7 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center mt-0.5">
+            <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+            </svg>
           </div>
+          {timestamp && <span className="text-[9px] text-gray-600">{formatTime(timestamp)}</span>}
+        </div>
+        <div className="relative">
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl rounded-tl-md px-4 py-3 shadow-sm">
+            <div className="prose-chat text-sm leading-relaxed">
+              <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{content}</ReactMarkdown>
+            </div>
+          </div>
+          {/* Save as memory button — appears on hover */}
+          {onSaveAsNote && (
+            <button
+              onClick={handleSave}
+              className={`absolute -bottom-2 right-2 flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium transition-all ${
+                saved
+                  ? 'bg-green-900/80 text-green-300 opacity-100'
+                  : 'bg-gray-800/80 text-gray-500 hover:text-gray-300 hover:bg-gray-700/80 opacity-0 group-hover/ai:opacity-100'
+              }`}
+              title="Save this response as a memory note"
+            >
+              {saved ? (
+                <>
+                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                  Saved
+                </>
+              ) : (
+                <>
+                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" /></svg>
+                  Save as Memory
+                </>
+              )}
+            </button>
+          )}
         </div>
       </div>
     </div>

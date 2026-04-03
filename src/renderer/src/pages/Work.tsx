@@ -24,6 +24,11 @@ import KnowledgeBase from './KnowledgeBase'
 import SkillsPanel from '../components/skills/SkillsPanel'
 import SkillWizard from '../components/skills/SkillWizard'
 import SessionSummary from '../components/shared/SessionSummary'
+import WelcomeBack from '../components/shared/WelcomeBack'
+import GitHubPanel from '../components/integrations/GitHubPanel'
+import SessionWizard from '../components/wizard/SessionWizard'
+import MemoryPicker from '../components/memory/MemoryPicker'
+import NotesManager from '../components/memory/NotesManager'
 
 // ── Panel definitions ────────────────────────────────────────────────────────
 
@@ -73,11 +78,15 @@ export default function Work(): JSX.Element {
   const [sessions, setSessions] = useState<Map<string, ActiveSessionState>>(new Map())
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [showNewSession, setShowNewSession] = useState(false)
-  const [workMode, setWorkMode] = useState<'session' | 'compose' | 'schedule'>('session')
+  const [workMode, setWorkMode] = useState<'session' | 'wizard' | 'compose' | 'schedule' | 'memory'>('session')
+  const [wizardChecked, setWizardChecked] = useState(false)
   const [quickConfig, setQuickConfig] = useState<QuickComposeConfig>({})
   const [activeTemplate, setActiveTemplate] = useState<PromptTemplate | null>(null)
   const [showSkillWizard, setShowSkillWizard] = useState(false)
   const [showSessionManager, setShowSessionManager] = useState(false)
+  const [viewingStoppedSession, setViewingStoppedSession] = useState(false) // true = show conversation for a stopped session instead of welcome screen
+  const [selectedNoteIds, setSelectedNoteIds] = useState<Set<string>>(new Set())
+  const [showSaveNoteModal, setShowSaveNoteModal] = useState<string | null>(null) // content to save
   const sessionsRef = useRef(sessions)
   sessionsRef.current = sessions
 
@@ -172,6 +181,18 @@ export default function Work(): JSX.Element {
     })()
   }, [])
 
+  // ── Check wizard state — default to wizard tab if never used ─────────────
+
+  useEffect(() => {
+    void (async () => {
+      const state = await window.electronAPI.invoke('wizard:get-state') as { hasCompletedWizard: boolean }
+      if (!state.hasCompletedWizard) {
+        setWorkMode('wizard')
+      }
+      setWizardChecked(true)
+    })()
+  }, [])
+
   // ── IPC event listeners ─────────────────────────────────────────────────
 
   useEffect(() => {
@@ -180,16 +201,16 @@ export default function Work(): JSX.Element {
         const s = prev.get(sessionId)
         if (!s) return prev
         const updated = new Map(prev)
-        updated.set(sessionId, { ...s, messages: [...s.messages, { id: String(s.msgIdCounter), output }], msgIdCounter: s.msgIdCounter + 1 })
+        updated.set(sessionId, { ...s, messages: [...s.messages, { id: String(s.msgIdCounter), output, timestamp: Date.now() }], msgIdCounter: s.msgIdCounter + 1 })
         return updated
       })
     }
-    const handleError = (_e: IpcRendererEvent, { sessionId, error }: { sessionId: string; error: string }) => {
+    const handleError = (_e: IpcRendererEvent, { sessionId, error: errMsg }: { sessionId: string; error: string }) => {
       setSessions((prev) => {
         const s = prev.get(sessionId)
         if (!s) return prev
         const updated = new Map(prev)
-        updated.set(sessionId, { ...s, messages: [...s.messages, { id: String(s.msgIdCounter), output: { type: 'error', content: error.trim() } }], msgIdCounter: s.msgIdCounter + 1 })
+        updated.set(sessionId, { ...s, messages: [...s.messages, { id: String(s.msgIdCounter), output: { type: 'error', content: errMsg.trim() }, timestamp: Date.now() }], msgIdCounter: s.msgIdCounter + 1 })
         return updated
       })
     }
@@ -259,7 +280,7 @@ export default function Work(): JSX.Element {
       cli: opts.cli, mode: 'interactive', name: opts.name, workingDirectory: opts.workingDirectory, prompt: opts.initialPrompt,
     })) as { sessionId: string }
     const info: SessionInfo = { sessionId, name: opts.name, cli: opts.cli, status: 'running', startedAt: Date.now() }
-    const initial: OutputMessage[] = opts.initialPrompt ? [{ id: '0', output: { type: 'text', content: opts.initialPrompt }, sender: 'user' }] : []
+    const initial: OutputMessage[] = opts.initialPrompt ? [{ id: '0', output: { type: 'text', content: opts.initialPrompt }, sender: 'user', timestamp: Date.now() }] : []
     setSessions((prev) => { const u = new Map(prev); u.set(sessionId, { info, messages: initial, mode: 'normal', msgIdCounter: initial.length, processing: !!opts.initialPrompt, usageHistory: [] }); return u })
     setSelectedId(sessionId)
   }, [])
@@ -290,7 +311,7 @@ export default function Work(): JSX.Element {
           ...s,
           messages: [
             ...s.messages,
-            { id: String(s.msgIdCounter), output: { type: 'text', content: `&${prompt}` }, sender: 'user' },
+            { id: String(s.msgIdCounter), output: { type: 'text', content: `&${prompt}` }, sender: 'user', timestamp: Date.now() },
             { id: String(s.msgIdCounter + 1), output: { type: 'status', content: `Delegating to background sub-agent (${cli})...` }, sender: 'system' },
           ],
           msgIdCounter: s.msgIdCounter + 2,
@@ -342,14 +363,37 @@ export default function Work(): JSX.Element {
     }
 
     // ── Normal send ───────────────────────────────────────────────────
-    window.electronAPI.invoke('cli:send-input', { sessionId: selectedId, input })
+    // If memories are selected, prepend them as context silently
+    // Uses notes:get-full-content to include both note text AND attached file contents
+    void (async () => {
+      let actualInput = input
+      if (selectedNoteIds.size > 0) {
+        const blocks: string[] = []
+        for (const noteId of selectedNoteIds) {
+          const result = await window.electronAPI.invoke('notes:get-full-content', { id: noteId }) as { content?: string; error?: string }
+          const noteMeta = await window.electronAPI.invoke('notes:get', { id: noteId }) as { title?: string } | null
+          if (result.content) {
+            blocks.push(`--- Memory: ${noteMeta?.title ?? 'Untitled'} ---\n${result.content}`)
+          }
+        }
+        if (blocks.length > 0) {
+          actualInput = `[Reference context from saved memories]\n\n${blocks.join('\n\n')}\n\n---\n\n${input}`
+        }
+        setSelectedNoteIds(new Set()) // Clear after sending
+      }
+      window.electronAPI.invoke('cli:send-input', { sessionId: selectedId, input: actualInput })
+    })()
+
+    // Show only the user's original message in the chat (not the prepended memory block)
     setSessions((prev) => {
       const s = prev.get(selectedId); if (!s) return prev
       const u = new Map(prev)
-      u.set(selectedId, { ...s, messages: [...s.messages, { id: String(s.msgIdCounter), output: { type: 'text', content: input }, sender: 'user' }], msgIdCounter: s.msgIdCounter + 1, processing: true })
+      const noteCount = selectedNoteIds.size
+      const displayContent = noteCount > 0 ? `📎 ${noteCount} memor${noteCount === 1 ? 'y' : 'ies'} attached\n\n${input}` : input
+      u.set(selectedId, { ...s, messages: [...s.messages, { id: String(s.msgIdCounter), output: { type: 'text', content: displayContent }, sender: 'user', timestamp: Date.now() }], msgIdCounter: s.msgIdCounter + 1, processing: true })
       return u
     })
-  }, [selectedId, sessions])
+  }, [selectedId, sessions, selectedNoteIds])
 
   const handleSlashCommand = useCallback((command: string) => {
     if (!selectedId) return
@@ -472,6 +516,12 @@ export default function Work(): JSX.Element {
               }`}
             >Session</button>
             <button
+              onClick={() => setWorkMode('wizard')}
+              className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                workMode === 'wizard' ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:text-gray-200'
+              }`}
+            >Wizard</button>
+            <button
               onClick={() => setWorkMode('compose')}
               className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
                 workMode === 'compose' ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:text-gray-200'
@@ -483,6 +533,12 @@ export default function Work(): JSX.Element {
                 workMode === 'schedule' ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:text-gray-200'
               }`}
             >Schedule</button>
+            <button
+              onClick={() => setWorkMode('memory')}
+              className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                workMode === 'memory' ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:text-gray-200'
+              }`}
+            >Memory</button>
           </div>
 
           {/* Session controls (only in session mode) */}
@@ -490,7 +546,7 @@ export default function Work(): JSX.Element {
             <>
               <select
                 value={selectedId ?? ''}
-                onChange={(e) => setSelectedId(e.target.value || null)}
+                onChange={(e) => { setSelectedId(e.target.value || null); setViewingStoppedSession(false) }}
                 className="bg-gray-800 border border-gray-700 text-gray-200 text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 max-w-[200px]"
               >
                 <option value="">Select session...</option>
@@ -542,18 +598,11 @@ export default function Work(): JSX.Element {
 
         {/* Session mode content */}
         {workMode === 'session' && (
-          selectedSession ? (
+          selectedSession && (selectedSession.info.status === 'running' || viewingStoppedSession) ? (
             <div className="flex-1 flex flex-col min-h-0">
-              <OutputDisplay messages={selectedSession.messages} onPermissionResponse={handlePermissionResponse} processing={selectedSession.processing} usageHistory={selectedSession.usageHistory} />
-              {selectedSession.info.status === 'stopped' ? (
-                <SessionSummary
-                  session={selectedSession.info}
-                  messages={selectedSession.messages}
-                  onContinue={() => void startSession({ cli: selectedSession.info.cli, name: selectedSession.info.name ? `${selectedSession.info.name} (cont)` : undefined })}
-                  onSaveAsTemplate={() => { /* could navigate to template creation */ }}
-                  onDismiss={() => setSelectedId(null)}
-                />
-              ) : (
+              <OutputDisplay messages={selectedSession.messages} onPermissionResponse={handlePermissionResponse} processing={selectedSession.processing} usageHistory={selectedSession.usageHistory}
+                onSaveAsNote={(content) => setShowSaveNoteModal(content)} />
+              {selectedSession.info.status === 'running' ? (
                 <>
                   {/* Inline template form (shown when a template with variables is selected) */}
                   {activeTemplate && (
@@ -573,51 +622,97 @@ export default function Work(): JSX.Element {
                     cli={selectedSession.info.cli}
                     onTemplateSelect={handleTemplateSelect}
                   />
+                  <div className="flex items-center gap-2 px-3 py-1 border-t border-gray-800/50 bg-gray-950 flex-shrink-0">
+                    <MemoryPicker
+                      selectedIds={selectedNoteIds}
+                      onToggle={(id) => setSelectedNoteIds((prev) => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next })}
+                      onClear={() => setSelectedNoteIds(new Set())}
+                    />
+                    {selectedNoteIds.size > 0 && (
+                      <span className="text-[10px] text-indigo-400">{selectedNoteIds.size} memor{selectedNoteIds.size === 1 ? 'y' : 'ies'} attached</span>
+                    )}
+                  </div>
                   <CommandInput
                     cli={selectedSession.info.cli}
                     onSend={handleSend}
                     onSlashCommand={handleSlashCommand}
-                    disabled={selectedSession.info.status !== 'running' || selectedSession.processing}
+                    disabled={selectedSession.processing}
                     processing={selectedSession.processing}
                   />
                 </>
+              ) : (
+                /* Viewing a stopped session — show a bar to go back or continue */
+                <div className="flex items-center justify-between px-4 py-2.5 border-t border-gray-800 bg-gray-900 flex-shrink-0">
+                  <button
+                    onClick={() => setViewingStoppedSession(false)}
+                    className="text-xs text-gray-400 hover:text-gray-200 flex items-center gap-1 transition-colors"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                    </svg>
+                    Back
+                  </button>
+                  <span className="text-xs text-gray-500">
+                    {selectedSession.info.name ?? selectedSession.info.sessionId.slice(0, 8)} — Ended
+                  </span>
+                  <button
+                    onClick={() => void startSession({ cli: selectedSession.info.cli, name: selectedSession.info.name ? `${selectedSession.info.name} (cont)` : undefined })}
+                    className="px-3 py-1.5 text-xs text-indigo-400 border border-indigo-700/50 rounded-lg hover:bg-indigo-900/30 transition-colors"
+                  >
+                    Continue from this session
+                  </button>
+                </div>
               )}
             </div>
           ) : (
-            <div className="flex-1 flex flex-col items-center justify-center text-center px-8">
-              <h2 className="text-gray-300 font-semibold text-lg mb-1">No session selected</h2>
-              <p className="text-gray-600 text-sm mb-4">Start a new session or select one from the dropdown</p>
-              <div className="flex gap-3">
-                <button onClick={() => setShowNewSession(true)}
-                  className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg">
-                  + New Session
-                </button>
-                <button onClick={() => setWorkMode('compose')}
-                  className="px-5 py-2.5 text-indigo-400 border border-indigo-700 hover:bg-indigo-900/30 text-sm font-medium rounded-lg">
-                  Open Composer
-                </button>
-              </div>
-            </div>
+            /* Welcome back / no session screen — shown when no session is selected OR selected session is stopped */
+            <WelcomeBack
+              recentSessions={recentSessions.map((s) => ({ info: s.info, messages: s.messages }))}
+              onNewSession={() => setShowNewSession(true)}
+              onContinueSession={(info) => void startSession({ cli: info.cli, name: info.name ? `${info.name} (cont)` : undefined })}
+              onViewSession={(sessionId) => { setSelectedId(sessionId); setViewingStoppedSession(true) }}
+            />
           )
+        )}
+
+        {/* Wizard mode content */}
+        {workMode === 'wizard' && (
+          <SessionWizard
+            defaultCli="copilot"
+            onLaunchSession={(opts) => {
+              void (async () => {
+                await startSession({ cli: opts.cli, name: opts.name, initialPrompt: opts.initialPrompt })
+                setWorkMode('session')
+              })()
+            }}
+          />
         )}
 
         {/* Compose mode content */}
         {workMode === 'compose' && (
-          <div className="flex-1 overflow-y-auto bg-gray-50">
+          <div className="flex-1 flex flex-col bg-gray-50">
             <Composer
               onSendToSession={(prompt) => {
                 if (selectedId) {
                   handleSend(prompt)
                   setWorkMode('session')
-                } else {
-                  // No active session — create one and send
-                  void (async () => {
-                    await startSession({ cli: 'copilot', initialPrompt: prompt })
-                    setWorkMode('session')
-                  })()
                 }
               }}
+              onSendToNewSession={(prompt) => {
+                void (async () => {
+                  await startSession({ cli: selectedSession?.info.cli ?? 'copilot', initialPrompt: prompt })
+                  setWorkMode('session')
+                })()
+              }}
               cli={selectedSession?.info.cli ?? 'copilot'}
+              hasActiveSession={!!selectedSession && selectedSession.info.status === 'running'}
+              activeSessionName={selectedSession?.info.name ?? selectedSession?.info.sessionId.slice(0, 8)}
+              sessions={recentSessions.filter((s) => s.info.status === 'running').map((s) => ({
+                id: s.info.sessionId,
+                name: s.info.name ?? s.info.sessionId.slice(0, 8),
+                cli: s.info.cli,
+                status: s.info.status,
+              }))}
             />
           </div>
         )}
@@ -625,6 +720,13 @@ export default function Work(): JSX.Element {
         {/* Schedule mode content */}
         {workMode === 'schedule' && (
           <SchedulePanel cli={selectedSession?.info.cli ?? 'copilot'} />
+        )}
+
+        {/* Memory mode content */}
+        {workMode === 'memory' && (
+          <div className="flex-1 overflow-y-auto bg-gray-50 p-6">
+            <NotesManager />
+          </div>
         )}
       </div>
 
@@ -651,12 +753,11 @@ export default function Work(): JSX.Element {
             {activePanel === 'files' && <FileExplorer />}
             {activePanel === 'git' && <GitWorkflow />}
             {activePanel === 'work-items' && (
-              <div className="text-center py-8 text-gray-400 text-sm">
-                <p>Connect integrations to track work items</p>
-                <button onClick={() => navigate('/configure')} className="text-indigo-500 hover:text-indigo-400 mt-2 text-sm font-medium transition-colors">
-                  Go to Configure
-                </button>
-              </div>
+              <GitHubPanel onInjectContext={(text) => {
+                if (selectedId) {
+                  handleSend(`Here is GitHub context for reference:\n\n${text}\n\nPlease review and summarize the key details.`)
+                }
+              }} />
             )}
             {activePanel === 'templates' && <Templates />}
             {activePanel === 'skills' && !showSkillWizard && (
@@ -699,6 +800,107 @@ export default function Work(): JSX.Element {
           currentSessionId={selectedId}
         />
       )}
+
+      {/* Save as memory note modal */}
+      {showSaveNoteModal !== null && (
+        <SaveNoteModal
+          content={showSaveNoteModal}
+          sessionName={selectedSession?.info.name}
+          sessionId={selectedSession?.info.sessionId}
+          onClose={() => setShowSaveNoteModal(null)}
+        />
+      )}
+    </div>
+  )
+}
+
+// ── Save Note Modal ──────────────────────────────────────────────────────────
+
+function SaveNoteModal({ content, sessionName, sessionId, onClose }: {
+  content: string; sessionName?: string; sessionId?: string; onClose: () => void
+}): JSX.Element {
+  const [title, setTitle] = useState('')
+  const [category, setCategory] = useState('outcome')
+  const [tags, setTags] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+
+  const handleSave = async () => {
+    setSaving(true)
+    await window.electronAPI.invoke('notes:create', {
+      title: title.trim() || 'Untitled Note',
+      content,
+      category,
+      tags: tags.split(',').map((t) => t.trim()).filter(Boolean),
+      source: sessionId ? `session:${sessionId}` : 'manual',
+      sessionName,
+    })
+    setSaving(false)
+    setSaved(true)
+    setTimeout(onClose, 800)
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 animate-fadeIn" onClick={onClose}>
+      <div className="bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl w-full max-w-lg mx-4" onClick={(e) => e.stopPropagation()}>
+        <div className="px-6 py-4 border-b border-gray-800">
+          <h3 className="text-base font-semibold text-white">Save as Memory</h3>
+          <p className="text-xs text-gray-500 mt-0.5">Save this AI response so you can reference it later</p>
+        </div>
+
+        <div className="px-6 py-4 space-y-4">
+          <div>
+            <label className="block text-xs font-medium text-gray-400 mb-1">Title</label>
+            <input
+              type="text" value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="e.g., Meeting follow-up email draft, Auth refactor analysis..."
+              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              autoFocus
+            />
+          </div>
+
+          <div className="flex gap-3">
+            <div className="flex-1">
+              <label className="block text-xs font-medium text-gray-400 mb-1">Category</label>
+              <select value={category} onChange={(e) => setCategory(e.target.value)}
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                <option value="outcome">Outcome</option>
+                <option value="meeting">Meeting</option>
+                <option value="conversation">Conversation</option>
+                <option value="reference">Reference</option>
+                <option value="idea">Idea</option>
+                <option value="custom">Custom</option>
+              </select>
+            </div>
+            <div className="flex-1">
+              <label className="block text-xs font-medium text-gray-400 mb-1">Tags (comma separated)</label>
+              <input type="text" value={tags}
+                onChange={(e) => setTags(e.target.value)}
+                placeholder="e.g., q2, auth, email"
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-400 mb-1">Content preview</label>
+            <div className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 max-h-32 overflow-y-auto">
+              <p className="text-xs text-gray-400 whitespace-pre-wrap">{content.slice(0, 500)}{content.length > 500 ? '...' : ''}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="px-6 py-3 border-t border-gray-800 flex items-center justify-end gap-2">
+          <button onClick={onClose}
+            className="px-4 py-2 text-sm text-gray-400 hover:text-gray-200 transition-colors">Cancel</button>
+          <button onClick={() => void handleSave()} disabled={saving || saved}
+            className={`px-5 py-2 text-sm font-medium rounded-lg transition-colors ${
+              saved ? 'bg-green-600 text-white' : 'bg-indigo-600 text-white hover:bg-indigo-500'
+            } disabled:opacity-60`}>
+            {saved ? 'Saved!' : saving ? 'Saving...' : 'Save Memory'}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

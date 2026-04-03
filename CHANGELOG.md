@@ -2,6 +2,34 @@
 
 All notable changes to ClearPathAI will be documented in this file.
 
+## [1.2.0] - 2026-04-03
+
+### Added
+- **Session Wizard** — Guided step-by-step prompt builder in the Work page. Three configurable options (Accomplish a Task, Ask a Question, Review Something) plus a fixed "Use Context" option. Walks non-technical users through persona, goal, process, and verification fields, then assembles a structured prompt. First-time users land on the Wizard tab automatically
+- **Use Context in Wizard** — Browse and select saved memories, agents, and skills from within the wizard. Tabbed picker with search, pagination, and selection summary. Selected context is injected into the generated prompt
+- **Wizard Settings** — Full configuration editor in Configure → Wizard. Customize title, initial question, add/remove/edit options, modify fields per option, and edit prompt templates with {{variable}} placeholders. Reset to defaults button
+- **Notes / Memory System** — App-managed notes stored in electron-store with title, content, tags, categories (meeting, conversation, reference, outcome, idea, custom), pinning, and session source tracking. Full CRUD via `notes:*` IPC handlers
+- **Notes Manager UI** — Browse, create, edit, delete notes in Configure → Memory → Notes tab (now default) and Work → Memory tab. Search, category filter, tag filter pills, pagination (10 per page), pin/unpin
+- **Save AI Response as Memory** — Hover any AI response bubble to see a "Save as Memory" bookmark button. Opens a modal to set title, category, and tags before saving
+- **Memory Picker in Sessions** — Bookmark button above the chat input opens a dropdown to select notes. Selected memories are silently prepended as context to the next prompt. Attachment file counts shown
+- **Text File Attachments on Notes** — Attach .txt, .md, .csv, .json, code files, and other text files to notes. Native file picker with binary detection and 500KB limit. Attached file contents are read from disk at prompt-injection time and included alongside note content
+- **GitHub Integration** — Real GitHub API connection via Octokit in Configure → Integrations. Connect with a PAT, then browse repos, pull requests, and issues in the Work Items panel. Click any PR or issue to inject its details into the active session
+- **Welcome Back Screen** — Replaces the awkward "Session Complete" overlay. Shows a clean centered screen with prominent "Start New Session" button and up to 5 recent session cards with View/Continue actions
+- **Enterprise Guide** — Comprehensive ENTERPRISE.md covering architecture, security model, data residency, compliance, deployment options, authentication, policy framework, cost governance, team onboarding, air-gapped deployment, customization, FAQ, and getting started checklist
+- **Learning Center Content Overhaul** — Rewrote all 135+ lessons across 5 learning paths with real content for non-technical users. Walkthroughs with numbered steps and key takeaways, guided tasks with success checks, interactive knowledge checks with answer validation and explanations
+- **Workspace Enhancements** — Clone repos from URL (git clone to ~/ClearPath-repos/), workspace settings tab with name/description editing, improved repo cards, select-all in broadcast, better empty states
+- **Memory tab in Work page** — Notes manager accessible directly from the Work header tabs (Session, Wizard, Compose, Schedule, Memory)
+
+### Changed
+- **Message Display** — AI responses from different turns no longer merge into one giant bubble. Grouping now uses a 2-second time window to only merge streaming fragments. Timestamps shown on all messages (user and AI)
+- **Composer Session Targeting** — Banner at top of Compose mode lets you choose "New Session" (default) or "Current Session". No more silently dumping composed output into the active session
+- **README Enterprise Section** — Expanded from 5 bullet points to a detailed table with 8 capabilities, narrative positioning, and link to ENTERPRISE.md
+- **Learning Center Renderer** — Lesson view now renders real content: walkthrough steps with tips, guided task cards with progress bars, interactive quiz with per-question feedback and scoring. Falls back gracefully for lessons without content
+
+### Fixed
+- **File attachment dialog on macOS** — Pass focused BrowserWindow to dialog.showOpenDialog to prevent the native file picker from failing silently
+- **Wizard context loading** — Corrected IPC channel names (agent:list not agents:list) and added required workingDirectory arguments for agent and skill listing
+
 ## [1.1.2] - 2026-04-02
 
 ### Fixed
