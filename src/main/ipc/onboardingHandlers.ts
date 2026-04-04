@@ -20,11 +20,22 @@ interface FeatureUsage {
 
 type SkillLevel = 'beginner' | 'intermediate' | 'advanced' | 'expert'
 
+interface SetupWizardState {
+  cliInstalled: boolean
+  authenticated: boolean
+  agentCreated: boolean
+  skillCreated: boolean
+  memoryCreated: boolean
+  triedWizard: boolean
+  completedAt: number | null
+}
+
 interface OnboardingStoreSchema {
   completedOnboarding: boolean
   trainingModeEnabled: boolean
   featureUsage: FeatureUsage
   guidedTasksCompleted: string[]
+  setupWizard: SetupWizardState
 }
 
 const DEFAULT_USAGE: FeatureUsage = {
@@ -34,6 +45,16 @@ const DEFAULT_USAGE: FeatureUsage = {
   templateUse: false, budgetConfig: false, configProfile: false,
 }
 
+const DEFAULT_SETUP: SetupWizardState = {
+  cliInstalled: false,
+  authenticated: false,
+  agentCreated: false,
+  skillCreated: false,
+  memoryCreated: false,
+  triedWizard: false,
+  completedAt: null,
+}
+
 const store = new Store<OnboardingStoreSchema>({
   name: 'clear-path-onboarding',
   defaults: {
@@ -41,6 +62,7 @@ const store = new Store<OnboardingStoreSchema>({
     trainingModeEnabled: false,
     featureUsage: DEFAULT_USAGE,
     guidedTasksCompleted: [],
+    setupWizard: DEFAULT_SETUP,
   },
 })
 
@@ -97,6 +119,28 @@ export function registerOnboardingHandlers(ipcMain: IpcMain): void {
     store.set('trainingModeEnabled', false)
     store.set('featureUsage', DEFAULT_USAGE)
     store.set('guidedTasksCompleted', [])
+    store.set('setupWizard', DEFAULT_SETUP)
     return { success: true }
+  })
+
+  // ── Setup wizard state ──────────────────────────────────────────────────────
+
+  ipcMain.handle('setup-wizard:get-state', () => store.get('setupWizard'))
+
+  ipcMain.handle('setup-wizard:update-step', (_e, args: Partial<SetupWizardState>) => {
+    const current = store.get('setupWizard')
+    const updated = { ...current, ...args }
+    // Auto-calculate completedAt
+    if (updated.cliInstalled && updated.authenticated && updated.agentCreated &&
+        updated.skillCreated && updated.memoryCreated && updated.triedWizard && !updated.completedAt) {
+      updated.completedAt = Date.now()
+    }
+    store.set('setupWizard', updated)
+    return updated
+  })
+
+  ipcMain.handle('setup-wizard:is-complete', () => {
+    const state = store.get('setupWizard')
+    return { complete: state.completedAt !== null, state }
   })
 }

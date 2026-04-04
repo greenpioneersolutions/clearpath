@@ -1979,26 +1979,9 @@ function getProgress(): {
   return { completed, total, percentage: total > 0 ? Math.round((completed / total) * 100) : 0, pathProgress }
 }
 
-function isPathUnlocked(pathId: string): boolean {
-  const path = PATHS.find((p) => p.id === pathId)
-  if (!path) return false
-  if (path.prerequisitePaths.length === 0) return true
-
-  const completedMap = store.get('completedLessons')
-  // Power User track: requires completing EITHER manager OR developer
-  if (pathId === 'power-user') {
-    return path.prerequisitePaths.some((prereqId) => {
-      const prereqPath = PATHS.find((p) => p.id === prereqId)
-      if (!prereqPath) return false
-      return prereqPath.modules.flatMap((m) => m.lessons).every((l) => completedMap[l.id])
-    })
-  }
-  // All other paths: require ALL prerequisites
-  return path.prerequisitePaths.every((prereqId) => {
-    const prereqPath = PATHS.find((p) => p.id === prereqId)
-    if (!prereqPath) return false
-    return prereqPath.modules.flatMap((m) => m.lessons).every((l) => completedMap[l.id])
-  })
+function isPathUnlocked(_pathId: string): boolean {
+  // All paths are always unlocked — users can invest time in any track as needed
+  return true
 }
 
 function getNextLesson(): Lesson | null {

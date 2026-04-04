@@ -275,9 +275,9 @@ export default function Work(): JSX.Element {
 
   // ── Session management ──────────────────────────────────────────────────
 
-  const startSession = useCallback(async (opts: { cli: 'copilot' | 'claude'; name?: string; workingDirectory?: string; initialPrompt?: string }) => {
+  const startSession = useCallback(async (opts: { cli: 'copilot' | 'claude'; name?: string; workingDirectory?: string; initialPrompt?: string; agent?: string }) => {
     const { sessionId } = (await window.electronAPI.invoke('cli:start-session', {
-      cli: opts.cli, mode: 'interactive', name: opts.name, workingDirectory: opts.workingDirectory, prompt: opts.initialPrompt,
+      cli: opts.cli, mode: 'interactive', name: opts.name, workingDirectory: opts.workingDirectory, prompt: opts.initialPrompt, agent: opts.agent,
     })) as { sessionId: string }
     const info: SessionInfo = { sessionId, name: opts.name, cli: opts.cli, status: 'running', startedAt: Date.now() }
     const initial: OutputMessage[] = opts.initialPrompt ? [{ id: '0', output: { type: 'text', content: opts.initialPrompt }, sender: 'user', timestamp: Date.now() }] : []
@@ -482,20 +482,23 @@ export default function Work(): JSX.Element {
     .sort((a, b) => b.info.startedAt - a.info.startedAt)
     .slice(0, 5)
   const selectedSession = selectedId ? sessions.get(selectedId) ?? null : null
+  // Derive a sensible CLI default from the most recent session (or fall back to copilot)
+  const lastUsedCli: 'copilot' | 'claude' = selectedSession?.info.cli ?? recentSessions[0]?.info.cli ?? 'copilot'
 
   return (
     <div className="flex h-full overflow-hidden">
       {/* Left: Panel Toolbar */}
-      <div className="w-12 bg-gray-900 border-r border-gray-800 flex flex-col items-center py-2 gap-1 flex-shrink-0">
+      <div className="w-12 flex flex-col items-center py-2 gap-1 flex-shrink-0" style={{ backgroundColor: 'var(--brand-dark-page)', borderRight: '1px solid var(--brand-dark-border)' }}>
         {PANELS.map((p) => (
           <button
             key={p.id}
             onClick={() => togglePanel(p.id)}
             className={`w-9 h-9 flex items-center justify-center rounded-lg transition-all ${
               activePanel === p.id
-                ? 'bg-indigo-600 text-white'
-                : 'text-gray-500 hover:bg-gray-800 hover:text-gray-300'
+                ? 'text-white'
+                : 'text-gray-500 hover:text-gray-300'
             }`}
+            style={activePanel === p.id ? { backgroundColor: 'var(--brand-btn-primary)' } : {}}
             title={p.label}
           >
             {p.icon}
@@ -504,27 +507,27 @@ export default function Work(): JSX.Element {
       </div>
 
       {/* Center: Session / Compose area */}
-      <div className="flex-1 flex flex-col min-w-0 bg-gray-950">
+      <div className="flex-1 flex flex-col min-w-0" style={{ backgroundColor: 'var(--brand-dark-page)' }}>
         {/* Header bar with mode toggle */}
-        <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-800 bg-gray-900 flex-shrink-0">
+        <div className="flex items-center gap-2 px-3 py-2 flex-shrink-0" style={{ backgroundColor: 'var(--brand-dark-page)', borderBottom: '1px solid var(--brand-dark-border)' }}>
           {/* Mode toggle */}
-          <div className="flex rounded-lg bg-gray-800 p-0.5 flex-shrink-0">
+          <div className="flex rounded-lg p-0.5 flex-shrink-0" style={{ backgroundColor: 'var(--brand-dark-card)' }}>
             <button
               onClick={() => setWorkMode('session')}
               className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
-                workMode === 'session' ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:text-gray-200'
+                workMode === 'session' ? 'text-white' : 'text-gray-400 hover:text-gray-200'
               }`}
             >Session</button>
             <button
               onClick={() => setWorkMode('wizard')}
               className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
-                workMode === 'wizard' ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:text-gray-200'
+                workMode === 'wizard' ? 'text-white' : 'text-gray-400 hover:text-gray-200'
               }`}
             >Wizard</button>
             <button
               onClick={() => setWorkMode('compose')}
               className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
-                workMode === 'compose' ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:text-gray-200'
+                workMode === 'compose' ? 'text-white' : 'text-gray-400 hover:text-gray-200'
               }`}
             >Compose</button>
             <button
@@ -678,10 +681,10 @@ export default function Work(): JSX.Element {
         {/* Wizard mode content */}
         {workMode === 'wizard' && (
           <SessionWizard
-            defaultCli="copilot"
+            defaultCli={lastUsedCli}
             onLaunchSession={(opts) => {
               void (async () => {
-                await startSession({ cli: opts.cli, name: opts.name, initialPrompt: opts.initialPrompt })
+                await startSession({ cli: opts.cli, name: opts.name, initialPrompt: opts.initialPrompt, agent: opts.agent })
                 setWorkMode('session')
               })()
             }}
@@ -789,6 +792,7 @@ export default function Work(): JSX.Element {
         <NewSessionModal
           onStart={(opts) => void startSession(opts)}
           onClose={() => setShowNewSession(false)}
+          defaultCli={lastUsedCli}
         />
       )}
 

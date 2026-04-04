@@ -39,10 +39,18 @@ interface WizardConfig {
   options: WizardOption[]    // The choices available
 }
 
+interface WizardContextSettings {
+  showUseContext: boolean     // Show the "Use Context" option in the wizard
+  showMemories: boolean       // Show memories tab in context picker
+  showAgents: boolean         // Show agents tab in context picker
+  showSkills: boolean         // Show skills tab in context picker
+}
+
 interface WizardStoreSchema {
   config: WizardConfig
   hasCompletedWizard: boolean   // Whether user has ever completed a wizard session
   completedCount: number        // Total completions
+  contextSettings: WizardContextSettings
 }
 
 // ── Defaults ─────────────────────────────────────────────────────────────────
@@ -219,6 +227,12 @@ const store = new Store<WizardStoreSchema>({
     config: DEFAULT_CONFIG,
     hasCompletedWizard: false,
     completedCount: 0,
+    contextSettings: {
+      showUseContext: true,
+      showMemories: true,
+      showAgents: true,
+      showSkills: true,
+    },
   },
 })
 
@@ -251,6 +265,19 @@ export function registerWizardHandlers(ipcMain: IpcMain): void {
     store.set('hasCompletedWizard', true)
     store.set('completedCount', store.get('completedCount') + 1)
     return { success: true }
+  })
+
+  // ── Context visibility settings ─────────────────────────────────────────────
+
+  ipcMain.handle('wizard:get-context-settings', () => {
+    return store.get('contextSettings')
+  })
+
+  ipcMain.handle('wizard:set-context-settings', (_e, args: Partial<WizardContextSettings>) => {
+    const current = store.get('contextSettings')
+    const updated = { ...current, ...args }
+    store.set('contextSettings', updated)
+    return updated
   })
 
   // Build the final prompt from a selected option and field values

@@ -1,4 +1,6 @@
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { FeatureFlagProvider } from './contexts/FeatureFlagContext'
+import { BrandingProvider } from './contexts/BrandingContext'
 import Layout from './components/Layout'
 import Home from './pages/Home'
 import Work from './pages/Work'
@@ -9,6 +11,8 @@ import SubAgentPopout from './pages/SubAgentPopout'
 
 export default function App(): JSX.Element {
   return (
+    <FeatureFlagProvider>
+    <BrandingProvider>
     <HashRouter>
       <Routes>
         <Route path="/" element={<Layout />}>
@@ -41,5 +45,7 @@ export default function App(): JSX.Element {
         <Route path="/settings" element={<Navigate to="/configure" replace />} />
       </Routes>
     </HashRouter>
+    </BrandingProvider>
+    </FeatureFlagProvider>
   )
 }

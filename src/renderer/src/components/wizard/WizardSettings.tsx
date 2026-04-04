@@ -16,20 +16,38 @@ interface WizardConfig {
 
 // ── Component ────────────────────────────────────────────────────────────────
 
+interface ContextSettings {
+  showUseContext: boolean
+  showMemories: boolean
+  showAgents: boolean
+  showSkills: boolean
+}
+
 export default function WizardSettings(): JSX.Element {
   const [config, setConfig] = useState<WizardConfig | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [editingOption, setEditingOption] = useState<string | null>(null)
   const [dirty, setDirty] = useState(false)
+  const [ctxSettings, setCtxSettings] = useState<ContextSettings>({ showUseContext: true, showMemories: true, showAgents: true, showSkills: true })
 
   const load = useCallback(async () => {
     setLoading(true)
-    const cfg = await window.electronAPI.invoke('wizard:get-config') as WizardConfig
+    const [cfg, ctx] = await Promise.all([
+      window.electronAPI.invoke('wizard:get-config') as Promise<WizardConfig>,
+      window.electronAPI.invoke('wizard:get-context-settings') as Promise<ContextSettings>,
+    ])
     setConfig(cfg)
+    if (ctx) setCtxSettings(ctx)
     setLoading(false)
     setDirty(false)
   }, [])
+
+  const updateCtxSetting = async (key: keyof ContextSettings, value: boolean) => {
+    const updated = { ...ctxSettings, [key]: value }
+    setCtxSettings(updated)
+    await window.electronAPI.invoke('wizard:set-context-settings', { [key]: value })
+  }
 
   useEffect(() => { void load() }, [load])
 
@@ -178,6 +196,49 @@ export default function WizardSettings(): JSX.Element {
           <input type="text" value={config.subtitle}
             onChange={(e) => updateConfig({ subtitle: e.target.value })}
             className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+        </div>
+      </div>
+
+      {/* Use Context settings */}
+      <div className="bg-white border border-gray-200 rounded-xl p-5 space-y-4">
+        <h3 className="text-sm font-semibold text-gray-800">Use Context</h3>
+        <p className="text-xs text-gray-500">
+          Control whether the "Use Context" option appears in the wizard, and which context types users can pick from.
+        </p>
+
+        <div className="space-y-3">
+          {/* Master toggle */}
+          <div className="flex items-center justify-between py-2">
+            <div>
+              <span className="text-sm text-gray-700">Show "Use Context" in wizard</span>
+              <p className="text-[10px] text-gray-400 mt-0.5">When off, the option is hidden from the wizard entirely</p>
+            </div>
+            <button onClick={() => void updateCtxSetting('showUseContext', !ctxSettings.showUseContext)}
+              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${ctxSettings.showUseContext ? 'bg-indigo-600' : 'bg-gray-300'}`}>
+              <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${ctxSettings.showUseContext ? 'translate-x-4' : 'translate-x-0.5'}`} />
+            </button>
+          </div>
+
+          {ctxSettings.showUseContext && (
+            <div className="pl-4 border-l-2 border-gray-200 space-y-3">
+              {([
+                { key: 'showMemories' as const, label: 'Memories', desc: 'Allow selecting saved notes and memories as context' },
+                { key: 'showAgents' as const, label: 'Agents', desc: 'Allow selecting a specific agent for the session' },
+                { key: 'showSkills' as const, label: 'Skills', desc: 'Allow selecting a skill to inject its instructions' },
+              ]).map(({ key, label, desc }) => (
+                <div key={key} className="flex items-center justify-between py-1">
+                  <div>
+                    <span className="text-xs font-medium text-gray-700">{label}</span>
+                    <p className="text-[10px] text-gray-400">{desc}</p>
+                  </div>
+                  <button onClick={() => void updateCtxSetting(key, !ctxSettings[key])}
+                    className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${ctxSettings[key] ? 'bg-indigo-600' : 'bg-gray-300'}`}>
+                    <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${ctxSettings[key] ? 'translate-x-3' : 'translate-x-0.5'}`} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 

@@ -20,6 +20,7 @@ const WIDGET_DEFS: Array<{ type: string; name: string; description: string }> = 
   { type: 'repo-status', name: 'Repo Status', description: 'Git repository overview' },
   { type: 'token-usage', name: 'Token Usage', description: 'Token spend over recent sessions' },
   { type: 'policy-status', name: 'Policy Status', description: 'Active policy and enforcement mode' },
+  { type: 'setup-wizard', name: 'Setup Progress', description: 'Guided onboarding checklist — auto-hides when complete' },
 ]
 
 export default function CustomDashboard(): JSX.Element {
@@ -200,6 +201,9 @@ function WidgetBody({ type }: { type: string; config: Record<string, unknown> })
           case 'workspace-activity':
             result = await window.electronAPI.invoke('workspace:list')
             break
+          case 'setup-wizard':
+            result = await window.electronAPI.invoke('setup-wizard:get-state')
+            break
         }
         if (!cancelled) setData(result)
       } catch {
@@ -368,7 +372,7 @@ function WidgetBody({ type }: { type: string; config: Record<string, unknown> })
               </div>
               <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden flex">
                 <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${totalTokens > 0 ? (inputTokens / totalTokens) * 100 : 50}%` }} />
-                <div className="h-full bg-[#5DCAA5] rounded-full" style={{ width: `${totalTokens > 0 ? (outputTokens / totalTokens) * 100 : 50}%` }} />
+                <div className="h-full rounded-full" style={{ backgroundColor: 'var(--brand-accent-light)', width: `${totalTokens > 0 ? (outputTokens / totalTokens) * 100 : 50}%` }} />
               </div>
               <div className="flex items-center justify-between text-[10px] text-gray-500">
                 <span>Output</span><span>{formatTokens(outputTokens)}</span>
@@ -467,6 +471,52 @@ function WidgetBody({ type }: { type: string; config: Record<string, unknown> })
             </div>
           ))}
           {workspaces.length > 4 && <p className="text-[10px] text-gray-400">+{workspaces.length - 4} more</p>}
+        </div>
+      )
+    }
+
+    // ── Setup Wizard Progress ────────────────────────────────────────
+    case 'setup-wizard': {
+      const sw = data as { cliInstalled: boolean; authenticated: boolean; agentCreated: boolean; skillCreated: boolean; memoryCreated: boolean; triedWizard: boolean; completedAt: number | null } | null
+      if (sw?.completedAt) {
+        return (
+          <div className="text-center space-y-1 py-2">
+            <span className="text-2xl">✅</span>
+            <p className="text-xs text-green-600 font-medium">Setup Complete</p>
+            <p className="text-[10px] text-gray-400">You're all set! You can remove this widget.</p>
+          </div>
+        )
+      }
+      const steps = [
+        { label: 'CLI Installed', done: sw?.cliInstalled },
+        { label: 'Authenticated', done: sw?.authenticated },
+        { label: 'Agent Created', done: sw?.agentCreated },
+        { label: 'Skill Created', done: sw?.skillCreated },
+        { label: 'Memory Created', done: sw?.memoryCreated },
+        { label: 'Tried Wizard', done: sw?.triedWizard },
+      ]
+      const doneCount = steps.filter((s) => s.done).length
+      return (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-gray-700">Setup Progress</span>
+            <span className="text-[10px] text-gray-400">{doneCount}/{steps.length}</span>
+          </div>
+          <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden">
+            <div className="h-full bg-indigo-500 rounded-full transition-all" style={{ width: `${(doneCount / steps.length) * 100}%` }} />
+          </div>
+          <div className="space-y-1">
+            {steps.map((s) => (
+              <div key={s.label} className="flex items-center gap-2 text-xs">
+                <span className={`w-2 h-2 rounded-full flex-shrink-0 ${s.done ? 'bg-green-400' : 'bg-gray-300'}`} />
+                <span className={s.done ? 'text-gray-400 line-through' : 'text-gray-700'}>{s.label}</span>
+              </div>
+            ))}
+          </div>
+          <a href="#" onClick={(e) => { e.preventDefault(); /* Navigate to configure/setup */ }}
+            className="block text-center text-[10px] text-indigo-600 hover:text-indigo-500 font-medium pt-1">
+            Continue Setup →
+          </a>
         </div>
       )
     }

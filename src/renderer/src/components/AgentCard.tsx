@@ -125,13 +125,13 @@ export function AgentCard({
             {isActive ? 'Deselect' : 'Use'}
           </button>
 
-          {!isBuiltin && onEdit && (
+          {onEdit && (
             <button
               onClick={() => onEdit(agent)}
               className="text-xs py-1.5 px-3 rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
-              title="Edit agent file"
+              title={isBuiltin ? 'Customize (creates a copy)' : 'Edit agent file'}
             >
-              Edit
+              {isBuiltin ? 'Customize' : 'Edit'}
             </button>
           )}
 

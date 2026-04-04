@@ -158,7 +158,7 @@ export default function FileEditor({ cli, workingDirectory, onNewFile }: Props):
         {selected ? (
           <>
             {/* Header bar */}
-            <div className="flex items-center gap-3 px-4 py-2 border-b border-gray-700 bg-gray-850 flex-shrink-0">
+            <div className="flex items-center gap-3 px-4 py-2 border-b border-gray-700 bg-gray-800 flex-shrink-0">
               <span className="text-sm font-mono text-gray-300 truncate flex-1" title={selected.path}>
                 {selected.path}
               </span>

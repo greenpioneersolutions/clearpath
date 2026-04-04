@@ -17,6 +17,9 @@ export default function SkillsPanel({ onInsertCommand, onCreateSkill, onManageSk
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
   const [cwd, setCwd] = useState('.')
+  const [selectMode, setSelectMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [exporting, setExporting] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -38,6 +41,25 @@ export default function SkillsPanel({ onInsertCommand, onCreateSkill, onManageSk
     const slug = skill.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')
     onInsertCommand(`/${slug}`)
     void window.electronAPI.invoke('skills:record-usage', { skillId: skill.id })
+  }
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
+  const handleBulkExport = async () => {
+    if (selectedIds.size === 0) return
+    setExporting(true)
+    for (const skill of skills.filter((s) => selectedIds.has(s.id))) {
+      await window.electronAPI.invoke('skills:export', { path: skill.path, name: skill.name })
+    }
+    setExporting(false)
+    setSelectMode(false)
+    setSelectedIds(new Set())
   }
 
   const filtered = skills.filter((s) => {
@@ -74,6 +96,19 @@ export default function SkillsPanel({ onInsertCommand, onCreateSkill, onManageSk
               !skill.enabled ? 'opacity-50' : ''
             }`}>
               <div className="flex items-start gap-2">
+                {selectMode && (
+                  <button onClick={() => toggleSelect(skill.id)} className="flex-shrink-0 mt-0.5">
+                    <div className={`w-4 h-4 rounded border flex items-center justify-center ${
+                      selectedIds.has(skill.id) ? 'bg-indigo-600 border-indigo-600' : 'border-gray-300'
+                    }`}>
+                      {selectedIds.has(skill.id) && (
+                        <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                        </svg>
+                      )}
+                    </div>
+                  </button>
+                )}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1.5">
                     <span className="text-sm font-medium text-gray-800 truncate">{skill.name}</span>
@@ -117,6 +152,18 @@ export default function SkillsPanel({ onInsertCommand, onCreateSkill, onManageSk
           className="flex-1 py-2 text-xs bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium">
           + Create Skill
         </button>
+        {skills.length > 0 && (
+          <button onClick={() => { setSelectMode(!selectMode); setSelectedIds(new Set()) }}
+            className={`px-3 py-2 text-xs rounded-lg transition-colors ${selectMode ? 'bg-amber-100 text-amber-700' : 'text-gray-500 hover:text-gray-700'}`}>
+            {selectMode ? 'Cancel' : 'Export'}
+          </button>
+        )}
+        {selectMode && selectedIds.size > 0 && (
+          <button onClick={() => void handleBulkExport()} disabled={exporting}
+            className="px-3 py-2 text-xs bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-40 transition-colors font-medium">
+            {exporting ? 'Exporting...' : `Export ${selectedIds.size}`}
+          </button>
+        )}
         <button onClick={onManageSkills}
           className="px-3 py-2 text-xs text-gray-500 hover:text-gray-700 transition-colors">
           Manage

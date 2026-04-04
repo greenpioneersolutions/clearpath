@@ -1,16 +1,19 @@
 import { NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useState, useEffect } from 'react'
 import NotificationBell from './notifications/NotificationBell'
+import { useFeatureFlags, type FeatureFlags } from '../contexts/FeatureFlagContext'
+import { useBranding } from '../contexts/BrandingContext'
 
 interface Workspace {
   id: string
   name: string
 }
 
-const NAV_ITEMS = [
+const NAV_ITEMS: Array<{ to: string; label: string; flagKey?: keyof FeatureFlags; icon: JSX.Element }> = [
   {
     to: '/',
     label: 'Home',
+    flagKey: 'showDashboard',
     icon: (
       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
@@ -20,6 +23,7 @@ const NAV_ITEMS = [
   {
     to: '/work',
     label: 'Work',
+    flagKey: 'showWork',
     icon: (
       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
@@ -29,6 +33,7 @@ const NAV_ITEMS = [
   {
     to: '/insights',
     label: 'Insights',
+    flagKey: 'showInsights',
     icon: (
       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
@@ -38,6 +43,7 @@ const NAV_ITEMS = [
   {
     to: '/configure',
     label: 'Configure',
+    flagKey: 'showConfigure',
     icon: (
       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
@@ -48,6 +54,8 @@ const NAV_ITEMS = [
 ]
 
 export default function Sidebar(): JSX.Element {
+  const { flags } = useFeatureFlags()
+  const { brand } = useBranding()
   const [collapsed, setCollapsed] = useState(false)
   const [policyName, setPolicyName] = useState('Standard')
   const [copilotOk, setCopilotOk] = useState(false)
@@ -93,19 +101,26 @@ export default function Sidebar(): JSX.Element {
   const linkClass = ({ isActive }: { isActive: boolean }): string =>
     `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
       isActive
-        ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20'
-        : 'text-gray-400 hover:bg-gray-800 hover:text-white'
+        ? 'text-white shadow-lg'
+        : 'hover:text-white'
     } ${collapsed ? 'justify-center' : ''}`
 
+  // Inline style for active/inactive states (brand-driven)
+  const linkStyle = (isActive: boolean): React.CSSProperties =>
+    isActive
+      ? { backgroundColor: brand.colorNavActive, boxShadow: `0 4px 12px ${brand.colorNavActive}33` }
+      : { color: brand.colorSidebarText }
+
   return (
-    <aside className={`${collapsed ? 'w-16' : 'w-52'} bg-gray-900 flex flex-col h-screen transition-all duration-200 flex-shrink-0`}>
+    <aside className={`${collapsed ? 'w-16' : 'w-52'} flex flex-col h-screen transition-all duration-200 flex-shrink-0`}
+      style={{ backgroundColor: brand.colorSidebarBg }}>
 
       {/* ── Header: Logo + Bell ──────────────────────────────────────────── */}
       <div className={`px-3 pt-4 pb-2 ${collapsed ? 'text-center' : ''}`}>
         <div className="flex items-center justify-between">
           {collapsed ? (
             /* Collapsed: compass icon only */
-            <div className="mx-auto w-8 h-8 rounded-lg bg-[#5B4FC4] flex items-center justify-center">
+            <div className="mx-auto w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: brand.colorPrimary }}>
               <svg width="20" height="20" viewBox="0 0 40 40" fill="none">
                 <circle cx="20" cy="20" r="13" stroke="#fff" strokeWidth="1" opacity="0.15"/>
                 <g opacity="0.35">
@@ -114,19 +129,19 @@ export default function Sidebar(): JSX.Element {
                   <line x1="7" y1="20" x2="10" y2="20" stroke="#fff" strokeWidth="1.5" strokeLinecap="round"/>
                   <line x1="30" y1="20" x2="33" y2="20" stroke="#fff" strokeWidth="1.5" strokeLinecap="round"/>
                 </g>
-                <path d="M20 20 L30 10" fill="none" stroke="#5DCAA5" strokeWidth="1.5" strokeLinecap="round" opacity="0.85"/>
+                <path d="M20 20 L30 10" fill="none" stroke={brand.colorAccentLight} strokeWidth="1.5" strokeLinecap="round" opacity="0.85"/>
                 <g transform="translate(20,20) rotate(-45)">
                   <polygon points="0,-11 2.5,-2 0,-4 -2.5,-2" fill="#fff"/>
                 </g>
-                <circle cx="20" cy="20" r="3" fill="#5B4FC4" stroke="#fff" strokeWidth="1.5"/>
-                <circle cx="20" cy="20" r="1.5" fill="#5DCAA5"/>
-                <circle cx="31" cy="9" r="2" fill="#5DCAA5"/>
+                <circle cx="20" cy="20" r="3" fill={brand.colorPrimary} stroke="#fff" strokeWidth="1.5"/>
+                <circle cx="20" cy="20" r="1.5" fill={brand.colorAccentLight}/>
+                <circle cx="31" cy="9" r="2" fill={brand.colorAccentLight}/>
               </svg>
             </div>
           ) : (
             /* Expanded: compass icon + wordmark */
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-[#5B4FC4] flex items-center justify-center flex-shrink-0">
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: brand.colorPrimary }}>
                 <svg width="20" height="20" viewBox="0 0 40 40" fill="none">
                   <circle cx="20" cy="20" r="13" stroke="#fff" strokeWidth="1" opacity="0.15"/>
                   <g opacity="0.35">
@@ -135,19 +150,19 @@ export default function Sidebar(): JSX.Element {
                     <line x1="7" y1="20" x2="10" y2="20" stroke="#fff" strokeWidth="1.5" strokeLinecap="round"/>
                     <line x1="30" y1="20" x2="33" y2="20" stroke="#fff" strokeWidth="1.5" strokeLinecap="round"/>
                   </g>
-                  <path d="M20 20 L30 10" fill="none" stroke="#5DCAA5" strokeWidth="1.5" strokeLinecap="round" opacity="0.85"/>
+                  <path d="M20 20 L30 10" fill="none" stroke={brand.colorAccentLight} strokeWidth="1.5" strokeLinecap="round" opacity="0.85"/>
                   <g transform="translate(20,20) rotate(-45)">
                     <polygon points="0,-11 2.5,-2 0,-4 -2.5,-2" fill="#fff"/>
                   </g>
-                  <circle cx="20" cy="20" r="3" fill="#5B4FC4" stroke="#fff" strokeWidth="1.5"/>
-                  <circle cx="20" cy="20" r="1.5" fill="#5DCAA5"/>
-                  <circle cx="31" cy="9" r="2" fill="#5DCAA5"/>
+                  <circle cx="20" cy="20" r="3" fill={brand.colorPrimary} stroke="#fff" strokeWidth="1.5"/>
+                  <circle cx="20" cy="20" r="1.5" fill={brand.colorAccentLight}/>
+                  <circle cx="31" cy="9" r="2" fill={brand.colorAccentLight}/>
                 </svg>
               </div>
               <h1 className="font-semibold text-sm tracking-tight">
-                <span className="text-white">Clear</span>
-                <span className="text-[#7F77DD]">Path</span>
-                <span className="text-[#1D9E75]">AI</span>
+                <span className="text-white">{brand.wordmarkParts[0]}</span>
+                <span style={{ color: brand.colorSecondary }}>{brand.wordmarkParts[1]}</span>
+                <span style={{ color: brand.colorAccent }}>{brand.wordmarkParts[2]}</span>
               </h1>
             </div>
           )}
@@ -185,7 +200,7 @@ export default function Sidebar(): JSX.Element {
           {/* Policy badge */}
           <button
             onClick={() => navigate('/configure')}
-            className="w-full text-left px-2 py-1 rounded-md bg-gray-800 hover:bg-gray-750 transition-colors"
+            className="w-full text-left px-2 py-1 rounded-md bg-gray-800 hover:bg-gray-700 transition-colors"
             title="Active policy — click to configure"
           >
             <span className="text-[10px] text-gray-500 uppercase tracking-wider">Policy</span>
@@ -209,19 +224,19 @@ export default function Sidebar(): JSX.Element {
       )}
 
       {/* ── Divider ──────────────────────────────────────────────────────── */}
-      <div className="mx-3 border-t border-gray-800" />
+      <div className="mx-3 border-t" style={{ borderColor: `${brand.colorSidebarText}22` }} />
 
       {/* ── Nav items ────────────────────────────────────────────────────── */}
       <nav className="flex-1 px-2 py-3 space-y-1">
-        {NAV_ITEMS.map((item, idx) => (
+        {NAV_ITEMS.filter((item) => !item.flagKey || flags[item.flagKey]).map((item, idx) => (
           <div key={item.to}>
-            <NavLink to={item.to} end={item.to === '/'} className={linkClass}>
+            <NavLink to={item.to} end={item.to === '/'} className={linkClass} style={({ isActive }) => linkStyle(isActive)}>
               {item.icon}
               {!collapsed && <span>{item.label}</span>}
             </NavLink>
 
             {/* Conditional Learn nav — between Work (idx 1) and Insights (idx 2) */}
-            {idx === 1 && !learnDismissed && learnPct < 100 && (
+            {idx === 1 && flags.showLearn && !learnDismissed && learnPct < 100 && (
               <NavLink to="/learn" className={linkClass}>
                 {/* Graduation cap with progress ring */}
                 <div className="relative w-5 h-5 flex-shrink-0">

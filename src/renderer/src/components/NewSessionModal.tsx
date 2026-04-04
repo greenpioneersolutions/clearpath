@@ -10,10 +10,11 @@ interface NewSessionOptions {
 interface Props {
   onStart: (opts: NewSessionOptions) => void
   onClose: () => void
+  defaultCli?: 'copilot' | 'claude'
 }
 
-export default function NewSessionModal({ onStart, onClose }: Props): JSX.Element {
-  const [cli, setCli] = useState<'copilot' | 'claude'>('copilot')
+export default function NewSessionModal({ onStart, onClose, defaultCli }: Props): JSX.Element {
+  const [cli, setCli] = useState<'copilot' | 'claude'>(defaultCli ?? 'copilot')
   const [name, setName] = useState('')
   const [workingDirectory, setWorkingDirectory] = useState('')
   const [initialPrompt, setInitialPrompt] = useState('')

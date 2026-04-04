@@ -169,7 +169,7 @@ function scanDirectory(dir: string, cli: 'copilot' | 'claude', extFilter: string
 
     const { meta, body } = parseFrontmatter(content)
     const name = String(meta['name'] ?? basename(entry, extFilter)).trim()
-    const id = `${cli}:file:${slugify(name)}-${basename(entry, extFilter)}`
+    const id = `${cli}:file:${basename(entry, extFilter)}`
 
     const tools = Array.isArray(meta['tools'])
       ? (meta['tools'] as string[])

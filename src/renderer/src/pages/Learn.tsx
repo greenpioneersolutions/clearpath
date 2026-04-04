@@ -502,19 +502,16 @@ export default function Learn(): JSX.Element {
         {/* Left: paths */}
         <div className="flex-1 space-y-4">
           <h1 className="text-2xl font-bold text-gray-900">Learning Center</h1>
-          <p className="text-sm text-gray-500">Choose a learning path based on your role. Start with Getting Started — it unlocks everything else.</p>
+          <p className="text-sm text-gray-500">Choose a learning path based on your role. Jump into any track that fits your needs.</p>
 
           {paths.map((path) => (
-            <button key={path.id} onClick={() => path.unlocked && openPath(path)} disabled={!path.unlocked}
-              className={`w-full text-left bg-white border rounded-xl p-5 transition-all ${
-                path.unlocked ? 'border-gray-200 hover:border-indigo-300 hover:shadow-sm' : 'border-gray-100 opacity-60'
-              }`}>
+            <button key={path.id} onClick={() => openPath(path)}
+              className="w-full text-left bg-white border border-gray-200 rounded-xl p-5 transition-all hover:border-indigo-300 hover:shadow-sm">
               <div className="flex items-start gap-3">
                 <span className="text-2xl">{path.icon}</span>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <h3 className="text-sm font-semibold text-gray-900">{path.name}</h3>
-                    {!path.unlocked && <span className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">Locked</span>}
                     {path.id === progress.selectedPath && <span className="text-[10px] bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded">Selected</span>}
                   </div>
                   <p className="text-xs text-gray-500 mt-0.5">{path.description}</p>

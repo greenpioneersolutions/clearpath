@@ -10,8 +10,10 @@ import LaunchCommandPreview from '../components/settings/LaunchCommandPreview'
 import EnvVarsEditor from '../components/settings/EnvVarsEditor'
 import NotificationPreferences from '../components/notifications/NotificationPreferences'
 import WebhookManager from '../components/notifications/WebhookManager'
+import DataManagement from '../components/settings/DataManagement'
+import FeatureFlagSettings from '../components/settings/FeatureFlagSettings'
 
-type Tab = 'flags' | 'model' | 'budget' | 'plugins' | 'profiles' | 'env' | 'notifications' | 'webhooks'
+type Tab = 'flags' | 'model' | 'budget' | 'plugins' | 'profiles' | 'env' | 'notifications' | 'webhooks' | 'data' | 'features'
 
 const TABS: { key: Tab; label: string }[] = [
   { key: 'flags', label: 'CLI Flags' },
@@ -22,6 +24,8 @@ const TABS: { key: Tab; label: string }[] = [
   { key: 'env', label: 'Environment' },
   { key: 'notifications', label: 'Notifications' },
   { key: 'webhooks', label: 'Webhooks' },
+  { key: 'data', label: 'Data Management' },
+  { key: 'features', label: 'Feature Flags' },
 ]
 
 export default function Settings(): JSX.Element {
@@ -171,6 +175,10 @@ export default function Settings(): JSX.Element {
         {tab === 'notifications' && <NotificationPreferences />}
 
         {tab === 'webhooks' && <WebhookManager />}
+
+        {tab === 'data' && <DataManagement />}
+
+        {tab === 'features' && <FeatureFlagSettings />}
       </div>
 
       {/* Launch Command Preview — always visible at bottom */}

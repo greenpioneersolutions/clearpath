@@ -651,18 +651,47 @@ export class CLIManager {
       }
     })
 
+    // Track recent stderr messages for deduplication (avoids spam from repeated policy warnings)
+    const recentStderr = new Set<string>()
+    let stderrFlushTimer: ReturnType<typeof setTimeout> | null = null
+
     proc.stderr?.on('data', (chunk: Buffer) => {
       const raw = chunk.toString()
       console.log(`[CLIManager:${session.info.cli}] stderr:`, JSON.stringify(raw.slice(0, 300)))
       const wc = this.getWebContents()
       if (!wc || wc.isDestroyed()) return
 
+      const trimmed = raw.trim()
+      if (!trimmed) return
+
       // Detect usage/stats output and send as usage event instead of error
-      const isUsageStats = /total usage est|premium request|api time spent|session time|code changes|breakdown by ai model/i.test(raw)
+      const isUsageStats = /total usage est|premium request|api time spent|session time|code changes|breakdown by ai model/i.test(trimmed)
       if (isUsageStats) {
-        wc.send('cli:usage', { sessionId, usage: raw.trim() })
+        wc.send('cli:usage', { sessionId, usage: trimmed })
+        return
+      }
+
+      // Detect organization policy / MCP warnings — show as status, not error
+      const isPolicyWarning = /(?:mcp\s+server|organization.*policy|disabled\s+by|third[- ]party|only\s+built[- ]in)/i.test(trimmed)
+
+      // Deduplicate repeated messages — suppress exact duplicates within a rolling window
+      const dedupeKey = trimmed.slice(0, 200)
+      if (recentStderr.has(dedupeKey)) {
+        console.log(`[CLIManager:${session.info.cli}] suppressed duplicate stderr`)
+        return
+      }
+      recentStderr.add(dedupeKey)
+
+      // Clear the dedup set periodically so genuinely new messages come through
+      if (stderrFlushTimer) clearTimeout(stderrFlushTimer)
+      stderrFlushTimer = setTimeout(() => recentStderr.clear(), 30_000)
+
+      if (isPolicyWarning) {
+        // Send as a status message (grey pill) instead of a red error block
+        wc.send('cli:output', { sessionId, output: { type: 'status', content: trimmed, metadata: { source: 'policy' } } })
+        session.messageLog.push({ type: 'status', content: trimmed, metadata: { source: 'policy' } })
       } else {
-        wc.send('cli:error', { sessionId, error: raw })
+        wc.send('cli:error', { sessionId, error: trimmed })
       }
     })
 

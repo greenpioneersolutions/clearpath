@@ -138,7 +138,8 @@ export default function SchedulePanel({ cli }: Props): JSX.Element {
 
         {/* Toast */}
         {message && (
-          <div className="mb-4 text-xs px-3 py-2 rounded-lg bg-[#1D9E75]/10 text-[#5DCAA5] border border-[#1D9E75]/20 animate-fadeIn">
+          <div className="mb-4 text-xs px-3 py-2 rounded-lg animate-fadeIn"
+            style={{ backgroundColor: 'color-mix(in srgb, var(--brand-accent) 10%, transparent)', color: 'var(--brand-accent-light)', border: '1px solid color-mix(in srgb, var(--brand-accent) 20%, transparent)' }}>
             {message}
           </div>
         )}
@@ -173,10 +174,12 @@ export default function SchedulePanel({ cli }: Props): JSX.Element {
 
               <button
                 onClick={() => { void loadPromptTemplates(); setView('pick-template') }}
-                className="group bg-gray-900 border border-gray-800 hover:border-[#5DCAA5]/40 rounded-2xl p-5 text-left transition-all hover:shadow-lg hover:shadow-[#5DCAA5]/5"
+                className="group bg-gray-900 border border-gray-800 rounded-2xl p-5 text-left transition-all hover:shadow-lg"
+                style={{ ['--tw-shadow-color' as string]: 'color-mix(in srgb, var(--brand-accent-light) 5%, transparent)' }}
               >
-                <div className="w-10 h-10 rounded-xl bg-[#1D9E75]/10 flex items-center justify-center mb-3 group-hover:bg-[#1D9E75]/20 transition-colors">
-                  <svg className="w-5 h-5 text-[#5DCAA5]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center mb-3 transition-colors"
+                  style={{ backgroundColor: 'color-mix(in srgb, var(--brand-accent) 10%, transparent)' }}>
+                  <svg className="w-5 h-5" style={{ color: 'var(--brand-accent-light)' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                   </svg>
                 </div>

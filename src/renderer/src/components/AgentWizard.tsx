@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import type { AgentDef } from '../types/ipc'
 
 interface Props {
@@ -6,6 +6,7 @@ interface Props {
   onClose: () => void
   onCreated: (agent: AgentDef) => void
   workingDir?: string
+  defaultCli?: 'copilot' | 'claude'
 }
 
 const COPILOT_TOOLS = [
@@ -16,13 +17,19 @@ const CLAUDE_TOOLS = [
   'Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep',
   'WebSearch', 'WebFetch', 'Agent', 'TodoWrite',
 ]
-const MODELS = [
-  'claude-sonnet-4-6',
+const COPILOT_MODELS = [
+  'claude-sonnet-4.5',
+  'claude-sonnet-4',
   'claude-opus-4-6',
-  'claude-haiku-4-5',
-  'gpt-4o',
-  'gpt-4.1',
+  'gpt-5',
+  'gpt-5.3-codex',
   'gemini-3-pro',
+  'gpt-5.4-mini',
+]
+const CLAUDE_MODELS = [
+  'sonnet',
+  'opus',
+  'haiku',
 ]
 
 type Step = 'basic' | 'model-tools' | 'prompt'
@@ -45,15 +52,24 @@ const INITIAL_FORM: FormState = {
   prompt: '',
 }
 
-export function AgentWizard({ isOpen, onClose, onCreated, workingDir }: Props): JSX.Element | null {
+export function AgentWizard({ isOpen, onClose, onCreated, workingDir, defaultCli }: Props): JSX.Element | null {
   const [step, setStep] = useState<Step>('basic')
-  const [form, setForm] = useState<FormState>(INITIAL_FORM)
+  const [form, setForm] = useState<FormState>({ ...INITIAL_FORM, cli: defaultCli ?? 'copilot' })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Sync form CLI when wizard opens with a different defaultCli
+  useEffect(() => {
+    if (isOpen && defaultCli) {
+      setForm((f) => f.cli !== defaultCli ? { ...INITIAL_FORM, cli: defaultCli } : f)
+      setStep('basic')
+    }
+  }, [isOpen, defaultCli])
 
   if (!isOpen) return null
 
   const toolOptions = form.cli === 'copilot' ? COPILOT_TOOLS : CLAUDE_TOOLS
+  const modelOptions = form.cli === 'copilot' ? COPILOT_MODELS : CLAUDE_MODELS
 
   const toggleTool = (tool: string) =>
     setForm((f) => ({
@@ -118,7 +134,7 @@ export function AgentWizard({ isOpen, onClose, onCreated, workingDir }: Props): 
                   {(['copilot', 'claude'] as const).map((c) => (
                     <button
                       key={c}
-                      onClick={() => setForm((f) => ({ ...f, cli: c, tools: [] }))}
+                      onClick={() => setForm((f) => ({ ...f, cli: c, tools: [], model: '' }))}
                       className={`flex-1 py-2 text-sm font-medium rounded-lg border transition-colors ${
                         form.cli === c
                           ? c === 'copilot'
@@ -164,7 +180,7 @@ export function AgentWizard({ isOpen, onClose, onCreated, workingDir }: Props): 
                   className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-300"
                 />
                 <datalist id="model-datalist">
-                  {MODELS.map((m) => <option key={m} value={m} />)}
+                  {modelOptions.map((m) => <option key={m} value={m} />)}
                 </datalist>
               </div>
 

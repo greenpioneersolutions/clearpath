@@ -29,13 +29,13 @@ interface AgentListResult {
 }
 
 interface SkillItem {
-  id: string; name: string; description: string; scope: string; cli: string; enabled: boolean
+  id: string; name: string; description: string; scope: string; cli: string; enabled: boolean; path: string
 }
 
 // ── Props ────────────────────────────────────────────────────────────────────
 
 interface Props {
-  onLaunchSession: (opts: { cli: 'copilot' | 'claude'; name: string; initialPrompt: string }) => void
+  onLaunchSession: (opts: { cli: 'copilot' | 'claude'; name: string; initialPrompt: string; agent?: string }) => void
   defaultCli: 'copilot' | 'claude'
 }
 
@@ -82,15 +82,23 @@ export default function SessionWizard({ onLaunchSession, defaultCli }: Props): J
   const [skills, setSkills] = useState<SkillItem[]>([])
   const [contextSearch, setContextSearch] = useState('')
   const [contextTab, setContextTab] = useState<'memories' | 'agents' | 'skills'>('memories')
+  const [showFullPrompt, setShowFullPrompt] = useState(false)
   const [contextPage, setContextPage] = useState(0)
   const CONTEXT_PAGE_SIZE = 10
+
+  // Context visibility settings
+  const [ctxSettings, setCtxSettings] = useState({ showUseContext: true, showMemories: true, showAgents: true, showSkills: true })
 
   // ── Load config ──────────────────────────────────────────────────────────
 
   const load = useCallback(async () => {
     setLoading(true)
-    const cfg = await window.electronAPI.invoke('wizard:get-config') as WizardConfig
+    const [cfg, ctxCfg] = await Promise.all([
+      window.electronAPI.invoke('wizard:get-config') as Promise<WizardConfig>,
+      window.electronAPI.invoke('wizard:get-context-settings') as Promise<typeof ctxSettings>,
+    ])
     setConfig(cfg)
+    if (ctxCfg) setCtxSettings(ctxCfg)
     setLoading(false)
   }, [])
 
@@ -144,7 +152,7 @@ export default function SessionWizard({ onLaunchSession, defaultCli }: Props): J
   }
 
   const handleContextComplete = async () => {
-    // Build prompt from context selections
+    // Build prompt from context selections — only include actual content that matters
     const parts: string[] = []
 
     // Add memory content
@@ -158,16 +166,24 @@ export default function SessionWizard({ onLaunchSession, defaultCli }: Props): J
       }
     }
 
-    // Add agent context
-    if (selectedAgent) {
-      const agent = agents.find((a) => a.id === selectedAgent)
-      if (agent) parts.push(`[Using agent: ${agent.name} — ${agent.description}]`)
-    }
+    // Agent is passed via --agent flag, NOT embedded in prompt text
+    // (handled in handleLaunch)
 
-    // Add skill context
+    // Read and inject actual skill content so the CLI receives the instructions
     if (selectedSkill) {
       const skill = skills.find((s) => s.id === selectedSkill)
-      if (skill) parts.push(`[Using skill: ${skill.name} — ${skill.description}]`)
+      if (skill) {
+        try {
+          const result = await window.electronAPI.invoke('skills:get', { path: skill.path }) as { body?: string; content?: string }
+          const skillBody = result.body || result.content || ''
+          if (skillBody.trim()) {
+            parts.push(`--- Skill: ${skill.name} ---\n${skillBody}`)
+          }
+        } catch {
+          // Skill file unreadable — include name reference as fallback
+          parts.push(`[Using skill: ${skill.name} — ${skill.description}]`)
+        }
+      }
     }
 
     let prompt = ''
@@ -185,7 +201,11 @@ export default function SessionWizard({ onLaunchSession, defaultCli }: Props): J
     if (!builtPrompt) return
     await window.electronAPI.invoke('wizard:mark-completed')
     const name = sessionName.trim() || `${selectedOption?.label ?? 'Context'} Session`
-    onLaunchSession({ cli, name, initialPrompt: builtPrompt })
+    // Pass the selected agent name so it gets forwarded as --agent flag
+    const agentName = selectedAgent
+      ? agents.find((a) => a.id === selectedAgent)?.name ?? undefined
+      : undefined
+    onLaunchSession({ cli, name, initialPrompt: builtPrompt, agent: agentName })
   }
 
   const handleReset = () => {
@@ -199,6 +219,7 @@ export default function SessionWizard({ onLaunchSession, defaultCli }: Props): J
     setSelectedSkill(null)
     setContextPrompt('')
     setContextSearch('')
+    setShowFullPrompt(false)
   }
 
   const toggleNoteId = (id: string) => {
@@ -251,8 +272,8 @@ export default function SessionWizard({ onLaunchSession, defaultCli }: Props): J
               </button>
             ))}
 
-            {/* Fixed "Use Context" option — always present */}
-            <div className="border-t border-gray-800 pt-3 mt-3">
+            {/* "Use Context" option — shown based on wizard context settings */}
+            {ctxSettings.showUseContext && <div className="border-t border-gray-800 pt-3 mt-3">
               <button
                 onClick={handleChooseContext}
                 className="w-full text-left bg-gray-900 border border-gray-800 rounded-xl p-5 hover:border-purple-500/50 hover:bg-gray-900/80 transition-all group"
@@ -270,7 +291,7 @@ export default function SessionWizard({ onLaunchSession, defaultCli }: Props): J
                   </svg>
                 </div>
               </button>
-            </div>
+            </div>}
           </div>
         </div>
       </div>
@@ -331,13 +352,13 @@ export default function SessionWizard({ onLaunchSession, defaultCli }: Props): J
               className="w-full pl-9 pr-3 py-2.5 bg-gray-900 border border-gray-700 rounded-lg text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
           </div>
 
-          {/* Tabs */}
+          {/* Tabs — only show enabled context types */}
           <div className="flex rounded-lg bg-gray-800 p-0.5">
             {([
-              ['memories', `Memories${selectedNoteIds.size > 0 ? ` (${selectedNoteIds.size})` : ''}`],
-              ['agents', `Agents${selectedAgent ? ' (1)' : ''}`],
-              ['skills', `Skills${selectedSkill ? ' (1)' : ''}`],
-            ] as const).map(([key, label]) => (
+              ['memories', `Memories${selectedNoteIds.size > 0 ? ` (${selectedNoteIds.size})` : ''}`, ctxSettings.showMemories],
+              ['agents', `Agents${selectedAgent ? ' (1)' : ''}`, ctxSettings.showAgents],
+              ['skills', `Skills${selectedSkill ? ' (1)' : ''}`, ctxSettings.showSkills],
+            ] as const).filter(([, , visible]) => visible).map(([key, label]) => (
               <button key={key}
                 onClick={() => { setContextTab(key as typeof contextTab); setContextPage(0) }}
                 className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
@@ -638,11 +659,19 @@ export default function SessionWizard({ onLaunchSession, defaultCli }: Props): J
   // ── Step 3: Review and launch ──────────────────────────────────────────────
 
   if (step === 'review') {
+    const isContextMode = selectedOption?.id === 'context'
+    const selectedAgentObj = selectedAgent ? agents.find((a) => a.id === selectedAgent) : null
+    const selectedSkillObj = selectedSkill ? skills.find((s) => s.id === selectedSkill) : null
+    const selectedMemoryNames = [...selectedNoteIds].map((id) => notes.find((n) => n.id === id)?.title).filter(Boolean)
+    const hasContextAttachments = isContextMode && (selectedAgentObj || selectedSkillObj || selectedMemoryNames.length > 0)
+
+    // For context mode: show only the user's message, not the full injected prompt
+    const displayPrompt = isContextMode ? (contextPrompt || 'Please review the context provided above and help me work through it.') : builtPrompt
     return (
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-2xl mx-auto px-6 py-8 space-y-6">
           <div className="flex items-center gap-3">
-            <button onClick={() => setStep(selectedOption?.id === 'context' ? 'context' : 'fill')} className="text-gray-500 hover:text-gray-300 transition-colors">
+            <button onClick={() => setStep(isContextMode ? 'context' : 'fill')} className="text-gray-500 hover:text-gray-300 transition-colors">
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
               </svg>
@@ -665,18 +694,67 @@ export default function SessionWizard({ onLaunchSession, defaultCli }: Props): J
             <span>{sessionName || `${selectedOption?.label ?? 'Context'} Session`}</span>
           </div>
 
+          {/* Context attachments summary — compact badges */}
+          {hasContextAttachments && (
+            <div className="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3 space-y-2">
+              <span className="text-[10px] uppercase tracking-wider text-gray-600 font-medium">Included context</span>
+              <div className="flex items-center gap-2 flex-wrap">
+                {selectedMemoryNames.length > 0 && (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-900/30 text-indigo-400 text-xs">
+                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                    {selectedMemoryNames.length} {selectedMemoryNames.length === 1 ? 'memory' : 'memories'}
+                    <span className="text-indigo-600 text-[10px]">({selectedMemoryNames.join(', ')})</span>
+                  </span>
+                )}
+                {selectedAgentObj && (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-green-900/30 text-green-400 text-xs">
+                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+                    Agent: {selectedAgentObj.name}
+                  </span>
+                )}
+                {selectedSkillObj && (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-900/30 text-amber-400 text-xs">
+                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                    Skill: {selectedSkillObj.name}
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* User's message */}
           <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
             <div className="px-4 py-2.5 border-b border-gray-800 flex items-center justify-between">
-              <span className="text-xs font-medium text-gray-400">Generated Prompt</span>
-              <span className="text-[10px] text-gray-600">{builtPrompt.length} characters</span>
+              <span className="text-xs font-medium text-gray-400">Your Message</span>
+              <span className="text-[10px] text-gray-600">{displayPrompt.length} characters</span>
             </div>
-            <div className="p-4 max-h-80 overflow-y-auto">
-              <pre className="text-sm text-gray-300 whitespace-pre-wrap font-sans leading-relaxed">{builtPrompt}</pre>
+            <div className="p-4">
+              <pre className="text-sm text-gray-300 whitespace-pre-wrap font-sans leading-relaxed">{displayPrompt}</pre>
             </div>
           </div>
 
+          {/* Expandable full prompt (for power users) */}
+          {isContextMode && builtPrompt !== displayPrompt && (
+            <div>
+              <button
+                onClick={() => setShowFullPrompt(!showFullPrompt)}
+                className="text-[10px] text-gray-600 hover:text-gray-400 transition-colors flex items-center gap-1"
+              >
+                <svg className={`w-3 h-3 transition-transform ${showFullPrompt ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+                {showFullPrompt ? 'Hide' : 'Show'} full prompt ({builtPrompt.length} characters)
+              </button>
+              {showFullPrompt && (
+                <div className="mt-2 bg-gray-900/50 border border-gray-800/50 rounded-lg p-3 max-h-48 overflow-y-auto">
+                  <pre className="text-[11px] text-gray-500 whitespace-pre-wrap font-sans leading-relaxed">{builtPrompt}</pre>
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="flex items-center justify-between pt-2">
-            <button onClick={() => setStep(selectedOption?.id === 'context' ? 'context' : 'fill')}
+            <button onClick={() => setStep(isContextMode ? 'context' : 'fill')}
               className="px-4 py-2 text-sm text-gray-400 border border-gray-700 rounded-lg hover:bg-gray-800 transition-colors">
               Edit
             </button>

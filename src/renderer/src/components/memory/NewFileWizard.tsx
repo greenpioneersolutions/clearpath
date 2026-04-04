@@ -316,7 +316,7 @@ export default function NewFileWizard({ workingDirectory, onCreated, onCancel }:
           <button
             key={t.id}
             onClick={() => selectTemplate(t)}
-            className="text-left bg-gray-800 hover:bg-gray-750 border border-gray-700 hover:border-indigo-600 rounded-lg px-4 py-3 transition-all"
+            className="text-left bg-gray-800 hover:bg-gray-700 border border-gray-700 hover:border-indigo-600 rounded-lg px-4 py-3 transition-all"
           >
             <div className="flex items-start justify-between gap-2">
               <div>

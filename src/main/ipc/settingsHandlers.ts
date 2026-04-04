@@ -267,12 +267,20 @@ export function registerSettingsHandlers(ipcMain: IpcMain): void {
     const profiles = store.get('profiles')
     const existing = profiles.findIndex((p) => p.name === args.name)
 
+    // Also capture current agent enablement state
+    let enabledAgentIds: string[] | undefined
+    try {
+      const agentStore = new Store({ name: 'clear-path-agents' })
+      enabledAgentIds = (agentStore.get('enabledAgentIds') as string[]) ?? undefined
+    } catch { /* ok */ }
+
     const profile: ConfigProfile = {
       id: existing >= 0 ? profiles[existing].id : randomUUID(),
       name: args.name,
       description: args.description ?? '',
       createdAt: Date.now(),
       settings: { ...settings },
+      enabledAgentIds,
     }
 
     if (existing >= 0) {
@@ -293,7 +301,16 @@ export function registerSettingsHandlers(ipcMain: IpcMain): void {
     if (!profile) return { error: 'Profile not found' }
 
     store.set('settings', profile.settings)
-    return { settings: profile.settings }
+
+    // Also restore agent enablement state if the profile saved it
+    if (profile.enabledAgentIds) {
+      try {
+        const agentStore = new Store({ name: 'clear-path-agents' })
+        agentStore.set('enabledAgentIds', profile.enabledAgentIds)
+      } catch { /* ok */ }
+    }
+
+    return { settings: profile.settings, restoredAgentIds: !!profile.enabledAgentIds }
   })
 
   ipcMain.handle('settings:delete-profile', (_e, args: { id: string }) => {

@@ -2,6 +2,33 @@
 
 All notable changes to ClearPathAI will be documented in this file.
 
+## [1.3.0] - 2026-04-03
+
+### Added
+- **New Home Experience** — Clean, focused "What would you like to do?" hub with 4 action cards (Start Session, Continue Recent, Learn, Configure), quick prompt bar, recent sessions strip, and CLI status. Replaces widget dashboard as default; toggle in Feature Flags
+- **White Label Branding** — Full brand customization in Configure → White Label. Color pickers for 5 brand colors, 5 UI colors, 12 surface colors (light + dark mode). Custom logo upload, app name, tagline, wordmark text, border radius style. 9 built-in presets (ClearPath Default, Midnight, Forest, Sunset, Rose, Ocean, Slate, Clean Blue, Clean Green). Live preview tab. All colors flow through CSS custom properties — entire app updates instantly
+- **Dark / Light Mode** — System preference detection with manual override (System, Light, Dark). All surfaces, text, borders, and accents respond to mode changes. Toggled in White Label → Surfaces & Mode
+- **Feature Flag System** — 35 toggleable flags covering every major section and feature. 4 built-in presets (Everything On, Essentials, Demo Mode, Manager View). Sidebar nav items hide when flags are off. Settings → Feature Flags tab with organized groups and toggle switches
+- **Data Management** — New Settings tab with storage breakdown chart, per-store reset buttons, factory reset, and memory compaction (merge multiple notes into one). Visual bar chart of storage usage by store
+- **Setup Wizard** — 8-step guided onboarding in Configure → Setup Wizard. CLI installation detection with install commands, authentication with live terminal output, guided creation of first agent (communication style), skill (job expertise), and memory (recent work), then a "bring it together" step. State tracked across sessions
+- **Setup Dashboard Widget** — Progress checklist widget showing setup completion. Auto-shows "Setup Complete" when done
+- **First-Run Banner** — Gradient banner on Home page when setup isn't complete, linking to Setup Wizard
+- **Bulk Skill Export** — Select mode in Skills panel to pick multiple skills and export them all at once
+- **Wizard Context Configuration** — Toggle "Use Context" on/off and individually enable/disable memories, agents, and skills tabs. Settings in Configure → Session Wizard
+
+### Changed
+- **Agent ID Consistency** — Fixed mismatch between agent creation and scanning that caused agents to be unfindable after creation
+- **Agent Editing** — All agents (including built-in) now show Edit/Customize button. Built-in agents create a copy on first edit. Agents page restructured with tabbed view (All Agents / Agent Profiles)
+- **Skill Content Injection** — Session Wizard now reads actual skill file content and injects it into the prompt, instead of just embedding the skill name
+- **Agent Flag Passing** — Selected agent from wizard now properly passed as --agent CLI flag via the session options chain
+- **Review Step** — Wizard review shows compact context badges (memories count, agent name, skill name) instead of dumping the full 600-line raw prompt
+- **CLI / Model Selection** — All creation wizards (Agent, Skill, Session, New Session Modal) now respect last-used CLI. Model lists are CLI-aware (Copilot shows GPT-5, Gemini; Claude shows Sonnet, Opus, Haiku)
+- **Skill Wizard Overhaul** — Tools as clickable labeled chips instead of free text, auto-invoke with clear explanations, model labeled by CLI with optgroups, GitHub integration toggle, improved review step
+- **MCP Warning Deduplication** — Organization policy messages from CLI stderr are now classified as status (grey pill) instead of error (red block), with 30-second deduplication to prevent spam
+- **Learning Center Unlocked** — All learning tracks are now accessible without prerequisites
+- **Config Profiles** — Now save and restore agent enablement state (enabledAgentIds) alongside settings
+- **Brand-Driven Colors** — Every surface in the app (sidebar, Work page, chat bubbles, code blocks, cards, borders, text, buttons, inputs) now reads from brand CSS variables. Zero hardcoded brand hex values in components. Prose-chat markdown styles fully brand-aware
+
 ## [1.2.0] - 2026-04-03
 
 ### Added

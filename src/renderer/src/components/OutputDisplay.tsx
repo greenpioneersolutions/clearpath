@@ -185,10 +185,10 @@ function UserBubble({ content, timestamp }: { content: string; timestamp?: numbe
     <div className="flex justify-end animate-fadeIn">
       <div className="max-w-[80%] flex items-end gap-2.5">
         {timestamp && <span className="text-[10px] text-gray-600 mb-1 flex-shrink-0">{formatTime(timestamp)}</span>}
-        <div className="bg-indigo-600 text-white rounded-2xl rounded-br-md px-4 py-2.5 shadow-sm">
+        <div className="text-white rounded-2xl rounded-br-md px-4 py-2.5 shadow-sm" style={{ backgroundColor: 'var(--brand-btn-primary)' }}>
           <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{content}</p>
         </div>
-        <div className="w-7 h-7 rounded-full bg-indigo-500 flex items-center justify-center flex-shrink-0">
+        <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: 'var(--brand-btn-hover)' }}>
           <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
           </svg>
@@ -223,7 +223,7 @@ function AIBubble({ content, onSaveAsNote, timestamp }: { content: string; onSav
           {timestamp && <span className="text-[9px] text-gray-600">{formatTime(timestamp)}</span>}
         </div>
         <div className="relative">
-          <div className="bg-gray-900 border border-gray-800 rounded-2xl rounded-tl-md px-4 py-3 shadow-sm">
+          <div className="rounded-2xl rounded-tl-md px-4 py-3 shadow-sm" style={{ backgroundColor: 'var(--brand-dark-card)', border: '1px solid var(--brand-dark-border)' }}>
             <div className="prose-chat text-sm leading-relaxed">
               <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{content}</ReactMarkdown>
             </div>
@@ -360,7 +360,7 @@ function ToolUseCard({ output }: { output: ParsedOutput }): JSX.Element {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
           </svg>
         </div>
-        <details className="bg-gray-900 border border-gray-800 rounded-2xl rounded-tl-md overflow-hidden group shadow-sm">
+        <details className="rounded-2xl rounded-tl-md overflow-hidden group shadow-sm">
           <summary className="px-4 py-2.5 cursor-pointer select-none flex items-center gap-2 text-sm">
             <svg className="w-3 h-3 text-gray-500 group-open:rotate-90 transition-transform" fill="currentColor" viewBox="0 0 20 20">
               <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
@@ -446,13 +446,13 @@ function ThinkingIndicator(): JSX.Element {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
           </svg>
         </div>
-        <div className="bg-gray-900 border border-gray-800 rounded-2xl rounded-tl-md px-4 py-3 shadow-sm">
+        <div className="rounded-2xl rounded-tl-md px-4 py-3 shadow-sm" style={{ backgroundColor: 'var(--brand-dark-card)', border: '1px solid var(--brand-dark-border)' }}>
           {/* Animated dots */}
           <div className="flex items-center gap-2">
             <div className="flex gap-1">
-              <span className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-              <span className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-              <span className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+              <span className="w-2 h-2 rounded-full animate-bounce" style={{ animationDelay: '0ms', backgroundColor: 'var(--brand-btn-primary)' }} />
+              <span className="w-2 h-2 rounded-full animate-bounce" style={{ animationDelay: '150ms', backgroundColor: 'var(--brand-btn-primary)' }} />
+              <span className="w-2 h-2 rounded-full animate-bounce" style={{ animationDelay: '300ms', backgroundColor: 'var(--brand-btn-primary)' }} />
             </div>
             <span className="text-gray-400 text-sm">{THINKING_PHRASES[phraseIdx]}</span>
           </div>

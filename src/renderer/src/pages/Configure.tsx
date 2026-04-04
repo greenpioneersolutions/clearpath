@@ -8,19 +8,23 @@ import TeamHub from './TeamHub'
 import ScheduledTasks from './ScheduledTasks'
 import SkillsManagement from './SkillsManagement'
 import WizardSettings from '../components/wizard/WizardSettings'
+import SetupWizardFull from '../components/onboarding/SetupWizardFull'
+import WhiteLabel from '../components/settings/WhiteLabel'
 
-type Tab = 'settings' | 'policies' | 'integrations' | 'memory' | 'skills' | 'wizard' | 'workspaces' | 'team' | 'scheduler'
+type Tab = 'setup' | 'settings' | 'policies' | 'integrations' | 'memory' | 'skills' | 'wizard' | 'workspaces' | 'team' | 'scheduler' | 'branding'
 
 const TABS: { key: Tab; label: string }[] = [
+  { key: 'setup', label: 'Setup Wizard' },
   { key: 'settings', label: 'Settings' },
   { key: 'policies', label: 'Policies' },
   { key: 'integrations', label: 'Integrations' },
   { key: 'memory', label: 'Memory' },
   { key: 'skills', label: 'Skills' },
-  { key: 'wizard', label: 'Wizard' },
+  { key: 'wizard', label: 'Session Wizard' },
   { key: 'workspaces', label: 'Workspaces' },
   { key: 'team', label: 'Team Hub' },
   { key: 'scheduler', label: 'Scheduler' },
+  { key: 'branding', label: 'White Label' },
 ]
 
 // ── Integrations Tab ─────────────────────────────────────────────────────────
@@ -202,6 +206,7 @@ export default function Configure(): JSX.Element {
 
       {/* Right: tab content */}
       <div className="flex-1 overflow-y-auto p-6">
+        {tab === 'setup' && <SetupWizardFull />}
         {tab === 'settings' && <Settings />}
         {tab === 'policies' && <Policies />}
         {tab === 'integrations' && <IntegrationsTab />}
@@ -211,6 +216,7 @@ export default function Configure(): JSX.Element {
         {tab === 'workspaces' && <Workspaces />}
         {tab === 'team' && <TeamHub />}
         {tab === 'scheduler' && <ScheduledTasks />}
+        {tab === 'branding' && <WhiteLabel />}
       </div>
     </div>
   )

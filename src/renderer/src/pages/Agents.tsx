@@ -50,6 +50,35 @@ export default function Agents(): JSX.Element {
     void window.electronAPI.invoke('agent:set-active', { cli, agentId })
   }
 
+  // ── Edit handler — copies built-in agents to custom files first ────────────
+
+  const handleEdit = async (agent: AgentDef) => {
+    if (agent.source === 'file') {
+      // Already a custom agent — just open editor
+      setEditTarget(agent)
+      return
+    }
+    // Built-in agent: create a copy as a custom file so it's editable
+    if (!window.confirm(`"${agent.name}" is a built-in agent. We'll create a customizable copy that you can edit. Continue?`)) return
+    try {
+      const result = await window.electronAPI.invoke('agent:create', {
+        def: {
+          cli: agent.cli,
+          name: `${agent.name} (Custom)`,
+          description: agent.description,
+          model: agent.model,
+          tools: agent.tools,
+          prompt: agent.prompt,
+        },
+      }) as { agentDef: AgentDef }
+      // Reload and open the new copy in the editor
+      await loadAll()
+      setEditTarget(result.agentDef)
+    } catch (e) {
+      window.alert(`Failed to copy agent: ${e}`)
+    }
+  }
+
   // ── Delete handler ────────────────────────────────────────────────────────
 
   const handleDelete = (agent: AgentDef) => {
@@ -87,8 +116,10 @@ export default function Agents(): JSX.Element {
 
   // ─────────────────────────────────────────────────────────────────────────
 
+  const [view, setView] = useState<'agents' | 'profiles'>('agents')
+
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {/* Page header */}
       <div className="flex items-center justify-between">
         <div>
@@ -97,18 +128,33 @@ export default function Agents(): JSX.Element {
             Manage built-in and custom agents for your CLI sessions
           </p>
         </div>
-        <button
-          onClick={() => { setWizardCli('copilot'); setWizardOpen(true) }}
-          className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors"
-        >
-          <PlusIcon />
-          Create Agent
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setWizardOpen(true)}
+            className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors"
+          >
+            <PlusIcon />
+            Create Agent
+          </button>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
-        {/* Left: agent sections */}
-        <div className="xl:col-span-2 space-y-8">
+      {/* View tabs */}
+      <div className="border-b border-gray-200">
+        <nav className="flex gap-6">
+          <button onClick={() => setView('agents')}
+            className={`pb-3 text-sm font-medium border-b-2 transition-colors ${view === 'agents' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+            All Agents
+          </button>
+          <button onClick={() => setView('profiles')}
+            className={`pb-3 text-sm font-medium border-b-2 transition-colors ${view === 'profiles' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+            Agent Profiles ({profiles.length})
+          </button>
+        </nav>
+      </div>
+
+      {view === 'agents' && (
+        <div className="space-y-8">
           <AgentSection
             title="GitHub Copilot Agents"
             cli="copilot"
@@ -118,7 +164,7 @@ export default function Agents(): JSX.Element {
             loading={loading}
             onToggle={handleToggle}
             onSetActive={(id) => handleSetActive('copilot', id)}
-            onEdit={setEditTarget}
+            onEdit={(agent) => void handleEdit(agent)}
             onDelete={handleDelete}
             onCreateCustom={() => { setWizardCli('copilot'); setWizardOpen(true) }}
           />
@@ -132,14 +178,15 @@ export default function Agents(): JSX.Element {
             loading={loading}
             onToggle={handleToggle}
             onSetActive={(id) => handleSetActive('claude', id)}
-            onEdit={setEditTarget}
+            onEdit={(agent) => void handleEdit(agent)}
             onDelete={handleDelete}
             onCreateCustom={() => { setWizardCli('claude'); setWizardOpen(true) }}
           />
         </div>
+      )}
 
-        {/* Right: profiles */}
-        <div>
+      {view === 'profiles' && (
+        <div className="max-w-2xl">
           <ProfileManager
             profiles={profiles}
             enabledAgentIds={enabledIds}
@@ -148,7 +195,7 @@ export default function Agents(): JSX.Element {
             onDelete={handleDeleteProfile}
           />
         </div>
-      </div>
+      )}
 
       {/* Modals */}
       <AgentEditor
@@ -161,6 +208,7 @@ export default function Agents(): JSX.Element {
       <AgentWizard
         isOpen={wizardOpen}
         onClose={() => setWizardOpen(false)}
+        defaultCli={wizardCli}
         onCreated={(agent) => {
           setWizardOpen(false)
           setAgentList((prev) => ({
@@ -248,7 +296,7 @@ function AgentSection({
               isActive={activeAgentId === agent.id}
               onToggle={onToggle}
               onSetActive={onSetActive}
-              onEdit={agent.source === 'file' ? onEdit : undefined}
+              onEdit={onEdit}
               onDelete={agent.source === 'file' ? onDelete : undefined}
             />
           ))}

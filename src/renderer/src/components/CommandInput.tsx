@@ -174,18 +174,19 @@ export default function CommandInput({
   )
 
   return (
-    <div className="relative border-t border-gray-800 bg-gray-900/80 backdrop-blur-sm flex-shrink-0">
+    <div className="relative backdrop-blur-sm flex-shrink-0" style={{ borderTop: '1px solid var(--brand-dark-border)', backgroundColor: 'var(--brand-dark-page)' }}>
       {/* Slash command suggestions */}
       {suggestions.length > 0 && (
-        <div className="absolute bottom-full left-4 right-4 mb-2 bg-gray-800/95 backdrop-blur-sm border border-gray-700 rounded-xl overflow-hidden max-h-52 overflow-y-auto shadow-2xl">
+        <div className="absolute bottom-full left-4 right-4 mb-2 backdrop-blur-sm rounded-xl overflow-hidden max-h-52 overflow-y-auto shadow-2xl" style={{ backgroundColor: 'var(--brand-dark-card)', border: '1px solid var(--brand-dark-border)' }}>
           {suggestions.map((cmd, i) => (
             <button
               key={cmd}
               className={`w-full text-left px-4 py-2.5 text-sm transition-colors flex items-center justify-between ${
                 i === selectedIdx
-                  ? 'bg-indigo-600/20 text-white'
+                  ? 'text-white'
                   : 'text-gray-300 hover:bg-gray-700/50'
               }`}
+              style={i === selectedIdx ? { backgroundColor: 'var(--brand-btn-primary)', opacity: 0.2 } : {}}
               onMouseDown={(e) => {
                 e.preventDefault()
                 acceptSuggestion(cmd)
@@ -204,9 +205,9 @@ export default function CommandInput({
 
       {/* Input area */}
       <div className="max-w-3xl mx-auto px-4 py-3">
-        <div className={`flex items-end gap-2 bg-gray-800/60 border rounded-2xl px-4 py-2.5 transition-colors ${
-          disabled ? 'border-gray-800 opacity-60' : 'border-gray-700 focus-within:border-indigo-500/50 focus-within:ring-1 focus-within:ring-indigo-500/20'
-        }`}>
+        <div className={`flex items-end gap-2 border rounded-2xl px-4 py-2.5 transition-colors ${
+          disabled ? 'opacity-60' : ''
+        }`} style={{ backgroundColor: 'var(--brand-dark-card)', borderColor: 'var(--brand-dark-border)' }}>
           <textarea
             ref={textareaRef}
             value={value}
@@ -227,7 +228,8 @@ export default function CommandInput({
           <button
             onClick={() => submit(value)}
             disabled={disabled || !value.trim()}
-            className="p-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-30 disabled:hover:bg-indigo-600 text-white transition-all flex-shrink-0 shadow-sm"
+            className="p-2 rounded-xl text-white transition-all flex-shrink-0 shadow-sm disabled:opacity-30"
+            style={{ backgroundColor: 'var(--brand-btn-primary)' }}
             title="Send message"
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
