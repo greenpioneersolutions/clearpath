@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useMemo } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import rehypeRaw from 'rehype-raw'
+import rehypeSanitize from 'rehype-sanitize'
 import type { ParsedOutput } from '../types/ipc'
 
 export interface OutputMessage {
@@ -225,7 +225,7 @@ function AIBubble({ content, onSaveAsNote, timestamp }: { content: string; onSav
         <div className="relative">
           <div className="rounded-2xl rounded-tl-md px-4 py-3 shadow-sm" style={{ backgroundColor: 'var(--brand-dark-card)', border: '1px solid var(--brand-dark-border)' }}>
             <div className="prose-chat text-sm leading-relaxed">
-              <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{content}</ReactMarkdown>
+              <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]}>{content}</ReactMarkdown>
             </div>
           </div>
           {/* Save as memory button — appears on hover */}

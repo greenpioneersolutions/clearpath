@@ -10,6 +10,7 @@ import SkillsManagement from './SkillsManagement'
 import WizardSettings from '../components/wizard/WizardSettings'
 import SetupWizardFull from '../components/onboarding/SetupWizardFull'
 import WhiteLabel from '../components/settings/WhiteLabel'
+import { useFeatureFlags } from '../contexts/FeatureFlagContext'
 
 type Tab = 'setup' | 'settings' | 'policies' | 'integrations' | 'memory' | 'skills' | 'wizard' | 'workspaces' | 'team' | 'scheduler' | 'branding'
 
@@ -36,6 +37,7 @@ interface GitHubStatus {
 }
 
 function IntegrationsTab(): JSX.Element {
+  const { flags, setFlag } = useFeatureFlags()
   const [githubStatus, setGithubStatus] = useState<GitHubStatus | null>(null)
   const [token, setToken] = useState('')
   const [connecting, setConnecting] = useState(false)
@@ -112,6 +114,31 @@ function IntegrationsTab(): JSX.Element {
               <div className="text-xs text-gray-400">
                 Connected {new Date(githubStatus.connectedAt).toLocaleDateString()} · Data is fetched on-demand, nothing is cached or synced automatically
               </div>
+
+              {/* Experimental: PR Scores toggle */}
+              {flags.enableExperimentalFeatures && (
+                <div className="mt-4 pt-3 border-t border-gray-100">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-gray-800">PR Scores</span>
+                        <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium">Experimental</span>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-0.5">Score and analyze pull requests with 0-100 ratings</p>
+                    </div>
+                    <button
+                      onClick={() => setFlag('showPrScores', !flags.showPrScores)}
+                      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                        flags.showPrScores ? 'bg-indigo-600' : 'bg-gray-300'
+                      }`}
+                    >
+                      <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+                        flags.showPrScores ? 'translate-x-4' : 'translate-x-0.5'
+                      }`} />
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           ) : showTokenInput ? (
             <div className="space-y-3">

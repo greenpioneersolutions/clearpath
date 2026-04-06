@@ -3,10 +3,11 @@ import { execFile } from 'child_process'
 import { promisify } from 'util'
 import { existsSync, readFileSync } from 'fs'
 import { join } from 'path'
-import { getSpawnEnv } from '../utils/shellEnv'
+import { getScopedSpawnEnv } from '../utils/shellEnv'
+import { checkRateLimit } from '../utils/rateLimiter'
 
 const execFileAsync = promisify(execFile)
-const GIT_OPTS = { timeout: 15000, env: getSpawnEnv() }
+const GIT_OPTS = { timeout: 15000, env: getScopedSpawnEnv('copilot') }
 
 async function git(args: string[], cwd: string): Promise<string> {
   const { stdout } = await execFileAsync('git', args, { ...GIT_OPTS, cwd })
@@ -149,8 +150,16 @@ function readBranchProtection(cwd: string): { protected: string[] } {
 
 export function registerGitHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('git:status', (_e, args: { cwd: string }) => getStatus(args.cwd))
-  ipcMain.handle('git:log', (_e, args: { cwd: string; limit?: number }) => getLog(args.cwd, args.limit))
-  ipcMain.handle('git:diff', (_e, args: { cwd: string; ref?: string }) => getDiff(args.cwd, args.ref))
+  ipcMain.handle('git:log', (_e, args: { cwd: string; limit?: number }) => {
+    const rl = checkRateLimit('git:log')
+    if (!rl.allowed) return { error: 'Rate limited' }
+    return getLog(args.cwd, args.limit)
+  })
+  ipcMain.handle('git:diff', (_e, args: { cwd: string; ref?: string }) => {
+    const rl = checkRateLimit('git:diff')
+    if (!rl.allowed) return { error: 'Rate limited' }
+    return getDiff(args.cwd, args.ref)
+  })
   ipcMain.handle('git:file-diff', (_e, args: { cwd: string; file: string }) => getFileDiff(args.cwd, args.file))
   ipcMain.handle('git:revert-file', (_e, args: { cwd: string; file: string }) => git(['checkout', 'HEAD', '--', args.file], args.cwd))
   ipcMain.handle('git:worktrees', (_e, args: { cwd: string }) => listWorktrees(args.cwd))

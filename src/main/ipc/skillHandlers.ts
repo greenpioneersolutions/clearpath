@@ -8,6 +8,9 @@ import {
 import { join, basename, dirname } from 'path'
 import { homedir } from 'os'
 import { randomUUID } from 'crypto'
+import { assertPathWithinRoots, isSensitiveSystemPath } from '../utils/pathSecurity'
+import { getStoreEncryptionKey } from '../utils/storeEncryption'
+import { STARTER_SKILLS } from '../starter-pack'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -36,6 +39,7 @@ interface SkillStoreSchema {
 
 const store = new Store<SkillStoreSchema>({
   name: 'clear-path-skills',
+  encryptionKey: getStoreEncryptionKey(),
   defaults: { usageStats: {}, recommendations: [] },
 })
 
@@ -148,7 +152,7 @@ function listAllSkills(workingDirectory: string): SkillInfo[] {
   skills.push(...scanSkillDir(join(home, '.copilot', 'skills'), 'global', 'copilot'))
 
   // Team skills (from shared folder)
-  const teamStore = new Store({ name: 'clear-path-team' })
+  const teamStore = new Store({ name: 'clear-path-team', encryptionKey: getStoreEncryptionKey() })
   const sharedFolder = teamStore.get('sharedFolderPath', null) as string | null
   if (sharedFolder) {
     skills.push(...scanSkillDir(join(sharedFolder, 'skills'), 'team', 'both'))
@@ -295,6 +299,20 @@ export function registerSkillHandlers(ipcMain: IpcMain): void {
   )
 
   ipcMain.handle('skills:get', (_e, args: { path: string }) => {
+    // Path validation: only allow reading from skill directories
+    const home = homedir()
+    const allowedRoots = [
+      join(home, '.claude', 'skills'),
+      join(home, '.copilot', 'skills'),
+      join(home, '.claude', 'commands'),
+      process.cwd(),
+    ]
+    try {
+      assertPathWithinRoots(args.path, allowedRoots)
+      if (isSensitiveSystemPath(args.path)) return { error: 'Access denied' }
+    } catch {
+      return { error: 'Path not allowed' }
+    }
     if (!existsSync(args.path)) return { error: 'Not found' }
     const content = readFileSync(args.path, 'utf8')
     const { frontmatter, body } = parseFrontmatter(content)
@@ -377,7 +395,16 @@ export function registerSkillHandlers(ipcMain: IpcMain): void {
 
   ipcMain.handle('skills:get-usage-stats', () => store.get('usageStats'))
 
-  ipcMain.handle('skills:get-starters', () => STARTER_TEMPLATES)
+  ipcMain.handle('skills:get-starters', () => {
+    // Merge starter pack skills (production agents) with legacy starter templates
+    const packSkills = STARTER_SKILLS.map((s) => ({
+      id: s.id,
+      name: s.name,
+      description: s.description,
+      content: s.skillPrompt,
+    }))
+    return [...packSkills, ...STARTER_TEMPLATES]
+  })
 
   ipcMain.handle('skills:export', async (_e, args: { path: string; name: string }) => {
     if (!existsSync(args.path)) return { error: 'File not found' }

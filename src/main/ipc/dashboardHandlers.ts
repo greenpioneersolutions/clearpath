@@ -1,5 +1,6 @@
 import type { IpcMain } from 'electron'
 import Store from 'electron-store'
+import { getStoreEncryptionKey } from '../utils/storeEncryption'
 
 interface WidgetConfig {
   i: string
@@ -57,6 +58,7 @@ const PRESET_LAYOUTS: DashboardLayout[] = [
 
 const store = new Store<DashboardStoreSchema>({
   name: 'clear-path-dashboard',
+  encryptionKey: getStoreEncryptionKey(),
   defaults: {
     activeLayoutId: 'layout-developer',
     layouts: [],

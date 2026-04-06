@@ -1,6 +1,7 @@
 import type { IpcMain } from 'electron'
 import type { AgentDef } from '../../renderer/src/types/ipc'
 import type { AgentManager } from '../agents/AgentManager'
+import { addAuditEntry } from './complianceHandlers'
 
 export function registerAgentHandlers(ipcMain: IpcMain, agentManager: AgentManager): void {
   /** Return built-in + file-based agents for both CLIs. */
@@ -38,6 +39,7 @@ export function registerAgentHandlers(ipcMain: IpcMain, agentManager: AgentManag
   /** Delete an agent file from disk. */
   ipcMain.handle('agent:delete', (_event, { filePath }: { filePath: string }) => {
     agentManager.deleteAgent(filePath)
+    addAuditEntry({ actionType: 'config-change', summary: `Agent deleted: ${filePath.split('/').pop()}`, details: JSON.stringify({ filePath }) })
   })
 
   // ── Enabled / active state ─────────────────────────────────────────────────

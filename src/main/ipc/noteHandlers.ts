@@ -4,6 +4,9 @@ import Store from 'electron-store'
 import { randomUUID } from 'crypto'
 import { readFileSync, existsSync, statSync } from 'fs'
 import { basename, extname } from 'path'
+import { assertPathWithinRoots, getWorkspaceAllowedRoots, isSensitiveSystemPath } from '../utils/pathSecurity'
+import { getStoreEncryptionKey } from '../utils/storeEncryption'
+import { addAuditEntry } from './complianceHandlers'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -51,6 +54,7 @@ interface NoteStoreSchema {
 const store = new Store<NoteStoreSchema>({
   name: 'clear-path-notes',
   defaults: { notes: [] },
+  encryptionKey: getStoreEncryptionKey(),
 })
 
 // ── Registration ─────────────────────────────────────────────────────────────
@@ -136,7 +140,9 @@ export function registerNoteHandlers(ipcMain: IpcMain): void {
   // Delete a note
   ipcMain.handle('notes:delete', (_e, args: { id: string }) => {
     const notes = store.get('notes')
+    const target = notes.find((n) => n.id === args.id)
     store.set('notes', notes.filter((n) => n.id !== args.id))
+    addAuditEntry({ actionType: 'config-change', summary: `Note deleted: ${target?.title ?? args.id}`, details: JSON.stringify({ id: args.id }) })
     return { success: true }
   })
 
@@ -224,10 +230,15 @@ export function registerNoteHandlers(ipcMain: IpcMain): void {
   // Read a single attachment's content from disk (for preview or injection)
   ipcMain.handle('notes:read-attachment', (_e, args: { path: string }) => {
     try {
+      // Path validation: only allow reading from within home directory, block sensitive paths
+      assertPathWithinRoots(args.path, getWorkspaceAllowedRoots())
+      if (isSensitiveSystemPath(args.path)) return { error: 'Access denied — sensitive path' }
       if (!existsSync(args.path)) return { error: 'File not found — it may have been moved or deleted' }
       const content = readFileSync(args.path, 'utf8')
       return { content }
-    } catch {
+    } catch (err) {
+      const msg = String(err)
+      if (msg.includes('Path not allowed')) return { error: 'Path not allowed' }
       return { error: 'Could not read file' }
     }
   })

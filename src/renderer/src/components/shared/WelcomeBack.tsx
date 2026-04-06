@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react'
 import type { SessionInfo } from '../../types/ipc'
 import type { OutputMessage } from '../OutputDisplay'
 
@@ -11,6 +12,7 @@ interface Props {
   onNewSession: () => void
   onContinueSession: (session: SessionInfo) => void
   onViewSession: (sessionId: string) => void
+  onStartWithPrompt?: (prompt: string, agentId: string) => void
 }
 
 function timeAgo(ms: number): string {
@@ -42,7 +44,15 @@ function getFirstPrompt(messages: OutputMessage[]): string | null {
   return text.length > 80 ? text.slice(0, 80) + '...' : text
 }
 
-export default function WelcomeBack({ recentSessions, onNewSession, onContinueSession, onViewSession }: Props): JSX.Element {
+export default function WelcomeBack({ recentSessions, onNewSession, onContinueSession, onViewSession, onStartWithPrompt }: Props): JSX.Element {
+  const [suggestions, setSuggestions] = useState<Array<{ id: string; displayText: string; targetAgentId: string }>>([])
+
+  useEffect(() => {
+    void (window.electronAPI.invoke('starter-pack:get-prompts') as Promise<Array<{ id: string; displayText: string; targetAgentId: string }>>)
+      .then(setSuggestions)
+      .catch(() => {})
+  }, [])
+
   const promptCounts = recentSessions.map((s) => s.messages.filter((m) => m.sender === 'user').length)
 
   return (
@@ -64,6 +74,24 @@ export default function WelcomeBack({ recentSessions, onNewSession, onContinueSe
           </svg>
           Start New Session
         </button>
+
+        {/* Quick starts from starter pack */}
+        {suggestions.length > 0 && (
+          <div className="space-y-2">
+            <h3 className="text-gray-500 text-xs font-medium uppercase tracking-wider px-1">Quick Starts</h3>
+            <div className="space-y-1.5">
+              {suggestions.map((s) => (
+                <button
+                  key={s.id}
+                  onClick={() => onStartWithPrompt?.(s.displayText, s.targetAgentId)}
+                  className="w-full text-left bg-gray-900 border border-gray-800 rounded-xl px-4 py-3 hover:border-indigo-700/50 hover:bg-gray-800/80 transition-all group"
+                >
+                  <span className="text-sm text-gray-300 group-hover:text-white">{s.displayText}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Recent sessions */}
         {recentSessions.length > 0 && (

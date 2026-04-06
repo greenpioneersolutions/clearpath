@@ -2,6 +2,7 @@ import type { IpcMain } from 'electron'
 import type { SessionOptions } from '../cli/types'
 import type { CLIManager } from '../cli/CLIManager'
 import type { AgentManager } from '../agents/AgentManager'
+import { checkRateLimit } from '../utils/rateLimiter'
 
 export function registerIpcHandlers(
   ipcMain: IpcMain,
@@ -13,6 +14,9 @@ export function registerIpcHandlers(
   ipcMain.handle('cli:check-auth', () => cliManager.checkAuth())
 
   ipcMain.handle('cli:start-session', (_event, options: SessionOptions) => {
+    const rl = checkRateLimit('cli:start-session')
+    if (!rl.allowed) return { error: `Rate limited — try again in ${Math.ceil((rl.retryAfterMs ?? 0) / 1000)}s` }
+
     // Auto-inject the stored active agent when the caller didn't specify one explicitly
     let resolved = options
     if (!resolved.agent && agentManager) {

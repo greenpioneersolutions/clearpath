@@ -5,7 +5,7 @@ import { join } from 'path'
 import type { ChildProcess } from 'child_process'
 import type { SessionOptions, ParsedOutput } from './types'
 import type { ICLIAdapter } from './types'
-import { resolveInShell, getSpawnEnv } from '../utils/shellEnv'
+import { resolveInShell, getScopedSpawnEnv } from '../utils/shellEnv'
 
 // Matches prompts like "Allow copilot to run: `shell(...)` [y/n/a]?" or "[y/n]?"
 const PERMISSION_LINE_RE = /\[y\/n(?:\/a)?\]\s*[?:]*\s*$/i
@@ -194,7 +194,7 @@ export class CopilotAdapter implements ICLIAdapter {
     const proc = spawn(this.binaryPath, args, {
       cwd: options.workingDirectory,
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: getSpawnEnv(),
+      env: getScopedSpawnEnv('copilot'),
     })
 
     // Copilot's --prompt takes the text as a CLI argument (not stdin), so

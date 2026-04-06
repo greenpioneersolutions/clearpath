@@ -1,5 +1,6 @@
 import type { IpcMain } from 'electron'
 import Store from 'electron-store'
+import { getStoreEncryptionKey } from '../utils/storeEncryption'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -223,6 +224,7 @@ Please conduct a thorough review. For each finding, explain what the issue is, w
 
 const store = new Store<WizardStoreSchema>({
   name: 'clear-path-wizard',
+  encryptionKey: getStoreEncryptionKey(),
   defaults: {
     config: DEFAULT_CONFIG,
     hasCompletedWizard: false,

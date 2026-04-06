@@ -1,5 +1,6 @@
 import type { IpcMain } from 'electron'
 import Store from 'electron-store'
+import { getStoreEncryptionKey } from '../utils/storeEncryption'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -347,6 +348,7 @@ const BRAND_PRESETS: BrandPreset[] = [
 
 const store = new Store<{ branding: BrandingConfig }>({
   name: 'clear-path-branding',
+  encryptionKey: getStoreEncryptionKey(),
   defaults: { branding: DEFAULT_BRANDING },
 })
 

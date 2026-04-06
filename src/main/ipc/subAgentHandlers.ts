@@ -3,6 +3,7 @@ import { join } from 'path'
 import { BrowserWindow } from 'electron'
 import type { CLIManager } from '../cli/CLIManager'
 import { resolveInShell } from '../utils/shellEnv'
+import { checkRateLimit } from '../utils/rateLimiter'
 
 export function registerSubAgentHandlers(ipcMain: IpcMain, cliManager: CLIManager): void {
   // ── Spawn a delegated task / sub-agent ──────────────────────────────────────
@@ -20,7 +21,11 @@ export function registerSubAgentHandlers(ipcMain: IpcMain, cliManager: CLIManage
       allowedTools?: string[]
       maxBudget?: number
       maxTurns?: number
-    }) => cliManager.spawnSubAgent(args),
+    }) => {
+      const rl = checkRateLimit('subagent:spawn')
+      if (!rl.allowed) return { error: `Rate limited — try again in ${Math.ceil((rl.retryAfterMs ?? 0) / 1000)}s` }
+      return cliManager.spawnSubAgent(args)
+    },
   )
 
   // ── List all sub-agents ────────────────────────────────────────────────────
@@ -73,6 +78,7 @@ export function registerSubAgentHandlers(ipcMain: IpcMain, cliManager: CLIManage
           preload: join(__dirname, '../preload/index.js'),
           contextIsolation: true,
           nodeIntegration: false,
+          sandbox: true,
         },
       })
 

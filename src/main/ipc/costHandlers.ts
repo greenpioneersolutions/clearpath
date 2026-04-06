@@ -1,6 +1,7 @@
 import type { IpcMain } from 'electron'
 import Store from 'electron-store'
 import { randomUUID } from 'crypto'
+import { getStoreEncryptionKey } from '../utils/storeEncryption'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -23,22 +24,36 @@ interface BudgetConfig {
   dailyCeiling: number | null
   weeklyCeiling: number | null
   monthlyCeiling: number | null
+  /** Token-based ceilings (enterprise default) */
+  dailyTokenCeiling: number | null
+  weeklyTokenCeiling: number | null
+  monthlyTokenCeiling: number | null
   autoPauseAtLimit: boolean
 }
+
+type AnalyticsDisplayMode = 'tokens' | 'monetary'
 
 interface CostStoreSchema {
   records: CostRecord[]
   budget: BudgetConfig
   /** Track which threshold alerts have already fired (reset daily) */
   firedAlerts: Record<string, number>
+  /** Display mode: 'tokens' (enterprise default) or 'monetary' */
+  analyticsDisplayMode: AnalyticsDisplayMode
 }
 
 const store = new Store<CostStoreSchema>({
   name: 'clear-path-cost',
+  encryptionKey: getStoreEncryptionKey(),
   defaults: {
     records: [],
-    budget: { dailyCeiling: null, weeklyCeiling: null, monthlyCeiling: null, autoPauseAtLimit: false },
+    budget: {
+      dailyCeiling: null, weeklyCeiling: null, monthlyCeiling: null,
+      dailyTokenCeiling: null, weeklyTokenCeiling: null, monthlyTokenCeiling: null,
+      autoPauseAtLimit: false,
+    },
     firedAlerts: {},
+    analyticsDisplayMode: 'tokens',
   },
 })
 
@@ -68,6 +83,12 @@ function getSpendSince(since: number): number {
   return store.get('records')
     .filter((r) => r.timestamp >= since)
     .reduce((sum, r) => sum + r.estimatedCostUsd, 0)
+}
+
+function getTokensSince(since: number): number {
+  return store.get('records')
+    .filter((r) => r.timestamp >= since)
+    .reduce((sum, r) => sum + r.totalTokens, 0)
 }
 
 // ── Registration ─────────────────────────────────────────────────────────────
@@ -103,11 +124,17 @@ export function registerCostHandlers(ipcMain: IpcMain): void {
     return {
       totalCost: records.reduce((s, r) => s + r.estimatedCostUsd, 0),
       totalTokens: records.reduce((s, r) => s + r.totalTokens, 0),
+      totalInputTokens: records.reduce((s, r) => s + r.inputTokens, 0),
+      totalOutputTokens: records.reduce((s, r) => s + r.outputTokens, 0),
       totalSessions: new Set(records.map((r) => r.sessionId)).size,
       totalPrompts: records.reduce((s, r) => s + r.promptCount, 0),
       todaySpend: getSpendSince(todayStart),
       weekSpend: getSpendSince(weekStart),
       monthSpend: getSpendSince(monthStart),
+      todayTokens: getTokensSince(todayStart),
+      weekTokens: getTokensSince(weekStart),
+      monthTokens: getTokensSince(monthStart),
+      displayMode: store.get('analyticsDisplayMode'),
     }
   })
 
@@ -123,18 +150,21 @@ export function registerCostHandlers(ipcMain: IpcMain): void {
 
   ipcMain.handle('cost:check-budget', () => {
     const budget = store.get('budget')
-    const alerts: Array<{ period: string; pct: number; spend: number; ceiling: number }> = []
+    const alerts: Array<{ period: string; pct: number; spend: number; ceiling: number; unit: 'usd' | 'tokens' }> = []
 
-    const checks: Array<[string, number | null, () => number]> = [
-      ['daily', budget.dailyCeiling, () => getSpendSince(startOfDay())],
-      ['weekly', budget.weeklyCeiling, () => getSpendSince(startOfWeek())],
-      ['monthly', budget.monthlyCeiling, () => getSpendSince(startOfMonth())],
+    const checks: Array<[string, number | null, () => number, 'usd' | 'tokens']> = [
+      ['daily', budget.dailyCeiling, () => getSpendSince(startOfDay()), 'usd'],
+      ['weekly', budget.weeklyCeiling, () => getSpendSince(startOfWeek()), 'usd'],
+      ['monthly', budget.monthlyCeiling, () => getSpendSince(startOfMonth()), 'usd'],
+      ['daily (tokens)', budget.dailyTokenCeiling, () => getTokensSince(startOfDay()), 'tokens'],
+      ['weekly (tokens)', budget.weeklyTokenCeiling, () => getTokensSince(startOfWeek()), 'tokens'],
+      ['monthly (tokens)', budget.monthlyTokenCeiling, () => getTokensSince(startOfMonth()), 'tokens'],
     ]
 
     const firedAlerts = store.get('firedAlerts')
     const dayKey = new Date().toISOString().slice(0, 10)
 
-    for (const [period, ceiling, getSpend] of checks) {
+    for (const [period, ceiling, getSpend, unit] of checks) {
       if (!ceiling) continue
       const spend = getSpend()
       const pct = (spend / ceiling) * 100
@@ -143,7 +173,7 @@ export function registerCostHandlers(ipcMain: IpcMain): void {
       for (const t of thresholds) {
         const alertKey = `${period}:${t}:${dayKey}`
         if (pct >= t && !firedAlerts[alertKey]) {
-          alerts.push({ period, pct: t, spend, ceiling })
+          alerts.push({ period, pct: t, spend, ceiling, unit })
           firedAlerts[alertKey] = Date.now()
         }
       }
@@ -250,5 +280,14 @@ export function registerCostHandlers(ipcMain: IpcMain): void {
     store.set('records', [])
     store.set('firedAlerts', {})
     return { success: true }
+  })
+
+  // ── Display mode (tokens vs monetary) ─────────────────────────────────────
+
+  ipcMain.handle('cost:get-display-mode', () => store.get('analyticsDisplayMode'))
+
+  ipcMain.handle('cost:set-display-mode', (_e, args: { mode: AnalyticsDisplayMode }) => {
+    store.set('analyticsDisplayMode', args.mode)
+    return { success: true, mode: args.mode }
   })
 }

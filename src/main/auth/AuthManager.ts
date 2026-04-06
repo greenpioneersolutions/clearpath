@@ -5,8 +5,9 @@ import { join } from 'path'
 import type { ChildProcess } from 'child_process'
 import type { WebContents } from 'electron'
 import Store from 'electron-store'
+import { getStoreEncryptionKey } from '../utils/storeEncryption'
 import type { AuthStatus, AuthState, TokenSource } from '../../renderer/src/types/ipc'
-import { resolveInShell, getSpawnEnv } from '../utils/shellEnv'
+import { resolveInShell, getScopedSpawnEnv } from '../utils/shellEnv'
 
 const ANSI_RE = /\x1b(?:[@-Z\\-_]|\[[0-9;]*[ -/]*[@-~])/g
 
@@ -29,6 +30,7 @@ export class AuthManager {
     if (!this._store) {
       this._store = new Store<StoreSchema>({
         name: 'clear-path-auth',
+        encryptionKey: getStoreEncryptionKey(),
         defaults: { authCache: { copilot: { ...EMPTY_STATUS }, claude: { ...EMPTY_STATUS } } },
       })
     }
@@ -99,7 +101,7 @@ export class AuthManager {
       const execAsync = promisify(execFile)
       const { stdout } = await execAsync(binaryPath, ['--version'], {
         timeout: 5000,
-        env: getSpawnEnv(),
+        env: getScopedSpawnEnv('copilot'),
       })
       version = stdout.trim().split('\n')[0]
     } catch { /* not critical */ }
@@ -142,7 +144,7 @@ export class AuthManager {
       const execAsync = promisify(execFile)
       const { stdout } = await execAsync(binaryPath, ['--version'], {
         timeout: 5000,
-        env: getSpawnEnv(),
+        env: getScopedSpawnEnv('claude'),
       })
       version = stdout.trim().split('\n')[0]
     } catch { /* not critical */ }
@@ -160,7 +162,7 @@ export class AuthManager {
         const execAsync = promisify(execFile)
         const { stdout, stderr } = await execAsync(binaryPath, ['auth', 'status'], {
           timeout: 10_000,
-          env: getSpawnEnv(),
+          env: getScopedSpawnEnv('claude'),
         })
         const out = (stdout + stderr).toLowerCase().replace(ANSI_RE, '')
         if (
@@ -205,7 +207,7 @@ export class AuthManager {
 
       const proc = spawn(binaryPath, ['--no-experimental'], {
         stdio: ['pipe', 'pipe', 'pipe'],
-        env: getSpawnEnv(),
+        env: getScopedSpawnEnv('copilot'),
       })
 
       this.activeLogin = proc
@@ -266,7 +268,7 @@ export class AuthManager {
 
       const proc = spawn(binaryPath, ['auth', 'login'], {
         stdio: ['pipe', 'pipe', 'pipe'],
-        env: getSpawnEnv(),
+        env: getScopedSpawnEnv('claude'),
       })
 
       this.activeLogin = proc

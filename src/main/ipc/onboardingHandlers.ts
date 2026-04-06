@@ -1,5 +1,6 @@
 import type { IpcMain } from 'electron'
 import Store from 'electron-store'
+import { getStoreEncryptionKey } from '../utils/storeEncryption'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -57,6 +58,7 @@ const DEFAULT_SETUP: SetupWizardState = {
 
 const store = new Store<OnboardingStoreSchema>({
   name: 'clear-path-onboarding',
+  encryptionKey: getStoreEncryptionKey(),
   defaults: {
     completedOnboarding: false,
     trainingModeEnabled: false,

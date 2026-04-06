@@ -3,6 +3,7 @@ import { dialog } from 'electron'
 import Store from 'electron-store'
 import { readFileSync, writeFileSync } from 'fs'
 import { randomUUID } from 'crypto'
+import { getStoreEncryptionKey } from '../utils/storeEncryption'
 
 interface PolicyRules {
   maxBudgetPerSession: number | null
@@ -76,6 +77,7 @@ const BUILTIN_PRESETS: PolicyPreset[] = [
 
 const store = new Store<PolicyStoreSchema>({
   name: 'clear-path-policy',
+  encryptionKey: getStoreEncryptionKey(),
   defaults: {
     activePresetId: 'policy-standard',
     presets: [],

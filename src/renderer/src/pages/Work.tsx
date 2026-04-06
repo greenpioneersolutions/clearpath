@@ -239,6 +239,7 @@ export default function Work(): JSX.Element {
     }
     const handleTurnEnd = (_e: IpcRendererEvent, { sessionId }: { sessionId: string }) => {
       setSessions((prev) => { const s = prev.get(sessionId); if (!s) return prev; const u = new Map(prev); u.set(sessionId, { ...s, processing: false }); return u })
+      void window.electronAPI.invoke('starter-pack:record-interaction')
     }
     const handlePermission = (_e: IpcRendererEvent, { sessionId, request }: { sessionId: string; request: ParsedOutput }) => {
       setSessions((prev) => {
@@ -674,6 +675,9 @@ export default function Work(): JSX.Element {
               onNewSession={() => setShowNewSession(true)}
               onContinueSession={(info) => void startSession({ cli: info.cli, name: info.name ? `${info.name} (cont)` : undefined })}
               onViewSession={(sessionId) => { setSelectedId(sessionId); setViewingStoppedSession(true) }}
+              onStartWithPrompt={(prompt, _agentId) => {
+                void startSession({ cli: lastUsedCli, name: prompt.slice(0, 30), initialPrompt: prompt })
+              }}
             />
           )
         )}

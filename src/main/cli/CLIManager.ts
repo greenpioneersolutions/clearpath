@@ -1,4 +1,6 @@
-import { randomUUID } from 'crypto'
+import { randomUUID, createHash } from 'crypto'
+import { log } from '../utils/logger'
+import { getStoreEncryptionKey } from '../utils/storeEncryption'
 import type { WebContents } from 'electron'
 import type { SessionOptions, SessionInfo } from './types'
 import type { ActiveSession, SubAgentProcess, SubAgentInfo, SubAgentStatus } from './types'
@@ -9,6 +11,13 @@ import Store from 'electron-store'
 
 export type NotifyCallback = (args: {
   type: string; severity: string; title: string; message: string; source: string; sessionId?: string
+}) => void
+
+export type AuditCallback = (entry: {
+  actionType: 'session' | 'prompt' | 'tool-approval' | 'file-change' | 'config-change' | 'policy-violation' | 'security-warning'
+  summary: string
+  details: string
+  sessionId?: string
 }) => void
 
 export type CostRecordCallback = (args: {
@@ -43,10 +52,13 @@ interface SessionStoreSchema {
 const sessionStore = new Store<SessionStoreSchema>({
   name: 'clear-path-sessions',
   defaults: { sessions: [] },
+  encryptionKey: getStoreEncryptionKey(),
 })
 
 const MAX_PERSISTED_SESSIONS = 50
 const MAX_PERSISTED_MESSAGES = 500
+/** Auto-purge sessions older than 30 days to minimize data exposure at rest. */
+const SESSION_RETENTION_MS = 30 * 24 * 60 * 60 * 1000 // 30 days
 
 export class CLIManager {
   private readonly sessions = new Map<string, ActiveSession>()
@@ -57,9 +69,27 @@ export class CLIManager {
   private readonly getWebContents: () => WebContents | null
   private onNotify: NotifyCallback | null = null
   private onCostRecord: CostRecordCallback | null = null
+  private onAudit: AuditCallback | null = null
 
   constructor(getWebContents: () => WebContents | null) {
     this.getWebContents = getWebContents
+    // Auto-purge expired sessions on startup
+    this.purgeExpiredSessions()
+  }
+
+  /** Remove persisted sessions older than the retention TTL. */
+  private purgeExpiredSessions(): void {
+    const cutoff = Date.now() - SESSION_RETENTION_MS
+    const sessions = sessionStore.get('sessions')
+    const before = sessions.length
+    const kept = sessions.filter((s) => {
+      const ts = s.endedAt ?? s.startedAt
+      return ts >= cutoff
+    })
+    if (kept.length < before) {
+      sessionStore.set('sessions', kept)
+      log.info(`[CLIManager] Purged ${before - kept.length} expired sessions (older than 30 days)`)
+    }
   }
 
   // ── Session persistence helpers ──────────────────────────────────────────
@@ -139,7 +169,7 @@ export class CLIManager {
   /** Search across all session content using regex or plain text */
   searchSessions(query: string, useRegex: boolean): Array<{ sessionId: string; name?: string; cli: string; startedAt: number; archived?: boolean; matches: Array<{ content: string; sender?: string; lineIndex: number }> }> {
     const sessions = sessionStore.get('sessions')
-    console.log(`[CLIManager] searchSessions query="${query}" regex=${useRegex} sessionsCount=${sessions.length} messageCounts=[${sessions.map(s => (s.messageLog ?? []).length).join(',')}]`)
+    log.debug(`[CLIManager] searchSessions regex=${useRegex} sessionsCount=${sessions.length}`)
     let matcher: (text: string) => boolean
     try {
       matcher = useRegex
@@ -182,7 +212,7 @@ export class CLIManager {
         })
       }
     }
-    console.log(`[CLIManager] searchSessions found ${results.length} sessions with matches`)
+    log.debug(`[CLIManager] searchSessions found ${results.length} sessions with matches`)
     return results
   }
 
@@ -194,6 +224,34 @@ export class CLIManager {
   /** Register a callback for cost recording on each completed turn. */
   setCostRecordCallback(cb: CostRecordCallback): void {
     this.onCostRecord = cb
+  }
+
+  /** Register a callback for audit logging. */
+  setAuditCallback(cb: AuditCallback): void {
+    this.onAudit = cb
+  }
+
+  /** Log a prompt to the audit trail (hashed, not plaintext). */
+  private auditPrompt(sessionId: string, cli: string, input: string): void {
+    if (!this.onAudit) return
+    const hash = createHash('sha256').update(input).digest('hex').slice(0, 16)
+    this.onAudit({
+      actionType: 'prompt',
+      summary: `Prompt sent to ${cli} (${input.length} chars)`,
+      details: JSON.stringify({ cli, charCount: input.length, promptHash: hash }),
+      sessionId,
+    })
+  }
+
+  /** Log a session lifecycle event to the audit trail. */
+  private auditSession(sessionId: string, action: string, cli: string, details?: Record<string, unknown>): void {
+    if (!this.onAudit) return
+    this.onAudit({
+      actionType: 'session',
+      summary: `Session ${action}: ${cli}`,
+      details: JSON.stringify({ cli, action, ...details }),
+      sessionId,
+    })
   }
 
   /** Estimate tokens from output byte count (rough: 1 token ≈ 4 chars). */
@@ -254,7 +312,7 @@ export class CLIManager {
     // Ensure adapter binary is resolved
     await adapter.isInstalled()
 
-    console.log(`[CLIManager] startSession cli=${options.cli} sessionId=${sessionId} binary=${adapter.binaryPath}`)
+    log.info(`[CLIManager] startSession cli=${options.cli} sessionId=${sessionId.slice(0, 8)}`)
 
     const session: ActiveSession = {
       info: {
@@ -282,6 +340,11 @@ export class CLIManager {
 
     this.sessions.set(sessionId, session)
 
+    // Audit: session started
+    this.auditSession(sessionId, 'started', options.cli, {
+      model: options.model, agent: options.agent, permissionMode: options.permissionMode,
+    })
+
     // Persist session creation immediately
     this.persistSession(sessionId, session)
 
@@ -298,7 +361,7 @@ export class CLIManager {
     if (!session || session.info.status !== 'running') return
 
     if (session.processingTurn) {
-      console.log(`[CLIManager] turn in progress — ignoring input: ${input.slice(0, 40)}`)
+      log.debug(`[CLIManager] turn in progress — ignoring input (${input.length} chars)`)
       return
     }
 
@@ -324,6 +387,10 @@ export class CLIManager {
     }
     session.info.status = 'stopped'
     session.processingTurn = false
+
+    // Audit: session stopped
+    this.auditSession(sessionId, 'stopped', session.info.cli, { turnCount: session.turnCount })
+
     // Persist final state with endedAt timestamp
     this.persistSession(sessionId, session)
   }
@@ -367,8 +434,12 @@ export class CLIManager {
       resume: session.turnCount === 0 ? session.originalOptions.resume : undefined,
     }
 
-    console.log(`[CLIManager] runTurn #${session.turnCount} cli=${session.info.cli} input="${input.slice(0, 60)}"`)
-    console.log(`[CLIManager] args:`, session.adapter.buildArgs(turnOptions))
+    // Log turn start — do NOT log prompt content or full args in production
+    log.info(`[CLIManager] runTurn #${session.turnCount} cli=${session.info.cli} inputLen=${input.length}`)
+    log.debug(`[CLIManager] args:`, session.adapter.buildArgs(turnOptions))
+
+    // Audit: prompt sent
+    this.auditPrompt(sessionId, session.info.cli, input)
 
     const proc = session.adapter.startSession(turnOptions)
     session.process = proc
@@ -377,8 +448,8 @@ export class CLIManager {
     session.turnOutputBytes = 0
     session.lastPrompt = input
 
-    console.log(`[CLIManager] ✅ spawned pid=${proc.pid ?? 'unknown'} for session ${sessionId.slice(0, 8)}`)
-    console.log(`[CLIManager] ⏳ turn #${session.turnCount} started — waiting for CLI response...`)
+    log.info(`[CLIManager] spawned pid=${proc.pid ?? 'unknown'} for session ${sessionId.slice(0, 8)}`)
+    log.debug(`[CLIManager] turn #${session.turnCount} started — waiting for CLI response...`)
 
     // Notify renderer a turn started
     const wc0 = this.getWebContents()
@@ -622,7 +693,8 @@ export class CLIManager {
   private attachListeners(sessionId: string, session: ActiveSession, proc: ChildProcess): void {
     proc.stdout?.on('data', (chunk: Buffer) => {
       const raw = chunk.toString()
-      console.log(`[CLIManager:${session.info.cli}] stdout (${raw.length}b):`, JSON.stringify(raw.slice(0, 300)))
+      // Only log byte count in production — never log AI output content
+      log.debug(`[CLIManager:${session.info.cli}] stdout (${raw.length}b)`)
 
       session.turnOutputBytes += raw.length
       session.buffer += raw
@@ -632,7 +704,7 @@ export class CLIManager {
       for (const line of lines) {
         if (!line.trim()) continue
         const parsed = session.adapter.parseOutput(line)
-        console.log(`[CLIManager:${session.info.cli}] parsed:`, parsed.type, JSON.stringify(parsed.content.slice(0, 80)))
+        log.debug(`[CLIManager:${session.info.cli}] parsed: ${parsed.type} (${parsed.content.length} chars)`)
 
         const wc = this.getWebContents()
         if (!wc || wc.isDestroyed()) continue
@@ -657,7 +729,7 @@ export class CLIManager {
 
     proc.stderr?.on('data', (chunk: Buffer) => {
       const raw = chunk.toString()
-      console.log(`[CLIManager:${session.info.cli}] stderr:`, JSON.stringify(raw.slice(0, 300)))
+      log.debug(`[CLIManager:${session.info.cli}] stderr (${raw.length}b)`)
       const wc = this.getWebContents()
       if (!wc || wc.isDestroyed()) return
 
@@ -677,7 +749,7 @@ export class CLIManager {
       // Deduplicate repeated messages — suppress exact duplicates within a rolling window
       const dedupeKey = trimmed.slice(0, 200)
       if (recentStderr.has(dedupeKey)) {
-        console.log(`[CLIManager:${session.info.cli}] suppressed duplicate stderr`)
+        log.debug(`[CLIManager:${session.info.cli}] suppressed duplicate stderr`)
         return
       }
       recentStderr.add(dedupeKey)
@@ -696,7 +768,7 @@ export class CLIManager {
     })
 
     proc.on('error', (err) => {
-      console.error(`[CLIManager:${session.info.cli}] spawn error:`, err.message)
+      log.error(`[CLIManager:${session.info.cli}] spawn error:`, err.message)
       session.processingTurn = false
       session.process = null
       const wc = this.getWebContents()
@@ -707,7 +779,7 @@ export class CLIManager {
 
     proc.on('exit', (code, signal) => {
       const duration = Date.now() - (session.info.startedAt ?? Date.now())
-      console.log(`[CLIManager] ✅ turn complete — session=${sessionId.slice(0, 8)} cli=${session.info.cli} exit=${code} signal=${signal} outputBytes=${session.turnOutputBytes} elapsed=${Math.round(duration / 1000)}s`)
+      log.info(`[CLIManager] turn complete — session=${sessionId.slice(0, 8)} cli=${session.info.cli} exit=${code} signal=${signal} outputBytes=${session.turnOutputBytes} elapsed=${Math.round(duration / 1000)}s`)
 
       // Flush any remaining buffer
       if (session.buffer.trim()) {

@@ -40,7 +40,8 @@ ClearPathAI wraps GitHub Copilot CLI (and Claude Code CLI for teams that have ac
 - **Task scheduler** — Cron-based scheduled tasks with node-cron, missed run detection, execution history
 - **Policy guardrails** — Configurable policy presets (Cautious/Standard/Unrestricted) with violation logging
 - **Team collaboration** — Config bundle export/import, shared folder sync, agent marketplace
-- **Compliance & security** — Audit logging, sensitive data scanning, file protection patterns, compliance snapshot export
+- **PR Scores (Experimental)** — Score GitHub pull requests 0-100 with breakdown analysis, repo dashboards, and AI-powered code review
+- **Compliance & security** — Audit logging, encrypted credential storage, OS keychain integration, CSP headers, IPC whitelisting, rate limiting
 - **Knowledge base generation** — AI-generated codebase documentation with incremental updates
 - **Voice interface** — Speech-to-text input, voice commands, hands-free mode, audio notifications
 - **Git workflow tools** — Visual git status, PR builder, worktree management, branch protection awareness
@@ -128,8 +129,9 @@ Clear Path uses a streamlined 4-screen navigation:
 |--------|---------|
 | **Home** | Customizable widget dashboard with preset layouts |
 | **Work** | Session chat + contextual panel toolbar (Agents, Tools, Files, Git, Templates, Sub-Agents, Knowledge Base) |
-| **Insights** | Analytics, Compliance, and Usage tabs |
-| **Configure** | Settings, Policies, Integrations, Memory, Workspaces, Team Hub, Scheduler, Learn |
+| **Insights** | Analytics (token-first + cost toggle), Compliance, and Usage tabs |
+| **PR Scores** | Experimental — GitHub PR scoring, repo dashboards, AI review (feature-flagged) |
+| **Configure** | Settings, Policies, Integrations, Memory, Skills, Workspaces, Team Hub, Scheduler, Branding |
 
 Managers see 4 screens, not 18 pages. Power users access everything through contextual panels in the Work view.
 
@@ -140,8 +142,9 @@ ClearPathAI is built for organizations that need AI tooling they can control, au
 | Capability | What It Means |
 |-----------|---------------|
 | **Policy guardrails** | Prevent unauthorized tool use, enforce permission modes, cap budgets, protect sensitive files |
-| **Compliance & audit** | Append-only audit log of every AI interaction, one-click compliance snapshot export |
+| **Compliance & audit** | Immutable audit log with JSONL archival, one-click compliance snapshot export |
 | **Sensitive data scanning** | Catches credentials, API keys, and PII in prompts before they reach the AI |
+| **Encryption at rest** | OS keychain for secrets (macOS Keychain, DPAPI, libsecret), AES-encrypted electron-store, CSP headers, IPC whitelisting |
 | **Team onboarding** | Built-in Learning Center with role-based paths, interactive lessons, and progress tracking |
 | **Cost governance** | Real-time cost tracking, budget alerts, auto-pause at limits, ROI analytics |
 | **Config sharing** | Export/import settings, policies, templates, and agents as team bundles — no server required |

@@ -1,12 +1,15 @@
 import type { IpcMain } from 'electron'
 import Store from 'electron-store'
 import { Octokit } from 'octokit'
+import { storeSecret, retrieveSecret, deleteSecret } from '../utils/credentialStore'
+import { getStoreEncryptionKey } from '../utils/storeEncryption'
+import { log } from '../utils/logger'
 
 // ── Store ────────────────────────────────────────────────────────────────────
 
 interface IntegrationStoreSchema {
   github: {
-    token: string
+    // Token is now stored encrypted in credentialStore, NOT here
     username: string
     connected: boolean
     connectedAt: number
@@ -15,21 +18,72 @@ interface IntegrationStoreSchema {
 
 const store = new Store<IntegrationStoreSchema>({
   name: 'clear-path-integrations',
-  defaults: {
-    github: null,
-  },
+  defaults: { github: null },
+  encryptionKey: getStoreEncryptionKey(),
 })
 
 // ── GitHub client cache ──────────────────────────────────────────────────────
 
 let octokit: Octokit | null = null
+let lastOctokitError: string | null = null
 
 function getOctokit(): Octokit | null {
-  if (octokit) return octokit
+  if (octokit) {
+    log.debug('[integration] Using cached Octokit instance')
+    lastOctokitError = null
+    return octokit
+  }
+
   const gh = store.get('github')
-  if (!gh?.token) return null
-  octokit = new Octokit({ auth: gh.token })
+  if (!gh?.connected) {
+    lastOctokitError = 'GitHub shows as not connected in settings. Please connect via Configure > Integrations.'
+    log.warn('[integration] getOctokit: %s', lastOctokitError)
+    return null
+  }
+
+  log.info('[integration] getOctokit: Store shows connected as "%s" — retrieving token from credential store', gh.username)
+  let token = retrieveSecret('github-token')
+
+  // Migration: check if old token is stored directly in the integration store
+  // (before security hardening moved tokens to credentialStore)
+  if (!token) {
+    log.warn('[integration] getOctokit: Token NOT in credentialStore — checking legacy store format')
+    const raw = store.store as Record<string, unknown>
+    const ghRaw = raw['github'] as Record<string, unknown> | undefined
+    if (ghRaw && typeof ghRaw['token'] === 'string' && ghRaw['token'].length > 0) {
+      const legacyToken = ghRaw['token'] as string
+      log.info('[integration] getOctokit: Found legacy plaintext token (length=%d) — migrating to credentialStore', legacyToken.length)
+      try {
+        storeSecret('github-token', legacyToken)
+        token = legacyToken
+        // Remove the old plaintext token from the integration store
+        store.set('github', {
+          username: gh.username,
+          connected: gh.connected,
+          connectedAt: gh.connectedAt,
+        })
+        log.info('[integration] getOctokit: Migration complete — legacy token moved to encrypted credentialStore')
+      } catch (err) {
+        log.error('[integration] getOctokit: Migration failed —', err)
+      }
+    }
+  }
+
+  if (!token) {
+    lastOctokitError = 'Connected as "' + gh.username + '" but the saved token could not be retrieved. This can happen after an app update or if the OS keychain was reset. Please disconnect and reconnect GitHub in Configure > Integrations.'
+    log.error('[integration] getOctokit: %s', lastOctokitError)
+    return null
+  }
+
+  log.info('[integration] getOctokit: Token retrieved OK (length=%d, prefix=%s…) — creating Octokit client', token.length, token.slice(0, 4))
+  lastOctokitError = null
+  octokit = new Octokit({ auth: token })
   return octokit
+}
+
+/** Returns the last diagnostic error from getOctokit(), if any. */
+function getLastOctokitError(): string | null {
+  return lastOctokitError
 }
 
 // ── Registration ─────────────────────────────────────────────────────────────
@@ -48,12 +102,15 @@ export function registerIntegrationHandlers(ipcMain: IpcMain): void {
   // ── GitHub: Connect ──────────────────────────────────────────────────────
 
   ipcMain.handle('integration:github-connect', async (_e, args: { token: string }) => {
+    log.info('[integration] github-connect: Attempting connection (token length=%d, prefix=%s...)', args.token.length, args.token.slice(0, 4))
     try {
       const kit = new Octokit({ auth: args.token })
       const { data: user } = await kit.rest.users.getAuthenticated()
+      log.info('[integration] github-connect: Authenticated as "%s" (id=%d)', user.login, user.id)
 
+      // Store token encrypted via OS keychain, metadata in electron-store
+      storeSecret('github-token', args.token)
       store.set('github', {
-        token: args.token,
         username: user.login,
         connected: true,
         connectedAt: Date.now(),
@@ -64,6 +121,7 @@ export function registerIntegrationHandlers(ipcMain: IpcMain): void {
 
       return { success: true, username: user.login }
     } catch (err) {
+      log.error('[integration] github-connect: Failed —', err)
       return { success: false, error: String(err) }
     }
   })
@@ -71,6 +129,8 @@ export function registerIntegrationHandlers(ipcMain: IpcMain): void {
   // ── GitHub: Disconnect ───────────────────────────────────────────────────
 
   ipcMain.handle('integration:github-disconnect', () => {
+    log.info('[integration] github-disconnect: Clearing token and connection state')
+    deleteSecret('github-token')
     store.set('github', null)
     octokit = null
     return { success: true }
@@ -79,16 +139,34 @@ export function registerIntegrationHandlers(ipcMain: IpcMain): void {
   // ── GitHub: List Repos ───────────────────────────────────────────────────
 
   ipcMain.handle('integration:github-repos', async (_e, args?: { page?: number; perPage?: number }) => {
+    log.info('[integration] github-repos: Fetching repos (page=%d, perPage=%d)', args?.page ?? 1, args?.perPage ?? 20)
     const kit = getOctokit()
-    if (!kit) return { success: false, error: 'GitHub not connected' }
+    if (!kit) {
+      const reason = getLastOctokitError() ?? 'Could not initialize GitHub API client.'
+      log.error('[integration] github-repos: Octokit is null — %s', reason)
+      return { success: false, error: reason }
+    }
 
     try {
-      const { data } = await kit.rest.repos.listForAuthenticatedUser({
-        sort: 'pushed',
-        direction: 'desc',
+      // NOTE: `type` and `affiliation` are mutually exclusive in GitHub's API.
+      // Using `affiliation` for explicit control. Do NOT add `type` alongside it.
+      const requestParams = {
+        sort: 'pushed' as const,
+        direction: 'desc' as const,
         per_page: args?.perPage ?? 20,
         page: args?.page ?? 1,
-      })
+        affiliation: 'owner,collaborator,organization_member',
+      }
+      log.debug('[integration] github-repos: Request params:', JSON.stringify(requestParams))
+
+      const { data, headers } = await kit.rest.repos.listForAuthenticatedUser(requestParams)
+
+      log.info('[integration] github-repos: Received %d repos (x-ratelimit-remaining: %s)', data.length, headers['x-ratelimit-remaining'] ?? 'n/a')
+      if (data.length > 0) {
+        log.debug('[integration] github-repos: First repo: %s, Last repo: %s', data[0].full_name, data[data.length - 1].full_name)
+      } else {
+        log.warn('[integration] github-repos: API returned 0 repos — check token scopes (needs "repo" for classic PATs, or "metadata:read" for fine-grained)')
+      }
 
       return {
         success: true,
@@ -105,15 +183,26 @@ export function registerIntegrationHandlers(ipcMain: IpcMain): void {
         })),
       }
     } catch (err) {
-      return { success: false, error: String(err) }
+      const errStr = String(err)
+      log.error('[integration] github-repos: API call failed —', errStr)
+      // Surface HTTP status if available (Octokit wraps it)
+      if (err && typeof err === 'object' && 'status' in err) {
+        log.error('[integration] github-repos: HTTP status: %d', (err as { status: number }).status)
+      }
+      return { success: false, error: errStr }
     }
   })
 
   // ── GitHub: List Pull Requests ───────────────────────────────────────────
 
   ipcMain.handle('integration:github-pulls', async (_e, args: { owner: string; repo: string; state?: string; perPage?: number }) => {
+    log.info('[integration] github-pulls: %s/%s (state=%s)', args.owner, args.repo, args.state ?? 'open')
     const kit = getOctokit()
-    if (!kit) return { success: false, error: 'GitHub not connected' }
+    if (!kit) {
+      const reason = getLastOctokitError() ?? 'GitHub not connected'
+      log.error('[integration] github-pulls: %s', reason)
+      return { success: false, error: reason }
+    }
 
     try {
       const { data } = await kit.rest.pulls.list({
@@ -125,6 +214,7 @@ export function registerIntegrationHandlers(ipcMain: IpcMain): void {
         per_page: args.perPage ?? 10,
       })
 
+      log.info('[integration] github-pulls: Received %d PRs for %s/%s', data.length, args.owner, args.repo)
       return {
         success: true,
         pulls: data.map((pr) => ({
@@ -148,6 +238,7 @@ export function registerIntegrationHandlers(ipcMain: IpcMain): void {
         })),
       }
     } catch (err) {
+      log.error('[integration] github-pulls: Failed for %s/%s —', args.owner, args.repo, err)
       return { success: false, error: String(err) }
     }
   })
@@ -155,8 +246,13 @@ export function registerIntegrationHandlers(ipcMain: IpcMain): void {
   // ── GitHub: Get Pull Request Detail ──────────────────────────────────────
 
   ipcMain.handle('integration:github-pull-detail', async (_e, args: { owner: string; repo: string; pullNumber: number }) => {
+    log.info('[integration] github-pull-detail: %s/%s #%d', args.owner, args.repo, args.pullNumber)
     const kit = getOctokit()
-    if (!kit) return { success: false, error: 'GitHub not connected' }
+    if (!kit) {
+      const reason = getLastOctokitError() ?? 'GitHub not connected'
+      log.error('[integration] github-pull-detail: %s', reason)
+      return { success: false, error: reason }
+    }
 
     try {
       const [{ data: pr }, { data: files }, { data: reviews }] = await Promise.all([
@@ -201,6 +297,7 @@ export function registerIntegrationHandlers(ipcMain: IpcMain): void {
         })),
       }
     } catch (err) {
+      log.error('[integration] github-pull-detail: Failed for %s/%s #%d —', args.owner, args.repo, args.pullNumber, err)
       return { success: false, error: String(err) }
     }
   })
@@ -208,8 +305,13 @@ export function registerIntegrationHandlers(ipcMain: IpcMain): void {
   // ── GitHub: List Issues ──────────────────────────────────────────────────
 
   ipcMain.handle('integration:github-issues', async (_e, args: { owner: string; repo: string; state?: string; perPage?: number }) => {
+    log.info('[integration] github-issues: %s/%s (state=%s)', args.owner, args.repo, args.state ?? 'open')
     const kit = getOctokit()
-    if (!kit) return { success: false, error: 'GitHub not connected' }
+    if (!kit) {
+      const reason = getLastOctokitError() ?? 'GitHub not connected'
+      log.error('[integration] github-issues: %s', reason)
+      return { success: false, error: reason }
+    }
 
     try {
       const { data } = await kit.rest.issues.listForRepo({
@@ -241,6 +343,7 @@ export function registerIntegrationHandlers(ipcMain: IpcMain): void {
         })),
       }
     } catch (err) {
+      log.error('[integration] github-issues: Failed for %s/%s —', args.owner, args.repo, err)
       return { success: false, error: String(err) }
     }
   })
@@ -248,8 +351,13 @@ export function registerIntegrationHandlers(ipcMain: IpcMain): void {
   // ── GitHub: Search Across Repos ──────────────────────────────────────────
 
   ipcMain.handle('integration:github-search', async (_e, args: { query: string; type?: 'issues' | 'pulls' | 'code' }) => {
+    log.info('[integration] github-search: query="%s" type=%s', args.query, args.type ?? 'issues')
     const kit = getOctokit()
-    if (!kit) return { success: false, error: 'GitHub not connected' }
+    if (!kit) {
+      const reason = getLastOctokitError() ?? 'GitHub not connected'
+      log.error('[integration] github-search: %s', reason)
+      return { success: false, error: reason }
+    }
 
     try {
       const gh = store.get('github')
@@ -291,6 +399,7 @@ export function registerIntegrationHandlers(ipcMain: IpcMain): void {
         })),
       }
     } catch (err) {
+      log.error('[integration] github-search: Failed —', err)
       return { success: false, error: String(err) }
     }
   })

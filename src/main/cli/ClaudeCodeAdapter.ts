@@ -5,7 +5,7 @@ import { join } from 'path'
 import type { ChildProcess } from 'child_process'
 import type { SessionOptions, ParsedOutput } from './types'
 import type { ICLIAdapter } from './types'
-import { resolveInShell, getSpawnEnv } from '../utils/shellEnv'
+import { resolveInShell, getScopedSpawnEnv } from '../utils/shellEnv'
 
 // Matches Claude Code permission prompts: "Do you want to allow: X? [y/n]"
 const PERMISSION_LINE_RE = /\ballow\b.+\?\s*\[y\/n\]/i
@@ -223,7 +223,7 @@ export class ClaudeCodeAdapter implements ICLIAdapter {
     const proc = spawn(this.binaryPath, args, {
       cwd: options.workingDirectory,
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: getSpawnEnv(),
+      env: getScopedSpawnEnv('claude'),
     })
 
     if (options.prompt) {

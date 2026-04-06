@@ -1,5 +1,6 @@
 import type { IpcMain } from 'electron'
 import Store from 'electron-store'
+import { getStoreEncryptionKey } from '../utils/storeEncryption'
 
 export interface HistoricalSession {
   sessionId: string
@@ -16,6 +17,7 @@ interface HistoryStore {
 
 const store = new Store<HistoryStore>({
   name: 'clear-path-history',
+  encryptionKey: getStoreEncryptionKey(),
   defaults: { sessions: [] },
 })
 

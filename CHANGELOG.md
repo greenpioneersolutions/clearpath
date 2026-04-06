@@ -2,6 +2,41 @@
 
 All notable changes to ClearPathAI will be documented in this file.
 
+## [1.4.0] - 2026-04-06
+
+### Added
+- **PR Scores (Experimental)** — New top-level page for scoring GitHub pull requests 0-100 using the `pull-request-score` package. Browse repos, view PR list with dates/authors/line changes, score individual or batch PRs, drill into score breakdowns, and view repo-level dashboard with charts (score distribution, trend, author comparison, cycle time). AI Review button pipes scored PR context into a CLI session for AI-powered code review. Gated behind `enableExperimentalFeatures` + `showPrScores` feature flags
+- **Starter Pack** — 6 production-ready agents (Communication Coach, Research Analyst, Chief of Staff, Strategy & Decision Partner, Technical Reviewer, Document Builder) with full system prompts. 7 skills (Audience & Tone Rewrite, Research Brief, Meeting-to-Action, Priority Planner, Feedback Prep, Document Builder, Concept Explainer). 5 memory schemas for team context. 6 prompt suggestions surfaced in Home Hub and Welcome Back. Agent handoff architecture with keyword-based trigger matching and context transfer
+- **Token-First Analytics** — Insights page defaults to token counts (enterprise perspective) with a toggle to switch to monetary view. Token-based budget ceilings (daily/weekly/monthly) alongside monetary budgets. Display mode persisted across sessions
+- **Feature Flag System** — 3 new experimental flags (`enableExperimentalFeatures`, `showPrScores`, `prScoresAiReview`) with compound flag checks for nav items. Sidebar items support `requiredFlags` array — all flags must be true for the item to show
+
+### Security
+- **OS Keychain Credential Storage** — GitHub tokens and sensitive env vars encrypted via Electron's `safeStorage` API (macOS Keychain, Windows DPAPI, Linux libsecret). No plaintext token storage. Automatic migration of legacy plaintext secrets on startup
+- **Content Security Policy** — CSP headers on all responses: `script-src 'self'` in production (blocks inline script injection), restricted `connect-src`, `frame-ancestors 'none'`, `object-src 'none'`. Dev mode allows inline scripts for Vite HMR only
+- **Encryption at Rest** — All electron-store data encrypted with machine-derived AES key (homedir + hostname + username). Integrity check warns if key changes
+- **IPC Channel Whitelist** — Preload script enforces explicit whitelist of ~170 allowed IPC channels. Unknown channels rejected with error. Prevents XSS-to-IPC escalation
+- **Path Traversal Prevention** — `assertPathWithinRoots()` validates and resolves symlinks. Sensitive system paths blocked (`.ssh`, `.aws`, `.gnupg`, `/etc`)
+- **Shell Injection Prevention** — CLI binary resolution uses `command -v "$1"` with positional args instead of string interpolation. Binary names validated with regex. Terminal opening uses `execFile()` array args
+- **SSRF Protection** — Webhook URLs restricted to HTTPS only. Private IPs, localhost, and cloud metadata endpoints blocked
+- **Rate Limiting** — Sliding-window limits on session creation (5/min), sub-agent spawning (10/min), webhook testing (5/min), data deletion (1/min), and git operations (30/min)
+- **MCP Command Validation** — Server commands checked against blocked patterns (`rm -rf`, `curl | sh`, `eval`, etc.) and shell metacharacter injection
+- **XSS Prevention** — Switched markdown rendering from `rehype-raw` to `rehype-sanitize`. AI output cannot inject scripts or iframes
+- **Scoped Environment Variables** — Each CLI adapter receives only the secrets it needs (Copilot: `GH_TOKEN`; Claude: `ANTHROPIC_API_KEY`; Local: none)
+- **Audit Log Integrity** — Compliance logs can no longer be cleared from the UI. Overflow entries archived to JSONL files instead of discarded. Config bundle sharing uses HMAC-SHA256 signing
+- **Centralized Logger** — All `console.log` calls in main process replaced with level-gated logger (debug/info/warn/error). Production defaults to warn. Controlled via `CLEARPATH_LOG_LEVEL` env var
+
+### Changed
+- **GitHub Integration Logging** — Full request/response logging across all GitHub API handlers (repos, pulls, issues, search). Token retrieval diagnostics, rate limit tracking, and specific error messages surfaced to the UI
+- **PR Scores Integration Toggle** — GitHub Integrations panel shows a PR Scores on/off toggle when experimental features are enabled and GitHub is connected
+- **Sandbox Mode** — BrowserWindow now runs with `sandbox: true` for stronger OS-level process isolation
+- **DevTools Production Guard** — DevTools only open in development when `NODE_ENV !== 'production'`
+
+### Fixed
+- **GitHub Repos Not Loading** — Added `affiliation: 'owner,collaborator,organization_member'` to repo list API call. Fixed `type`/`affiliation` mutual exclusivity (GitHub returns 422 when both are set)
+- **Token Retrieval After Security Migration** — Added automatic migration of legacy plaintext GitHub tokens to encrypted credential store. Clear diagnostic error shown in UI when token retrieval fails, with Disconnect & Reconnect action
+- **PR Scoring Crash** — `pull-request-score` ESM package caused Vite chunk re-evaluation and IPC handler re-registration. Fixed with runtime-constructed `import()` via `new Function()` to bypass Vite's static analysis
+- **PR List Crash on Missing Data** — GitHub's PR list endpoint doesn't always return `additions`/`deletions`/`changedFiles`. Added null guards to prevent `toLocaleString()` on undefined
+
 ## [1.3.0] - 2026-04-03
 
 ### Added

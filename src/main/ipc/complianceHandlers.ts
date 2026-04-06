@@ -1,8 +1,11 @@
 import type { IpcMain } from 'electron'
 import { dialog } from 'electron'
 import Store from 'electron-store'
-import { writeFileSync } from 'fs'
-import { randomUUID } from 'crypto'
+import { writeFileSync, appendFileSync, mkdirSync, existsSync } from 'fs'
+import { randomUUID, createHash } from 'crypto'
+import { join } from 'path'
+import { homedir } from 'os'
+import { getStoreEncryptionKey } from '../utils/storeEncryption'
 
 interface AuditEntry {
   id: string
@@ -32,6 +35,7 @@ const DEFAULT_SENSITIVE_PATTERNS = [
 
 const store = new Store<ComplianceStoreSchema>({
   name: 'clear-path-compliance',
+  encryptionKey: getStoreEncryptionKey(),
   defaults: {
     auditLog: [],
     fileProtectionPatterns: DEFAULT_FILE_PROTECTION,
@@ -39,11 +43,32 @@ const store = new Store<ComplianceStoreSchema>({
   },
 })
 
-function addAuditEntry(entry: Omit<AuditEntry, 'id' | 'timestamp'>): AuditEntry {
+const AUDIT_LOG_MAX = 10000
+const AUDIT_ARCHIVE_DIR = join(
+  process.platform === 'darwin'
+    ? join(homedir(), 'Library', 'Application Support', 'clear-path')
+    : join(homedir(), '.config', 'clear-path'),
+  'audit-archive',
+)
+
+export function addAuditEntry(entry: Omit<AuditEntry, 'id' | 'timestamp'>): AuditEntry {
   const full: AuditEntry = { ...entry, id: randomUUID(), timestamp: Date.now() }
   const log = store.get('auditLog')
   log.push(full)
-  if (log.length > 5000) log.splice(0, log.length - 5000)
+
+  // When log exceeds limit, archive oldest entries to a JSONL file instead of discarding
+  if (log.length > AUDIT_LOG_MAX) {
+    const toArchive = log.splice(0, log.length - AUDIT_LOG_MAX)
+    try {
+      mkdirSync(AUDIT_ARCHIVE_DIR, { recursive: true })
+      const archiveFile = join(AUDIT_ARCHIVE_DIR, `audit-${new Date().toISOString().slice(0, 10)}.jsonl`)
+      const lines = toArchive.map((e) => JSON.stringify(e)).join('\n') + '\n'
+      appendFileSync(archiveFile, lines, 'utf8')
+    } catch {
+      // If archiving fails, we still keep the trimmed log — don't lose current entries
+    }
+  }
+
   store.set('auditLog', log)
   return full
 }
@@ -152,8 +177,8 @@ export function registerComplianceHandlers(ipcMain: IpcMain): void {
     return { path: result.filePath }
   })
 
-  ipcMain.handle('compliance:clear-log', () => {
-    store.set('auditLog', [])
-    return { success: true }
-  })
+  // compliance:clear-log has been REMOVED for security.
+  // Audit logs should not be clearable from the renderer to maintain integrity.
+  // To manage log size, use the automatic rotation in addAuditEntry() which
+  // archives old entries when the log exceeds the retention limit.
 }

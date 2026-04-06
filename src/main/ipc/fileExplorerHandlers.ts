@@ -1,7 +1,9 @@
 import type { IpcMain } from 'electron'
 import { readdirSync, statSync, watch } from 'fs'
-import { join, relative } from 'path'
+import { join, relative, resolve } from 'path'
 import type { WebContents } from 'electron'
+import { assertPathWithinRoots, getWorkspaceAllowedRoots, isSensitiveSystemPath } from '../utils/pathSecurity'
+import { checkRateLimit } from '../utils/rateLimiter'
 
 interface FileEntry {
   name: string
@@ -53,14 +55,34 @@ function isProtectedFile(filePath: string): boolean {
 export function registerFileExplorerHandlers(ipcMain: IpcMain, getWebContents: () => WebContents | null): void {
   const watchers = new Map<string, ReturnType<typeof watch>>()
 
-  ipcMain.handle('files:list', (_e, args: { cwd: string; maxDepth?: number }) =>
-    readDir(args.cwd, args.cwd, 0, args.maxDepth ?? 3),
-  )
+  ipcMain.handle('files:list', (_e, args: { cwd: string; maxDepth?: number }) => {
+    try {
+      assertPathWithinRoots(args.cwd, getWorkspaceAllowedRoots())
+      if (isSensitiveSystemPath(args.cwd)) {
+        return []
+      }
+    } catch {
+      return []
+    }
+    return readDir(args.cwd, args.cwd, 0, args.maxDepth ?? 3)
+  })
 
   ipcMain.handle('files:is-protected', (_e, args: { path: string }) => isProtectedFile(args.path))
 
   ipcMain.handle('files:watch', (_e, args: { cwd: string }) => {
     if (watchers.has(args.cwd)) return { already: true }
+
+    const rl = checkRateLimit('files:watch')
+    if (!rl.allowed) return { error: 'Too many file watchers — try again shortly' }
+
+    try {
+      assertPathWithinRoots(args.cwd, getWorkspaceAllowedRoots())
+      if (isSensitiveSystemPath(args.cwd)) {
+        return { error: 'Cannot watch sensitive directory' }
+      }
+    } catch {
+      return { error: 'Directory not within allowed roots' }
+    }
 
     try {
       const watcher = watch(args.cwd, { recursive: true }, (eventType, filename) => {

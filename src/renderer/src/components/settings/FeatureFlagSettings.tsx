@@ -68,6 +68,14 @@ const FLAG_GROUPS: FlagGroup[] = [
       { key: 'showWebhooks', label: 'Webhooks', description: 'External notification hooks' },
     ],
   },
+  {
+    label: 'Experimental Features',
+    flags: [
+      { key: 'enableExperimentalFeatures', label: 'Experimental Features', description: 'Master toggle for all experimental features' },
+      { key: 'showPrScores', label: 'PR Scores', description: 'Pull request scoring and analytics (requires GitHub integration)' },
+      { key: 'prScoresAiReview', label: 'PR Scores AI Review', description: 'Enable AI-powered PR code review via connected CLI' },
+    ],
+  },
 ]
 
 // ── Component ────────────────────────────────────────────────────────────────

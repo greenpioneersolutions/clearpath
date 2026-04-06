@@ -1,6 +1,7 @@
 import type { IpcMain } from 'electron'
 import type { NotificationManager, NotificationType, NotificationSeverity, NotificationAction, NotificationPrefs, WebhookEndpoint } from '../notifications/NotificationManager'
 import { randomUUID } from 'crypto'
+import { checkRateLimit } from '../utils/rateLimiter'
 
 export function registerNotificationHandlers(ipcMain: IpcMain, manager: NotificationManager): void {
   // ── Emit a notification ────────────────────────────────────────────────────
@@ -57,6 +58,22 @@ export function registerNotificationHandlers(ipcMain: IpcMain, manager: Notifica
   ipcMain.handle('notifications:list-webhooks', () => manager.getWebhooks())
 
   ipcMain.handle('notifications:save-webhook', (_e, args: Omit<WebhookEndpoint, 'id'> & { id?: string }) => {
+    // Validate webhook URL before saving
+    if (args.url) {
+      try {
+        const parsed = new URL(args.url)
+        if (parsed.protocol !== 'https:') {
+          return { error: 'Only HTTPS webhook URLs are allowed' }
+        }
+        const host = parsed.hostname.toLowerCase()
+        if (host === 'localhost' || host === '127.0.0.1' || host === '::1' ||
+            /^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|169\.254\.)/.test(host)) {
+          return { error: 'Private/internal URLs are not allowed for webhooks' }
+        }
+      } catch {
+        return { error: 'Invalid webhook URL' }
+      }
+    }
     const wh: WebhookEndpoint = { ...args, id: args.id ?? randomUUID() }
     manager.saveWebhook(wh)
     return wh
@@ -67,7 +84,9 @@ export function registerNotificationHandlers(ipcMain: IpcMain, manager: Notifica
     return { success: true }
   })
 
-  ipcMain.handle('notifications:test-webhook', (_e, args: { id: string }) =>
-    manager.testWebhook(args.id),
-  )
+  ipcMain.handle('notifications:test-webhook', (_e, args: { id: string }) => {
+    const rl = checkRateLimit('notifications:test-webhook')
+    if (!rl.allowed) return { success: false, error: `Rate limited — try again in ${Math.ceil((rl.retryAfterMs ?? 0) / 1000)}s` }
+    return manager.testWebhook(args.id)
+  })
 }

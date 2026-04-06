@@ -1,6 +1,7 @@
 import type { IpcMain } from 'electron'
 import Store from 'electron-store'
 import { randomUUID } from 'crypto'
+import { getStoreEncryptionKey } from '../utils/storeEncryption'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -35,6 +36,7 @@ interface WorkflowStoreSchema {
 
 const store = new Store<WorkflowStoreSchema>({
   name: 'clear-path-workflows',
+  encryptionKey: getStoreEncryptionKey(),
   defaults: { workflows: [] },
 })
 

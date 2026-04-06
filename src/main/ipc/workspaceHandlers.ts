@@ -2,11 +2,14 @@ import type { IpcMain } from 'electron'
 import { dialog } from 'electron'
 import Store from 'electron-store'
 import { existsSync, statSync } from 'fs'
-import { basename } from 'path'
+import { basename, resolve } from 'path'
+import { assertPathWithinRoots, getWorkspaceAllowedRoots, isSensitiveSystemPath } from '../utils/pathSecurity'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
 import { randomUUID } from 'crypto'
-import { getSpawnEnv } from '../utils/shellEnv'
+import { getScopedSpawnEnv } from '../utils/shellEnv'
+import { getStoreEncryptionKey } from '../utils/storeEncryption'
+import { checkRateLimit } from '../utils/rateLimiter'
 
 const execFileAsync = promisify(execFile)
 
@@ -34,13 +37,14 @@ interface WorkspaceStoreSchema {
 
 const store = new Store<WorkspaceStoreSchema>({
   name: 'clear-path-workspaces',
+  encryptionKey: getStoreEncryptionKey(),
   defaults: { workspaces: [], activeWorkspaceId: null },
 })
 
 async function getRepoInfo(path: string): Promise<RepoInfo | null> {
   if (!existsSync(path)) return null
   try {
-    const opts = { cwd: path, timeout: 10000, env: getSpawnEnv() }
+    const opts = { cwd: path, timeout: 10000, env: getScopedSpawnEnv('copilot') }
     const [branchRes, logRes, statusRes] = await Promise.all([
       execFileAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], opts),
       execFileAsync('git', ['log', '-1', '--format=%s|||%an'], opts),
@@ -66,7 +70,7 @@ async function getActivityFeed(paths: string[], limit = 30): Promise<Array<{
     try {
       const { stdout } = await execFileAsync('git', [
         'log', `--max-count=${limit}`, '--format=%H|||%s|||%an|||%aI',
-      ], { cwd: p, timeout: 10000, env: getSpawnEnv() })
+      ], { cwd: p, timeout: 10000, env: getScopedSpawnEnv('copilot') })
       const repo = basename(p)
       for (const line of stdout.trim().split('\n').filter(Boolean)) {
         const [hash, message, author, date] = line.split('|||')
@@ -136,6 +140,8 @@ export function registerWorkspaceHandlers(ipcMain: IpcMain): void {
 
   // Clone a repo from URL into a workspace
   ipcMain.handle('workspace:clone-repo', async (_e, args: { workspaceId: string; url: string; targetDir?: string }) => {
+    const rl = checkRateLimit('workspace:clone-repo')
+    if (!rl.allowed) return { success: false, error: 'Rate limited — too many clone operations' }
     const workspaces = store.get('workspaces')
     const ws = workspaces.find((w) => w.id === args.workspaceId)
     if (!ws) return { success: false, error: 'Workspace not found' }
@@ -146,7 +152,16 @@ export function registerWorkspaceHandlers(ipcMain: IpcMain): void {
     // Determine target directory
     let cloneDir: string
     if (args.targetDir) {
-      cloneDir = args.targetDir
+      // Validate targetDir is within allowed roots and not a sensitive path
+      try {
+        assertPathWithinRoots(args.targetDir, getWorkspaceAllowedRoots())
+        if (isSensitiveSystemPath(args.targetDir)) {
+          return { success: false, error: 'Cannot clone into sensitive system directory' }
+        }
+      } catch (err) {
+        return { success: false, error: String(err) }
+      }
+      cloneDir = resolve(args.targetDir)
     } else {
       // Default to ~/ClearPath-repos/<workspace-name>/<repo-name>
       const home = require('os').homedir()
@@ -160,7 +175,7 @@ export function registerWorkspaceHandlers(ipcMain: IpcMain): void {
       // Directory exists — check if it's the same repo, if so just add it
       try {
         const { stdout } = await execFileAsync('git', ['remote', 'get-url', 'origin'], {
-          cwd: cloneDir, timeout: 5000, env: getSpawnEnv(),
+          cwd: cloneDir, timeout: 5000, env: getScopedSpawnEnv('copilot'),
         })
         if (stdout.trim() === args.url || stdout.trim() === args.url.replace(/\.git$/, '')) {
           // Same repo, just add to workspace
@@ -182,7 +197,7 @@ export function registerWorkspaceHandlers(ipcMain: IpcMain): void {
 
       await execFileAsync('git', ['clone', args.url, cloneDir], {
         timeout: 120_000, // 2 minutes for large repos
-        env: getSpawnEnv(),
+        env: getScopedSpawnEnv('copilot'),
       })
 
       // Add to workspace

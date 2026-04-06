@@ -1,6 +1,7 @@
 import cron from 'node-cron'
 import Store from 'electron-store'
 import { randomUUID } from 'crypto'
+import { getStoreEncryptionKey } from '../utils/storeEncryption'
 import type { CLIManager } from '../cli/CLIManager'
 import type { NotificationManager } from '../notifications/NotificationManager'
 import type { ParsedOutput } from '../cli/types'
@@ -91,6 +92,7 @@ export const SCHEDULE_TEMPLATES: Array<Omit<ScheduledJob, 'id' | 'createdAt' | '
 const store = new Store<SchedulerStoreSchema>({
   name: 'clear-path-scheduler',
   defaults: { jobs: [] },
+  encryptionKey: getStoreEncryptionKey(),
 })
 
 // ── Service ──────────────────────────────────────────────────────────────────

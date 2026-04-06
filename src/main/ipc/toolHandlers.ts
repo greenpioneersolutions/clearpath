@@ -81,17 +81,65 @@ function listMcpServers(cli: 'copilot' | 'claude', workingDirectory?: string): M
   return servers
 }
 
+// ── MCP Server Command Security ─────────────────────────────────────────────
+
+/** Known-safe MCP command patterns. Commands not matching trigger a warning. */
+const KNOWN_SAFE_MCP_COMMANDS = new Set([
+  'npx', 'node', 'python', 'python3', 'uvx', 'docker', 'deno',
+])
+
+/** Commands that should be blocked outright — high risk of damage. */
+const BLOCKED_MCP_COMMANDS = /^(rm|del|format|mkfs|dd|shutdown|reboot|kill|killall|pkill|curl|wget|nc|ncat|bash|sh|zsh|cmd|powershell)$/i
+
+/** Shell metacharacters that suggest injection attempts in args. */
+const SHELL_META_RE = /[;&|`$(){}!<>]/
+
+function validateMcpServer(entry: McpServerEntry): { valid: boolean; error?: string; warning?: string } {
+  const cmd = entry.command.trim()
+
+  // Block empty commands
+  if (!cmd) return { valid: false, error: 'Command cannot be empty' }
+
+  // Extract the base command name (last path segment)
+  const baseName = cmd.split('/').pop()?.split('\\').pop() ?? cmd
+
+  // Block known-dangerous commands
+  if (BLOCKED_MCP_COMMANDS.test(baseName)) {
+    return { valid: false, error: `Command "${baseName}" is blocked — it poses a high risk of data loss or system damage` }
+  }
+
+  // Check for shell metacharacters in arguments
+  if (entry.args?.some((a) => SHELL_META_RE.test(a))) {
+    return { valid: false, error: 'MCP server arguments contain shell metacharacters — this may indicate a command injection attempt' }
+  }
+
+  // Warn if command is not in the known-safe list
+  let warning: string | undefined
+  if (!KNOWN_SAFE_MCP_COMMANDS.has(baseName) && !cmd.startsWith('/') && !cmd.startsWith('.')) {
+    warning = `Command "${baseName}" is not in the known-safe list. Verify this is a trusted MCP server before enabling.`
+  }
+
+  return { valid: true, warning }
+}
+
 function addMcpServer(
   cli: 'copilot' | 'claude',
   scope: 'user' | 'project',
   name: string,
   entry: McpServerEntry,
   workingDirectory?: string,
-): { success: boolean; error?: string } {
+): { success: boolean; error?: string; warning?: string } {
+  // Validate command before persisting
+  const validation = validateMcpServer(entry)
+  if (!validation.valid) {
+    return { success: false, error: validation.error }
+  }
+
   const configPath = getMcpConfigPath(cli, scope, workingDirectory)
   const config = safeReadJson<McpConfigFile>(configPath, { mcpServers: {} })
   config.mcpServers[name] = entry
-  return safeWriteJson(configPath, config)
+  const result = safeWriteJson(configPath, config)
+  return { ...result, warning: validation.warning }
 }
 
 function removeMcpServer(

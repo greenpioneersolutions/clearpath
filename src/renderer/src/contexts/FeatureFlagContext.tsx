@@ -38,6 +38,11 @@ export interface FeatureFlags {
   showPlugins: boolean
   showEnvVars: boolean
   showWebhooks: boolean
+
+  // Experimental features
+  enableExperimentalFeatures: boolean
+  showPrScores: boolean
+  prScoresAiReview: boolean
 }
 
 interface FlagPreset {
@@ -67,6 +72,7 @@ const ALL_ON: FeatureFlags = {
   showComposer: true, showSubAgents: true, showTemplates: true, showKnowledgeBase: true, showVoice: true,
   showUseContext: true, showAgentSelection: true, showCostTracking: true, showComplianceLogs: true,
   showDataManagement: true, showBudgetLimits: true, showPlugins: true, showEnvVars: true, showWebhooks: true,
+  enableExperimentalFeatures: true, showPrScores: true, prScoresAiReview: false,
 }
 
 // ── Context ──────────────────────────────────────────────────────────────────

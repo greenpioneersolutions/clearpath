@@ -5,12 +5,14 @@ import MemoryViewer from '../components/memory/MemoryViewer'
 import ContextUsage from '../components/memory/ContextUsage'
 import NewFileWizard from '../components/memory/NewFileWizard'
 import NotesManager from '../components/memory/NotesManager'
+import StarterMemories from '../components/memory/StarterMemories'
 import type { SessionInfo } from '../types/ipc'
 
-type Tab = 'notes' | 'files' | 'instructions' | 'memory' | 'context'
+type Tab = 'notes' | 'files' | 'instructions' | 'memory' | 'context' | 'starter'
 
 const TABS: { key: Tab; label: string }[] = [
   { key: 'notes', label: 'Notes' },
+  { key: 'starter', label: 'Starter Memories' },
   { key: 'files', label: 'Config Files' },
   { key: 'instructions', label: 'Instructions' },
   { key: 'memory', label: 'CLI Memory' },
@@ -92,6 +94,10 @@ export default function Memory(): JSX.Element {
         {tab === 'notes' ? (
           <div className="p-6">
             <NotesManager />
+          </div>
+        ) : tab === 'starter' ? (
+          <div className="p-6">
+            <StarterMemories />
           </div>
         ) : showWizard ? (
           <div className="p-6">

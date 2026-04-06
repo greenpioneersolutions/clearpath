@@ -46,8 +46,13 @@ export interface BudgetConfig {
   dailyCeiling: number | null
   weeklyCeiling: number | null
   monthlyCeiling: number | null
+  dailyTokenCeiling: number | null
+  weeklyTokenCeiling: number | null
+  monthlyTokenCeiling: number | null
   autoPauseAtLimit: boolean
 }
+
+export type AnalyticsDisplayMode = 'tokens' | 'monetary'
 
 export type DateRange = 'today' | 'week' | 'month' | 'custom'
 
@@ -55,6 +60,9 @@ export const DEFAULT_BUDGET: BudgetConfig = {
   dailyCeiling: null,
   weeklyCeiling: null,
   monthlyCeiling: null,
+  dailyTokenCeiling: null,
+  weeklyTokenCeiling: null,
+  monthlyTokenCeiling: null,
   autoPauseAtLimit: false,
 }
 

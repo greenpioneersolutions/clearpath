@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import type { DailySpend, SessionCostSummary, ModelBreakdown, AgentTokens, DateRange } from '../types/cost'
+import type { DailySpend, SessionCostSummary, ModelBreakdown, AgentTokens, DateRange, AnalyticsDisplayMode } from '../types/cost'
 import { DailySpendChart, SessionCostChart, ModelBreakdownChart, AgentTokensChart } from '../components/cost/CostCharts'
 import BudgetAlerts, { ToastContainer } from '../components/cost/BudgetAlerts'
 import CostExport from '../components/cost/CostExport'
@@ -26,20 +26,21 @@ function rangeToSince(range: DateRange): number {
 export default function Analytics(): JSX.Element {
   const [tab, setTab] = useState<Tab>('overview')
   const [range, setRange] = useState<DateRange>('month')
-  const [summary, setSummary] = useState<Record<string, number> | null>(null)
+  const [summary, setSummary] = useState<Record<string, number | string> | null>(null)
   const [daily, setDaily] = useState<DailySpend[]>([])
   const [sessions, setSessions] = useState<SessionCostSummary[]>([])
   const [models, setModels] = useState<ModelBreakdown[]>([])
   const [agents, setAgents] = useState<AgentTokens[]>([])
   const [toasts, setToasts] = useState<Toast[]>([])
   const [loading, setLoading] = useState(true)
+  const [displayMode, setDisplayMode] = useState<AnalyticsDisplayMode>('tokens')
 
   const since = rangeToSince(range)
 
   const loadData = useCallback(async () => {
     setLoading(true)
     const [s, d, sess, m, a] = await Promise.all([
-      window.electronAPI.invoke('cost:summary') as Promise<Record<string, number>>,
+      window.electronAPI.invoke('cost:summary') as Promise<Record<string, number | string>>,
       window.electronAPI.invoke('cost:daily-spend', { since }) as Promise<DailySpend[]>,
       window.electronAPI.invoke('cost:by-session', { since }) as Promise<SessionCostSummary[]>,
       window.electronAPI.invoke('cost:by-model', { since }) as Promise<ModelBreakdown[]>,
@@ -50,10 +51,17 @@ export default function Analytics(): JSX.Element {
     setSessions(sess)
     setModels(m)
     setAgents(a)
+    if (s['displayMode']) setDisplayMode(s['displayMode'] as AnalyticsDisplayMode)
     setLoading(false)
   }, [since])
 
   useEffect(() => { void loadData() }, [loadData])
+
+  const toggleDisplayMode = async () => {
+    const newMode: AnalyticsDisplayMode = displayMode === 'tokens' ? 'monetary' : 'tokens'
+    setDisplayMode(newMode)
+    await window.electronAPI.invoke('cost:set-display-mode', { mode: newMode })
+  }
 
   const addToast = useCallback((t: Toast) => {
     setToasts((prev) => [...prev, t])
@@ -71,31 +79,81 @@ export default function Analytics(): JSX.Element {
     }
   }, [])
 
-  // Cost per task
-  const avgCostPerPrompt = summary && summary['totalPrompts'] > 0
-    ? summary['totalCost'] / summary['totalPrompts']
-    : 0
+  const isTokenMode = displayMode === 'tokens'
+
+  // Summary values based on display mode
+  const primaryValue = summary
+    ? isTokenMode
+      ? formatTokens(Number(summary['totalTokens'] ?? 0))
+      : `$${Number(summary['totalCost'] ?? 0).toFixed(2)}`
+    : '—'
+
+  const todayValue = summary
+    ? isTokenMode
+      ? formatTokens(Number(summary['todayTokens'] ?? 0))
+      : `$${Number(summary['todaySpend'] ?? 0).toFixed(2)}`
+    : '—'
+
+  const avgPerPrompt = summary && Number(summary['totalPrompts']) > 0
+    ? isTokenMode
+      ? formatTokens(Math.round(Number(summary['totalTokens']) / Number(summary['totalPrompts'])))
+      : `$${(Number(summary['totalCost']) / Number(summary['totalPrompts'])).toFixed(4)}`
+    : '—'
+
+  const secondaryLabel = isTokenMode ? 'Input / Output' : 'Total Tokens'
+  const secondaryValue = summary
+    ? isTokenMode
+      ? `${formatTokens(Number(summary['totalInputTokens'] ?? 0))} in / ${formatTokens(Number(summary['totalOutputTokens'] ?? 0))} out`
+      : formatTokens(Number(summary['totalTokens'] ?? 0))
+    : '—'
 
   return (
     <div className="space-y-6">
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
 
-      {/* Header */}
+      {/* Header with display mode toggle */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Analytics</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Token usage, costs, and budget tracking</p>
+          <p className="text-sm text-gray-500 mt-0.5">
+            {isTokenMode ? 'Token usage and quota tracking' : 'Cost tracking and budget management'}
+          </p>
         </div>
-        <CostExport since={since} />
+        <div className="flex items-center gap-3">
+          {/* Display mode toggle */}
+          <div className="flex items-center gap-2 bg-gray-100 rounded-lg p-0.5">
+            <button
+              onClick={() => void toggleDisplayMode()}
+              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                isTokenMode ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Tokens
+            </button>
+            <button
+              onClick={() => void toggleDisplayMode()}
+              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                !isTokenMode ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Cost ($)
+            </button>
+          </div>
+          <CostExport since={since} />
+        </div>
       </div>
 
       {/* Summary cards */}
       {summary && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <StatCard label="Total Spend" value={`$${summary['totalCost']?.toFixed(2) ?? '0.00'}`} />
-          <StatCard label="Today" value={`$${summary['todaySpend']?.toFixed(2) ?? '0.00'}`} />
-          <StatCard label="Total Tokens" value={formatTokens(summary['totalTokens'] ?? 0)} />
-          <StatCard label="Avg Cost/Prompt" value={`$${avgCostPerPrompt.toFixed(4)}`} subtitle={`${summary['totalPrompts'] ?? 0} prompts`} />
+          <StatCard label={isTokenMode ? 'Total Tokens' : 'Total Spend'} value={primaryValue} />
+          <StatCard label={isTokenMode ? 'Today' : 'Today'} value={todayValue} />
+          <StatCard label={secondaryLabel} value={secondaryValue} />
+          <StatCard
+            label={isTokenMode ? 'Avg Tokens/Prompt' : 'Avg Cost/Prompt'}
+            value={avgPerPrompt}
+            subtitle={`${summary['totalPrompts'] ?? 0} prompts`}
+          />
         </div>
       )}
 
@@ -140,16 +198,18 @@ export default function Analytics(): JSX.Element {
         ) : (
           <>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <DailySpendChart data={daily} />
-              <SessionCostChart data={sessions} />
-              <ModelBreakdownChart data={models} />
+              <DailySpendChart data={daily} displayMode={displayMode} />
+              <SessionCostChart data={sessions} displayMode={displayMode} />
+              <ModelBreakdownChart data={models} displayMode={displayMode} />
               <AgentTokensChart data={agents} />
             </div>
 
-            {/* Cost per task table */}
+            {/* Cost/token per task table */}
             {sessions.length > 0 && (
               <div className="bg-white border border-gray-200 rounded-xl p-4">
-                <h4 className="text-sm font-semibold text-gray-900 mb-3">Cost per Task</h4>
+                <h4 className="text-sm font-semibold text-gray-900 mb-3">
+                  {isTokenMode ? 'Token Usage per Task' : 'Cost per Task'}
+                </h4>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
@@ -157,9 +217,9 @@ export default function Analytics(): JSX.Element {
                         <th className="pb-2 font-medium">Session</th>
                         <th className="pb-2 font-medium">CLI</th>
                         <th className="pb-2 font-medium text-right">Prompts</th>
-                        <th className="pb-2 font-medium text-right">Total Cost</th>
-                        <th className="pb-2 font-medium text-right">Cost/Prompt</th>
-                        <th className="pb-2 font-medium text-right">Tokens</th>
+                        <th className="pb-2 font-medium text-right">{isTokenMode ? 'Tokens' : 'Total Cost'}</th>
+                        <th className="pb-2 font-medium text-right">{isTokenMode ? 'Tokens/Prompt' : 'Cost/Prompt'}</th>
+                        <th className="pb-2 font-medium text-right">{isTokenMode ? 'Est. Cost' : 'Tokens'}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -172,9 +232,17 @@ export default function Analytics(): JSX.Element {
                             }`}>{s.cli}</span>
                           </td>
                           <td className="py-2 text-right text-gray-600">{s.promptCount}</td>
-                          <td className="py-2 text-right font-mono text-gray-800">${s.totalCost.toFixed(4)}</td>
-                          <td className="py-2 text-right font-mono text-gray-600">${s.costPerPrompt.toFixed(4)}</td>
-                          <td className="py-2 text-right text-gray-500">{formatTokens(s.totalTokens)}</td>
+                          <td className="py-2 text-right font-mono text-gray-800">
+                            {isTokenMode ? formatTokens(s.totalTokens) : `$${s.totalCost.toFixed(4)}`}
+                          </td>
+                          <td className="py-2 text-right font-mono text-gray-600">
+                            {isTokenMode
+                              ? (s.promptCount > 0 ? formatTokens(Math.round(s.totalTokens / s.promptCount)) : '—')
+                              : `$${s.costPerPrompt.toFixed(4)}`}
+                          </td>
+                          <td className="py-2 text-right text-gray-500">
+                            {isTokenMode ? `$${s.totalCost.toFixed(4)}` : formatTokens(s.totalTokens)}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -186,7 +254,7 @@ export default function Analytics(): JSX.Element {
         )
       ) : (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <BudgetAlerts onAlert={addToast} onAutoPause={() => void handleAutoPause()} />
+          <BudgetAlerts onAlert={addToast} onAutoPause={() => void handleAutoPause()} displayMode={displayMode} />
         </div>
       )}
     </div>

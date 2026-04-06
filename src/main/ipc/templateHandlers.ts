@@ -3,6 +3,7 @@ import { dialog } from 'electron'
 import Store from 'electron-store'
 import { readFileSync, writeFileSync } from 'fs'
 import { randomUUID } from 'crypto'
+import { getStoreEncryptionKey } from '../utils/storeEncryption'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -172,6 +173,7 @@ const BUILTIN_TEMPLATES: PromptTemplate[] = [
 
 const store = new Store<TemplateStoreSchema>({
   name: 'clear-path-templates',
+  encryptionKey: getStoreEncryptionKey(),
   defaults: { templates: [] },
 })
 

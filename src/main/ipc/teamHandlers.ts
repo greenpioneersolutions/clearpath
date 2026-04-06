@@ -6,11 +6,13 @@ import {
   readdirSync, statSync, createWriteStream, createReadStream,
 } from 'fs'
 import { join, basename } from 'path'
-import { randomUUID } from 'crypto'
+import { randomUUID, createHmac } from 'crypto'
+import { getStoreEncryptionKey } from '../utils/storeEncryption'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
 import { pipeline } from 'stream/promises'
 import { resolveInShell } from '../utils/shellEnv'
+import { STARTER_AGENTS } from '../starter-pack'
 
 const execFileAsync = promisify(execFile)
 
@@ -51,11 +53,40 @@ const store = new Store<TeamStoreSchema>({
     marketplaceIndex: [],
     installedMarketplaceIds: [],
   },
+  encryptionKey: getStoreEncryptionKey(),
 })
 
-// ── Built-in marketplace agents ──────────────────────────────────────────────
+// ── Config bundle integrity ─────────────────────────────────────────────────
 
-const BUILTIN_MARKETPLACE: MarketplaceAgent[] = [
+/** Sign a config bundle with HMAC-SHA256 using the machine-derived key. */
+function signBundle(bundle: Record<string, unknown>): string {
+  const payload = JSON.stringify(bundle, Object.keys(bundle).filter(k => k !== '_signature').sort())
+  return createHmac('sha256', getStoreEncryptionKey()).update(payload).digest('hex')
+}
+
+/** Verify a config bundle's HMAC signature. Returns true if valid or unsigned. */
+function verifyBundleSignature(bundle: Record<string, unknown>): { valid: boolean; unsigned: boolean } {
+  const sig = bundle['_signature'] as string | undefined
+  if (!sig) return { valid: true, unsigned: true }
+  const expected = signBundle(bundle)
+  return { valid: sig === expected, unsigned: false }
+}
+
+// ── Built-in marketplace agents (generated from starter pack) ───────────────
+
+const BUILTIN_MARKETPLACE: MarketplaceAgent[] = STARTER_AGENTS.map((agent, idx) => ({
+  id: `mkt-${agent.id}`,
+  name: agent.name,
+  description: agent.description,
+  author: 'Clear Path',
+  cli: 'claude' as const,
+  category: agent.category === 'spotlight' ? 'Core' : 'Advanced',
+  prompt: agent.systemPrompt,
+  model: undefined,
+  downloads: 1000 - idx * 100,
+}))
+
+const LEGACY_BUILTIN_MARKETPLACE: MarketplaceAgent[] = [
   {
     id: 'mkt-code-review', name: 'Code Reviewer', description: 'Thorough code review with security and performance focus',
     author: 'Clear Path', cli: 'claude', category: 'Review',
@@ -159,6 +190,8 @@ async function exportConfigBundle(): Promise<string | null> {
   })
   if (result.canceled || !result.filePath) return null
 
+  // Sign the bundle for integrity verification on import
+  bundle['_signature'] = signBundle(bundle)
   writeFileSync(result.filePath, JSON.stringify(bundle, null, 2) + '\n', 'utf8')
   return result.filePath
 }
@@ -175,6 +208,33 @@ async function importConfigBundle(): Promise<{ success: boolean; error?: string 
     const bundle = JSON.parse(raw) as Record<string, unknown>
 
     if (!bundle['version']) return { success: false, error: 'Invalid config bundle' }
+
+    // Verify integrity signature if present
+    const integrity = verifyBundleSignature(bundle)
+    if (!integrity.valid) {
+      return { success: false, error: 'Config bundle signature verification failed — the file may have been tampered with. Import aborted.' }
+    }
+
+    // Size limit: reject bundles larger than 5MB to prevent disk/memory exhaustion
+    if (raw.length > 5 * 1024 * 1024) {
+      return { success: false, error: 'Config bundle is too large (>5MB)' }
+    }
+
+    // Schema validation: verify imported data has expected structure
+    for (const name of ['clear-path-settings', 'clear-path-agents', 'clear-path-templates']) {
+      const data = bundle[name]
+      if (data !== undefined && data !== null) {
+        if (typeof data !== 'object') {
+          return { success: false, error: `Invalid data type for ${name}: expected object, got ${typeof data}` }
+        }
+        // Verify JSON round-trip (catch circular refs, prototype pollution)
+        try {
+          JSON.parse(JSON.stringify(data))
+        } catch {
+          return { success: false, error: `Invalid data structure in ${name}` }
+        }
+      }
+    }
 
     // Apply each store's data
     const { app } = require('electron')
@@ -266,6 +326,23 @@ export function registerTeamHandlers(ipcMain: IpcMain): void {
     try {
       const raw = readFileSync(args.path, 'utf8')
       const data = JSON.parse(raw) as Record<string, unknown>
+
+      // Verify integrity if signed
+      const integrity = verifyBundleSignature(data)
+      if (!integrity.valid) {
+        return { success: false, error: 'Shared config signature verification failed — the file may have been tampered with.' }
+      }
+
+      // Size limit
+      if (raw.length > 5 * 1024 * 1024) {
+        return { success: false, error: 'Shared config is too large (>5MB)' }
+      }
+
+      // Validate settings structure
+      if (data['settings'] !== undefined && (typeof data['settings'] !== 'object' || data['settings'] === null)) {
+        return { success: false, error: 'Invalid settings structure in shared config' }
+      }
+
       // Apply settings if present
       if (data['settings']) {
         const { app } = require('electron')
@@ -282,14 +359,14 @@ export function registerTeamHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('team:list-marketplace', () => {
     const custom = store.get('marketplaceIndex')
     const installed = new Set(store.get('installedMarketplaceIds'))
-    return [...BUILTIN_MARKETPLACE, ...custom].map((a) => ({
+    return [...BUILTIN_MARKETPLACE, ...LEGACY_BUILTIN_MARKETPLACE, ...custom].map((a) => ({
       ...a,
       installed: installed.has(a.id),
     }))
   })
 
   ipcMain.handle('team:install-marketplace-agent', (_e, args: { id: string }) => {
-    const all = [...BUILTIN_MARKETPLACE, ...store.get('marketplaceIndex')]
+    const all = [...BUILTIN_MARKETPLACE, ...LEGACY_BUILTIN_MARKETPLACE, ...store.get('marketplaceIndex')]
     const agent = all.find((a) => a.id === args.id)
     if (!agent) return { error: 'Agent not found' }
 

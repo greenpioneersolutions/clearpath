@@ -99,7 +99,7 @@ ClearPathAI solves this by wrapping the CLI tools your organization has already 
 
 Before we talk about what it does, let's be clear about what it doesn't:
 
-- **Does not handle or store AI API tokens directly.** Authentication is delegated to the CLI tools themselves (GitHub OAuth, Anthropic auth). ClearPathAI checks auth status but doesn't touch raw tokens.
+- **Delegates CLI authentication to the tools themselves.** GitHub OAuth and Anthropic auth are managed by the respective CLI tools. When users configure environment variables (API keys, tokens) through the app, those values are encrypted at rest using the OS keychain via Electron's safeStorage API. Encrypted credentials are never sent to the renderer process in plaintext — only masked previews are shown in the UI.
 - **Does not proxy AI requests.** All AI communication happens between the CLI process and the AI provider's API — the same path as direct CLI usage.
 - **Does not transmit data to any ClearPathAI server.** There is no telemetry, no analytics collection, no phone-home behavior. Check the source.
 - **Does not require network access beyond what the CLI tools need.** If your Copilot CLI works, ClearPathAI works.
@@ -114,7 +114,32 @@ Before we talk about what it does, let's be clear about what it doesn't:
 
 - **Tool Allow/Deny Lists**: Granular control over which tools the AI can use (file read, file write, shell execution, etc.). These map directly to the CLI's built-in permission system.
 
-- **Audit Logging**: Every AI interaction is logged — session start/stop, prompts sent, tools used, files accessed, permission decisions. Append-only, tamper-evident, exportable.
+- **Audit Logging**: AI interactions are logged — session start/stop, prompt metadata (hash + character count, not plaintext content), data deletion events, policy violations, and security events. Logs are retained locally with automatic archival when the active log exceeds 10,000 entries. Archived entries are written to append-only JSONL files. Audit logs cannot be cleared from the UI. Exportable via compliance snapshot.
+
+- **Encryption at Rest**: All persistent data stores are encrypted using AES encryption with a machine-derived key. Sensitive credentials (API keys, tokens) are additionally encrypted using the OS keychain (macOS Keychain, Windows DPAPI, Linux libsecret) via Electron's safeStorage API.
+
+- **Rate Limiting**: Expensive operations (session creation, sub-agent spawning, file watching, git operations, webhook testing, scheduled task execution, knowledge base generation, data deletion) are rate-limited to prevent abuse and resource exhaustion.
+
+- **MCP Server Validation**: MCP server configurations are validated before being saved — dangerous commands are blocked, shell metacharacters in arguments are rejected, and unknown commands trigger warnings.
+
+- **Config Bundle Integrity**: Shared configuration bundles are HMAC-SHA256 signed on export and verified on import. Tampered bundles are rejected. Bundle size is limited to 5MB to prevent resource exhaustion.
+
+### Authorization Model
+
+ClearPathAI is designed as a **single-user desktop application**. There is no built-in role-based access control (RBAC) or multi-user permission system. Every user who can launch the app has full access to all features, including:
+- Session management and AI interaction
+- Settings, policy, and configuration changes
+- Data deletion and factory reset (protected by OS-level confirmation dialogs)
+- Compliance log viewing and export
+- Scheduled task management
+
+**For enterprise deployments:**
+- Use **OS-level user isolation** (separate macOS/Windows/Linux user accounts) to enforce per-user boundaries
+- ClearPathAI's encryption key is derived per-user — each OS user has separate, isolated encrypted data
+- Restrict app installation to approved users via your software distribution system (Jamf, SCCM, Intune)
+- For stricter controls, fork the repository and gate sensitive operations behind additional authentication checks
+
+Multi-user RBAC is on the roadmap for a future version but is not available in the current release.
 
 ---
 
@@ -127,7 +152,7 @@ Before we talk about what it does, let's be clear about what it doesn't:
 | AI prompts & responses | Your AI provider (GitHub/Anthropic) via their API | Passes through the CLI process — ClearPathAI doesn't intercept or modify |
 | Session logs | Local machine only (`~/Library/Application Support/clear-path/`) | Stores for UI display and audit; never transmitted |
 | Settings & policies | Local machine only | Stored via electron-store; exportable as config bundles for team sharing |
-| Audit trail | Local machine only | Append-only log; exportable for compliance reporting |
+| Audit trail | Local machine only | Locally retained log with automatic archival; exportable for compliance reporting |
 | Cost records | Local machine only | Calculated from CLI usage output; stored for analytics |
 
 **ClearPathAI adds no new data transmission paths.** If your security team has approved Copilot CLI, ClearPathAI doesn't change the data flow — it wraps it in a GUI and adds local-only controls on top.
@@ -153,11 +178,11 @@ Every action in ClearPathAI generates an audit entry:
 | Event Type | What's Logged |
 |------------|---------------|
 | Session events | Start, stop, resume — with CLI type, user, timestamp |
-| Prompt events | Every prompt sent (content + metadata) |
-| Tool use events | Every tool the AI invoked — which tool, on what file, result |
-| File access events | Files read or modified by the AI |
-| Permission events | Every permission prompt shown and the user's response (allow/deny) |
-| Configuration changes | Policy changes, setting modifications, integration updates |
+| Prompt events | Every prompt sent — metadata logged (character count, SHA-256 hash). Prompt content is NOT stored in the audit log to protect sensitive data. |
+| Tool use events | Tool invocations tracked at the CLI level. ClearPathAI logs tool permission decisions (allow/deny). |
+| File access events | File protection pattern matches are logged when the AI attempts to access a protected file. |
+| Permission events | Permission prompts shown and the user's response (allow/deny) |
+| Configuration changes | Policy changes and setting modifications are logged when they occur through the app. |
 | Policy violations | Any action that triggered a policy rule (blocked or warned) |
 
 ### Compliance Snapshot Export
@@ -182,7 +207,7 @@ ClearPathAI's controls help organizations demonstrate compliance with:
 | GDPR | Data stays local, no third-party data processing by the app itself |
 | PCI DSS | Credential scanning, file protection for cardholder data patterns |
 | FedRAMP | Air-gapped deployment option, local-only data storage |
-| SOX | Append-only audit trail, compliance snapshot exports |
+| SOX | Audit trail with automatic archival, compliance snapshot exports |
 
 > ClearPathAI does not guarantee compliance with any specific regulation. It provides tools and controls that support compliance efforts. Consult your compliance team for your specific requirements.
 
@@ -244,7 +269,7 @@ ClearPathAI delegates authentication entirely to the underlying CLI tools:
 | GitHub Copilot | GitHub OAuth or PAT | User runs `/login` or sets `GH_TOKEN` env var. ClearPathAI checks status via `copilot` CLI. |
 | Claude Code | Anthropic auth or API key | User runs `claude auth login`. ClearPathAI checks status via `claude` CLI. |
 
-**ClearPathAI never stores or transmits raw credentials.** It checks whether the CLI tools are authenticated (by invoking them and checking the exit code) and shows the status in the UI. The actual credentials are managed by the CLI tools in their own secure storage.
+**ClearPathAI encrypts any credentials it handles.** When users provide GitHub tokens for the integration panel or configure API keys via environment variables, these are encrypted using the OS keychain (macOS Keychain, Windows DPAPI, or Linux libsecret) via Electron's safeStorage API. CLI tool authentication (GitHub OAuth, Anthropic auth) is delegated to the tools themselves — ClearPathAI checks auth status but does not intercept CLI auth flows.
 
 ### Enterprise SSO Integration
 

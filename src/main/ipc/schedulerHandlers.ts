@@ -1,5 +1,6 @@
 import type { IpcMain } from 'electron'
 import type { SchedulerService, ScheduledJob } from '../scheduler/SchedulerService'
+import { checkRateLimit } from '../utils/rateLimiter'
 
 export function registerSchedulerHandlers(ipcMain: IpcMain, scheduler: SchedulerService): void {
   ipcMain.handle('scheduler:list', () => scheduler.listJobs())
@@ -20,7 +21,11 @@ export function registerSchedulerHandlers(ipcMain: IpcMain, scheduler: Scheduler
     return { success: true }
   })
 
-  ipcMain.handle('scheduler:run-now', (_e, args: { id: string }) => scheduler.executeJob(args.id))
+  ipcMain.handle('scheduler:run-now', (_e, args: { id: string }) => {
+    const rl = checkRateLimit('scheduler:run-now')
+    if (!rl.allowed) return { error: `Rate limited — try again in ${Math.ceil((rl.retryAfterMs ?? 0) / 1000)}s` }
+    return scheduler.executeJob(args.id)
+  })
 
   ipcMain.handle('scheduler:duplicate', (_e, args: { id: string }) => scheduler.duplicateJob(args.id))
 

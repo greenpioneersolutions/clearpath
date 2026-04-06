@@ -10,6 +10,7 @@ import { homedir } from 'os'
 import { join, basename, extname } from 'path'
 import { randomUUID } from 'crypto'
 import Store from 'electron-store'
+import { getStoreEncryptionKey } from '../utils/storeEncryption'
 import type {
   AgentDef,
   AgentProfile,
@@ -202,6 +203,7 @@ export class AgentManager {
     if (!this._store) {
       this._store = new Store<AgentStoreSchema>({
         name: 'clear-path-agents',
+        encryptionKey: getStoreEncryptionKey(),
         defaults: {
           profiles: [],
           enabledAgentIds: COPILOT_BUILTIN.map((a) => a.id),

@@ -9,7 +9,7 @@ interface Workspace {
   name: string
 }
 
-const NAV_ITEMS: Array<{ to: string; label: string; flagKey?: keyof FeatureFlags; icon: JSX.Element }> = [
+const NAV_ITEMS: Array<{ to: string; label: string; flagKey?: keyof FeatureFlags; requiredFlags?: (keyof FeatureFlags)[]; icon: JSX.Element }> = [
   {
     to: '/',
     label: 'Home',
@@ -37,6 +37,16 @@ const NAV_ITEMS: Array<{ to: string; label: string; flagKey?: keyof FeatureFlags
     icon: (
       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+      </svg>
+    ),
+  },
+  {
+    to: '/pr-scores',
+    label: 'PR Scores',
+    requiredFlags: ['enableExperimentalFeatures', 'showPrScores'],
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
       </svg>
     ),
   },
@@ -228,7 +238,11 @@ export default function Sidebar(): JSX.Element {
 
       {/* ── Nav items ────────────────────────────────────────────────────── */}
       <nav className="flex-1 px-2 py-3 space-y-1">
-        {NAV_ITEMS.filter((item) => !item.flagKey || flags[item.flagKey]).map((item, idx) => (
+        {NAV_ITEMS.filter((item) => {
+          if (item.requiredFlags) return item.requiredFlags.every((f) => flags[f])
+          if (item.flagKey) return flags[item.flagKey]
+          return true
+        }).map((item, idx) => (
           <div key={item.to}>
             <NavLink to={item.to} end={item.to === '/'} className={linkClass} style={({ isActive }) => linkStyle(isActive)}>
               {item.icon}

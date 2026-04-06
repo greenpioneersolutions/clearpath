@@ -2,7 +2,7 @@ import { Notification, BrowserWindow } from 'electron'
 import Store from 'electron-store'
 import { randomUUID } from 'crypto'
 import https from 'https'
-import http from 'http'
+import { getStoreEncryptionKey } from '../utils/storeEncryption'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -94,6 +94,7 @@ const DEFAULT_PREFS: NotificationPrefs = {
 
 const store = new Store<NotificationStoreSchema>({
   name: 'clear-path-notifications',
+  encryptionKey: getStoreEncryptionKey(),
   defaults: {
     notifications: [],
     webhooks: [],
@@ -239,15 +240,83 @@ export class NotificationManager {
   }
 
   private sendGenericWebhook(url: string, notif: AppNotification): Promise<void> {
-    return this.postJson(url, notif)
+    // Strip potentially sensitive fields before sending externally
+    const safePayload = {
+      id: notif.id,
+      timestamp: notif.timestamp,
+      type: notif.type,
+      severity: notif.severity,
+      title: notif.title,
+      // Truncate message and strip anything that looks like a secret
+      message: NotificationManager.redactSecrets(notif.message.slice(0, 500)),
+      source: notif.source,
+      // Deliberately omit: sessionId, action (may contain IPC channels/navigation info)
+    }
+    return this.postJson(url, safePayload)
+  }
+
+  /** Redact common secret patterns from text before external transmission. */
+  private static redactSecrets(text: string): string {
+    return text
+      .replace(/(?:ghp_|gho_|ghu_|ghs_|ghr_)[a-zA-Z0-9]{36,}/g, '[REDACTED_GITHUB_TOKEN]')
+      .replace(/sk-[a-zA-Z0-9]{20,}/g, '[REDACTED_API_KEY]')
+      .replace(/AKIA[0-9A-Z]{16}/g, '[REDACTED_AWS_KEY]')
+      .replace(/xox[bpors]-[a-zA-Z0-9-]+/g, '[REDACTED_SLACK_TOKEN]')
+  }
+
+  /**
+   * Validate that a webhook URL is safe to request.
+   * Blocks: non-HTTPS, localhost, private IPs, link-local, metadata services.
+   */
+  private static isWebhookUrlSafe(url: string): { safe: boolean; reason?: string } {
+    let parsed: URL
+    try {
+      parsed = new URL(url)
+    } catch {
+      return { safe: false, reason: 'Invalid URL' }
+    }
+
+    // Require HTTPS
+    if (parsed.protocol !== 'https:') {
+      return { safe: false, reason: 'Only HTTPS URLs are allowed for webhooks' }
+    }
+
+    const host = parsed.hostname.toLowerCase()
+
+    // Block localhost
+    if (host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '0.0.0.0') {
+      return { safe: false, reason: 'Localhost URLs are not allowed' }
+    }
+
+    // Block private IP ranges
+    if (/^10\./.test(host) ||
+        /^172\.(1[6-9]|2\d|3[01])\./.test(host) ||
+        /^192\.168\./.test(host) ||
+        /^127\./.test(host)) {
+      return { safe: false, reason: 'Private IP addresses are not allowed' }
+    }
+
+    // Block link-local and metadata service IPs
+    if (host === '169.254.169.254' || host === '169.254.170.2' ||
+        host.startsWith('fd') || host.startsWith('fc') ||
+        /^169\.254\./.test(host)) {
+      return { safe: false, reason: 'Metadata service and link-local addresses are not allowed' }
+    }
+
+    return { safe: true }
   }
 
   private postJson(url: string, body: unknown): Promise<void> {
+    // SSRF protection: validate URL before making the request
+    const urlCheck = NotificationManager.isWebhookUrlSafe(url)
+    if (!urlCheck.safe) {
+      return Promise.reject(new Error(`Webhook URL blocked: ${urlCheck.reason}`))
+    }
+
     return new Promise((resolve, reject) => {
       const data = JSON.stringify(body)
       const parsed = new URL(url)
-      const transport = parsed.protocol === 'https:' ? https : http
-      const req = transport.request(
+      const req = https.request(
         { hostname: parsed.hostname, port: parsed.port, path: parsed.pathname + parsed.search, method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) },
           timeout: 10000,

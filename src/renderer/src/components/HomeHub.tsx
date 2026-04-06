@@ -27,18 +27,24 @@ export default function HomeHub(): JSX.Element {
   const [copilotOk, setCopilotOk] = useState(false)
   const [claudeOk, setClaudeOk] = useState(false)
   const [greeting, setGreeting] = useState('')
+  const [promptSuggestions, setPromptSuggestions] = useState<Array<{ id: string; displayText: string; targetAgentId: string; followUpQuestions: string[]; category: string }>>([])
+  const [starterAgents, setStarterAgents] = useState<Array<{ id: string; name: string; tagline: string; category: string }>>([])
 
   const load = useCallback(async () => {
     try {
-      const [sessions, setup, auth] = await Promise.all([
+      const [sessions, setup, auth, prompts, agents] = await Promise.all([
         window.electronAPI.invoke('cli:get-persisted-sessions') as Promise<RecentSession[]>,
         window.electronAPI.invoke('setup-wizard:is-complete') as Promise<{ complete: boolean }>,
         window.electronAPI.invoke('auth:get-status') as Promise<{ copilot: { authenticated: boolean }; claude: { authenticated: boolean } }>,
+        window.electronAPI.invoke('starter-pack:get-prompts') as Promise<Array<{ id: string; displayText: string; targetAgentId: string; followUpQuestions: string[]; category: string }>>,
+        window.electronAPI.invoke('starter-pack:get-visible-agents') as Promise<Array<{ id: string; name: string; tagline: string; category: string }>>,
       ])
       setRecentSessions((sessions ?? []).sort((a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0)).slice(0, 3))
       setSetupComplete(setup.complete)
       setCopilotOk(auth.copilot.authenticated)
       setClaudeOk(auth.claude.authenticated)
+      setPromptSuggestions(prompts ?? [])
+      setStarterAgents(agents ?? [])
     } catch { /* handlers not ready */ }
 
     const hour = new Date().getHours()
@@ -94,6 +100,24 @@ export default function HomeHub(): JSX.Element {
           </button>
         </div>
 
+        {/* ── Prompt suggestions ─────────────────────────────────────── */}
+        {promptSuggestions.length > 0 && (
+          <div className="space-y-2">
+            <span className="text-xs font-medium text-gray-500 px-1">Try asking...</span>
+            <div className="space-y-1.5">
+              {promptSuggestions.map((s) => (
+                <button
+                  key={s.id}
+                  onClick={() => { setPrompt(s.displayText); handleQuickStart() }}
+                  className="w-full text-left bg-white border border-gray-200 rounded-xl px-4 py-3 hover:border-gray-300 hover:shadow-sm transition-all group"
+                >
+                  <span className="text-sm text-gray-700 group-hover:text-gray-900">{s.displayText}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* ── Action cards ──────────────────────────────────────────────────── */}
         <div className="grid grid-cols-2 gap-3">
           {/* Card 1: Guided Session */}
@@ -106,7 +130,9 @@ export default function HomeHub(): JSX.Element {
             </div>
             <h3 className="text-sm font-semibold text-gray-900 group-hover:text-gray-700">Start a Session</h3>
             <p className="text-xs text-gray-500 mt-1 leading-relaxed">
-              Open a new AI session. Use the wizard for guided prompts or go freestyle.
+              {starterAgents.length > 0
+                ? `${starterAgents.length} AI agents ready — Communication Coach, Research Analyst, and more.`
+                : 'Open a new AI session with the wizard or go freestyle.'}
             </p>
           </button>
 

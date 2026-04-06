@@ -6,6 +6,8 @@ import {
 } from 'fs'
 import { join, basename } from 'path'
 import type { CLIManager } from '../cli/CLIManager'
+import { assertPathWithinRoots, getWorkspaceAllowedRoots, isSensitiveSystemPath } from '../utils/pathSecurity'
+import { checkRateLimit } from '../utils/rateLimiter'
 
 interface KBFile {
   name: string
@@ -81,8 +83,15 @@ export function registerKnowledgeBaseHandlers(ipcMain: IpcMain, cliManager: CLIM
   ipcMain.handle('kb:list-files', (_e, args: { cwd: string }) => listKBFiles(args.cwd))
 
   ipcMain.handle('kb:read-file', (_e, args: { path: string }) => {
-    try { return { content: readFileSync(args.path, 'utf8') } }
-    catch { return { error: 'File not found' } }
+    try {
+      assertPathWithinRoots(args.path, getWorkspaceAllowedRoots())
+      if (isSensitiveSystemPath(args.path)) return { error: 'Access denied' }
+      return { content: readFileSync(args.path, 'utf8') }
+    } catch (err) {
+      const msg = String(err)
+      if (msg.includes('Path not allowed')) return { error: 'Path not allowed' }
+      return { error: 'File not found' }
+    }
   })
 
   ipcMain.handle('kb:search', (_e, args: { cwd: string; query: string }) =>
@@ -99,6 +108,9 @@ export function registerKnowledgeBaseHandlers(ipcMain: IpcMain, cliManager: CLIM
     maxBudget?: number
     depth: 'quick' | 'standard' | 'deep'
   }) => {
+    const rl = checkRateLimit('kb:generate')
+    if (!rl.allowed) return { error: `Rate limited — try again in ${Math.ceil((rl.retryAfterMs ?? 0) / 1000)}s` }
+
     const kbDir = getKBDir(args.cwd)
     mkdirSync(kbDir, { recursive: true })
 

@@ -1,5 +1,6 @@
 import type { IpcMain } from 'electron'
 import Store from 'electron-store'
+import { getStoreEncryptionKey } from '../utils/storeEncryption'
 
 // ── Feature flag definitions ─────────────────────────────────────────────────
 
@@ -45,6 +46,11 @@ export interface FeatureFlags {
   showPlugins: boolean
   showEnvVars: boolean
   showWebhooks: boolean
+
+  // Experimental features
+  enableExperimentalFeatures: boolean
+  showPrScores: boolean
+  prScoresAiReview: boolean
 }
 
 const ALL_ON: FeatureFlags = {
@@ -83,6 +89,10 @@ const ALL_ON: FeatureFlags = {
   showPlugins: true,
   showEnvVars: true,
   showWebhooks: true,
+
+  enableExperimentalFeatures: true,
+  showPrScores: true,
+  prScoresAiReview: false,
 }
 
 // ── Presets ──────────────────────────────────────────────────────────────────
@@ -121,6 +131,7 @@ const PRESETS: FlagPreset[] = [
       showWebhooks: false,
       showPlugins: false,
       showEnvVars: false,
+      showPrScores: false,
     },
   },
   {
@@ -146,6 +157,7 @@ const PRESETS: FlagPreset[] = [
       showDataManagement: false,
       showBudgetLimits: false,
       showSkillsManagement: false,
+      showPrScores: false,
     },
   },
   {
@@ -165,6 +177,7 @@ const PRESETS: FlagPreset[] = [
       showPlugins: false,
       showEnvVars: false,
       showWebhooks: false,
+      showPrScores: false,
     },
   },
 ]
@@ -178,6 +191,7 @@ interface FlagStoreSchema {
 
 const store = new Store<FlagStoreSchema>({
   name: 'clear-path-feature-flags',
+  encryptionKey: getStoreEncryptionKey(),
   defaults: {
     flags: {},
     activePresetId: 'all-on',

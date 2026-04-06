@@ -5,6 +5,7 @@ import {
 } from 'fs'
 import { homedir } from 'os'
 import { join, dirname } from 'path'
+import { assertPathWithinRoots, getMemoryAllowedRoots, isSensitiveSystemPath } from '../utils/pathSecurity'
 
 export interface ConfigFile {
   path: string
@@ -171,6 +172,11 @@ export function registerMemoryHandlers(ipcMain: IpcMain): void {
   )
 
   ipcMain.handle('memory:read-file', (_e, args: { path: string }) => {
+    try {
+      assertPathWithinRoots(args.path, getMemoryAllowedRoots())
+    } catch (err) {
+      return { error: String(err) }
+    }
     const content = safeReadFile(args.path)
     if (content === null) return { error: 'File not found or unreadable' }
     return { content }
@@ -178,6 +184,10 @@ export function registerMemoryHandlers(ipcMain: IpcMain): void {
 
   ipcMain.handle('memory:write-file', (_e, args: { path: string; content: string }) => {
     try {
+      assertPathWithinRoots(args.path, getMemoryAllowedRoots())
+      if (isSensitiveSystemPath(args.path)) {
+        return { error: 'Cannot write to sensitive system path' }
+      }
       mkdirSync(dirname(args.path), { recursive: true })
       writeFileSync(args.path, args.content, 'utf8')
       return { success: true }
@@ -188,6 +198,10 @@ export function registerMemoryHandlers(ipcMain: IpcMain): void {
 
   ipcMain.handle('memory:delete-file', (_e, args: { path: string }) => {
     try {
+      assertPathWithinRoots(args.path, getMemoryAllowedRoots())
+      if (isSensitiveSystemPath(args.path)) {
+        return { error: 'Cannot delete sensitive system path' }
+      }
       unlinkSync(args.path)
       return { success: true }
     } catch (err) {
