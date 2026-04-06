@@ -68,16 +68,30 @@ export const DEFAULT_BUDGET: BudgetConfig = {
 
 // Rough pricing per 1M tokens for cost estimation
 export const MODEL_PRICING: Record<string, { input: number; output: number }> = {
-  'claude-sonnet-4.5': { input: 3, output: 15 },
-  'claude-sonnet-4': { input: 3, output: 15 },
-  'claude-opus-4-6': { input: 15, output: 75 },
+  // Anthropic (Claude Code aliases)
   'sonnet': { input: 3, output: 15 },
-  'opus': { input: 15, output: 75 },
-  'haiku': { input: 0.25, output: 1.25 },
+  'opus': { input: 5, output: 25 },
+  'haiku': { input: 1, output: 5 },
+  // Anthropic (Copilot model IDs)
+  'claude-sonnet-4.5': { input: 3, output: 15 },
+  'claude-sonnet-4.6': { input: 3, output: 15 },
+  'claude-sonnet-4': { input: 3, output: 15 },
+  'claude-haiku-4.5': { input: 1, output: 5 },
+  'claude-opus-4.5': { input: 5, output: 25 },
+  'claude-opus-4.6': { input: 5, output: 25 },
+  // OpenAI
+  'gpt-5-mini': { input: 0.4, output: 1.6 },
+  'gpt-4.1': { input: 2, output: 8 },
+  'gpt-4o': { input: 2.5, output: 10 },
   'gpt-5': { input: 5, output: 15 },
+  'gpt-5.1': { input: 5, output: 15 },
+  'gpt-5.1-codex': { input: 5, output: 15 },
   'gpt-5.3-codex': { input: 5, output: 15 },
-  'gemini-3-pro': { input: 3.5, output: 10.5 },
   'gpt-5.4-mini': { input: 0.4, output: 1.6 },
+  // Google
+  'gemini-2.5-pro': { input: 3.5, output: 10.5 },
+  'gemini-3-pro': { input: 3.5, output: 10.5 },
+  'gemini-3-flash': { input: 0.5, output: 1.5 },
 }
 
 export function estimateCost(model: string, inputTokens: number, outputTokens: number): number {

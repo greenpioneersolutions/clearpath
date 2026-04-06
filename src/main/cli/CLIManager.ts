@@ -11,6 +11,7 @@ import Store from 'electron-store'
 
 export type NotifyCallback = (args: {
   type: string; severity: string; title: string; message: string; source: string; sessionId?: string
+  action?: { label: string; ipcChannel?: string; navigate?: string; tab?: string; panel?: string; args?: Record<string, unknown> }
 }) => void
 
 export type AuditCallback = (entry: {
@@ -263,13 +264,21 @@ export class CLIManager {
     const inputTokens = Math.ceil(inputChars / 4)
     const outputTokens = Math.ceil(outputBytes / 4)
     const totalTokens = inputTokens + outputTokens
-    const model = session.originalOptions.model ?? (session.info.cli === 'copilot' ? 'claude-sonnet-4.5' : 'sonnet')
+    const model = session.originalOptions.model ?? (session.info.cli === 'copilot' ? 'gpt-5-mini' : 'sonnet')
 
-    // Rough pricing per 1M tokens
+    // Rough pricing per 1M tokens (input, output)
     const pricing: Record<string, [number, number]> = {
-      'claude-sonnet-4.5': [3, 15], 'claude-sonnet-4': [3, 15], 'sonnet': [3, 15],
-      'claude-opus-4-6': [15, 75], 'opus': [15, 75],
-      'haiku': [0.25, 1.25], 'gpt-5': [5, 15], 'gemini-3-pro': [3.5, 10.5],
+      // Free Copilot models (cost tracked at $0 since included in plan)
+      'gpt-5-mini': [0.4, 1.6], 'gpt-4.1': [2, 8], 'gpt-4o': [2.5, 10],
+      // Anthropic
+      'claude-sonnet-4.5': [3, 15], 'claude-sonnet-4.6': [3, 15], 'claude-sonnet-4': [3, 15],
+      'claude-haiku-4.5': [1, 5], 'sonnet': [3, 15], 'haiku': [1, 5],
+      'claude-opus-4.5': [5, 25], 'claude-opus-4.6': [5, 25], 'opus': [5, 25],
+      // OpenAI
+      'gpt-5': [5, 15], 'gpt-5.1': [5, 15], 'gpt-5.1-codex': [5, 15],
+      'gpt-5.3-codex': [5, 15], 'gpt-5.4-mini': [0.4, 1.6],
+      // Google
+      'gemini-2.5-pro': [3.5, 10.5], 'gemini-3-pro': [3.5, 10.5], 'gemini-3-flash': [0.5, 1.5],
     }
     const [inPrice, outPrice] = pricing[model] ?? [3, 15]
     const cost = (inputTokens * inPrice + outputTokens * outPrice) / 1_000_000
@@ -807,6 +816,7 @@ export class CLIManager {
           title: `Session failed`,
           message: `Could not start ${session.info.cli === 'copilot' ? 'Copilot' : 'Claude'} session. Check that the CLI is installed and authenticated.`,
           source: 'cli-manager', sessionId,
+          action: { label: 'View Session', navigate: '/work' },
         })
       } else {
         // Turn completed normally — session stays open for next input

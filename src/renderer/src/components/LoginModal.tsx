@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useFocusTrap } from '../hooks/useFocusTrap'
 import type { LoginCompleteEvent, LoginOutputEvent } from '../types/ipc'
 
 interface Props {
@@ -20,10 +21,13 @@ const INSTRUCTIONS = {
 }
 
 export function LoginModal({ cli, isOpen, onClose }: Props): JSX.Element | null {
+  const panelRef = useRef<HTMLDivElement>(null)
   const [lines, setLines] = useState<string[]>([])
   const [status, setStatus] = useState<'running' | 'success' | 'failed' | 'cancelled'>('running')
   const outputRef = useRef<HTMLDivElement>(null)
   const hasStarted = useRef(false)
+
+  useFocusTrap(panelRef, isOpen)
 
   // Scroll to bottom whenever new lines arrive
   useEffect(() => {
@@ -87,11 +91,17 @@ export function LoginModal({ cli, isOpen, onClose }: Props): JSX.Element | null 
       }}
     >
       {/* Panel */}
-      <div className="relative w-full max-w-lg mx-4 bg-white rounded-2xl shadow-2xl overflow-hidden">
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="login-title"
+        className="relative w-full max-w-lg mx-4 bg-white rounded-2xl shadow-2xl overflow-hidden"
+      >
         {/* Header */}
         <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between">
           <div>
-            <h2 className="text-base font-semibold text-gray-900">
+            <h2 id="login-title" className="text-base font-semibold text-gray-900">
               Connect {CLI_LABELS[cli]}
             </h2>
             <p className="text-xs text-gray-500 mt-0.5">{INSTRUCTIONS[cli]}</p>
@@ -102,6 +112,8 @@ export function LoginModal({ cli, isOpen, onClose }: Props): JSX.Element | null 
         {/* Output stream */}
         <div
           ref={outputRef}
+          role="log"
+          aria-live="polite"
           className="h-64 overflow-y-auto bg-gray-950 px-4 py-3 font-mono text-xs leading-relaxed"
         >
           {lines.length === 0 ? (
@@ -139,6 +151,7 @@ export function LoginModal({ cli, isOpen, onClose }: Props): JSX.Element | null 
             {status === 'running' && (
               <button
                 onClick={handleCancel}
+                aria-label="Cancel login"
                 className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
               >
                 Cancel
@@ -147,6 +160,7 @@ export function LoginModal({ cli, isOpen, onClose }: Props): JSX.Element | null 
             {(status === 'failed' || status === 'cancelled') && (
               <button
                 onClick={onClose}
+                aria-label="Close login dialog"
                 className="px-4 py-2 text-sm bg-gray-900 text-white rounded-lg hover:bg-gray-700 transition-colors"
               >
                 Close

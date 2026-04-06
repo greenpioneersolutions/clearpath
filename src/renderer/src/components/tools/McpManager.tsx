@@ -231,6 +231,9 @@ export default function McpManager({ cli, workingDirectory }: Props): JSX.Elemen
                       server.enabled ? 'bg-indigo-600' : 'bg-gray-300'
                     }`}
                     title={server.enabled ? 'Disable' : 'Enable'}
+                    role="switch"
+                    aria-checked={server.enabled}
+                    aria-label={`Toggle MCP server ${server.name}`}
                   >
                     <span
                       className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${

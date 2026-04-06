@@ -214,7 +214,10 @@ export default function SchedulePanel({ cli }: Props): JSX.Element {
                         <div className="flex items-center gap-2 flex-shrink-0">
                           <button onClick={() => void handleRunNow(job.id)} className="px-2 py-1 text-[11px] text-indigo-400 border border-indigo-800 rounded-lg hover:bg-indigo-900/30 transition-colors">Run</button>
                           <button onClick={() => void handleToggle(job.id, !job.enabled)}
-                            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${job.enabled ? 'bg-indigo-600' : 'bg-gray-700'}`}>
+                            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${job.enabled ? 'bg-indigo-600' : 'bg-gray-700'}`}
+                            role="switch"
+                            aria-checked={job.enabled}
+                            aria-label={`Toggle schedule ${job.name}`}>
                             <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${job.enabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
                           </button>
                           <button onClick={() => void handleDelete(job.id)} className="text-gray-600 hover:text-red-400 transition-colors p-1">

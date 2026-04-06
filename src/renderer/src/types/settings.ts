@@ -75,24 +75,48 @@ export interface ModelDef {
   id: string
   label: string
   subtitle?: string
+  provider: string
   cli: 'copilot' | 'claude'
   isDefault?: boolean
+  /** Cost tier for Copilot: 'free' (included), '1x', '2x', '3x', etc. For Claude: $/1M tokens */
+  costTier: string
+  /** Brief description of strengths */
+  description: string
 }
 
 export const COPILOT_MODELS: ModelDef[] = [
-  { id: 'claude-sonnet-4.5', label: 'Claude Sonnet 4.5', subtitle: 'Default', cli: 'copilot', isDefault: true },
-  { id: 'claude-sonnet-4', label: 'Claude Sonnet 4', cli: 'copilot' },
-  { id: 'claude-opus-4-6', label: 'Claude Opus 4.6', cli: 'copilot' },
-  { id: 'gpt-5', label: 'GPT-5', cli: 'copilot' },
-  { id: 'gpt-5.3-codex', label: 'GPT-5.3 Codex', cli: 'copilot' },
-  { id: 'gemini-3-pro', label: 'Gemini 3 Pro', cli: 'copilot' },
-  { id: 'gpt-5.4-mini', label: 'GPT-5.4 Mini', cli: 'copilot' },
+  // ── Free models (included in Copilot subscription) ──
+  { id: 'gpt-5-mini', label: 'GPT-5 Mini', provider: 'OpenAI', cli: 'copilot', isDefault: true, costTier: 'Free', description: 'Fast, free, great for simple tasks' },
+  { id: 'gpt-4.1', label: 'GPT-4.1', provider: 'OpenAI', cli: 'copilot', costTier: 'Free', description: 'Reliable general-purpose model' },
+  { id: 'gpt-4o', label: 'GPT-4o', provider: 'OpenAI', cli: 'copilot', costTier: 'Free', description: 'Fast multimodal model' },
+
+  // ── 0.33x models ──
+  { id: 'claude-haiku-4.5', label: 'Claude Haiku 4.5', provider: 'Anthropic', cli: 'copilot', costTier: '0.33x', description: 'Budget Anthropic model, quick tasks' },
+  { id: 'gemini-3-flash', label: 'Gemini 3 Flash', provider: 'Google', cli: 'copilot', costTier: '0.33x', description: 'Fast and lightweight' },
+
+  // ── 1x models ──
+  { id: 'claude-sonnet-4.5', label: 'Claude Sonnet 4.5', provider: 'Anthropic', cli: 'copilot', costTier: '1x', description: 'Balanced coding model' },
+  { id: 'claude-sonnet-4.6', label: 'Claude Sonnet 4.6', provider: 'Anthropic', cli: 'copilot', costTier: '1x', description: 'Latest Sonnet, strong at code' },
+  { id: 'claude-sonnet-4', label: 'Claude Sonnet 4', provider: 'Anthropic', cli: 'copilot', costTier: '1x', description: 'Previous gen balanced model' },
+  { id: 'gpt-5.1', label: 'GPT-5.1', provider: 'OpenAI', cli: 'copilot', costTier: '1x', description: 'Latest general-purpose GPT' },
+  { id: 'gpt-5.1-codex', label: 'GPT-5.1 Codex', provider: 'OpenAI', cli: 'copilot', costTier: '1x', description: 'Code-specialized GPT' },
+  { id: 'gpt-5', label: 'GPT-5', provider: 'OpenAI', cli: 'copilot', costTier: '1x', description: 'Powerful general-purpose' },
+  { id: 'gpt-5.3-codex', label: 'GPT-5.3 Codex', provider: 'OpenAI', cli: 'copilot', costTier: '1x', description: 'Code-specialized GPT variant' },
+  { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro', provider: 'Google', cli: 'copilot', costTier: '1x', description: 'Strong reasoning and code' },
+  { id: 'gemini-3-pro', label: 'Gemini 3 Pro', provider: 'Google', cli: 'copilot', costTier: '1x', description: 'Latest Google flagship' },
+
+  // ── 3x models ──
+  { id: 'claude-opus-4.5', label: 'Claude Opus 4.5', provider: 'Anthropic', cli: 'copilot', costTier: '3x', description: 'Deep reasoning, complex architecture' },
+  { id: 'claude-opus-4.6', label: 'Claude Opus 4.6', provider: 'Anthropic', cli: 'copilot', costTier: '3x', description: 'Most capable, 1M context' },
+
+  // ── Other ──
+  { id: 'gpt-5.4-mini', label: 'GPT-5.4 Mini', provider: 'OpenAI', cli: 'copilot', costTier: '1x', description: 'Lightweight GPT variant' },
 ]
 
 export const CLAUDE_MODELS: ModelDef[] = [
-  { id: 'sonnet', label: 'Sonnet', subtitle: 'claude-sonnet-4-6', cli: 'claude', isDefault: true },
-  { id: 'opus', label: 'Opus', subtitle: 'claude-opus-4-6', cli: 'claude' },
-  { id: 'haiku', label: 'Haiku', subtitle: 'claude-haiku-4-5-20251001', cli: 'claude' },
+  { id: 'sonnet', label: 'Sonnet', subtitle: 'claude-sonnet-4-6', provider: 'Anthropic', cli: 'claude', isDefault: true, costTier: '$3 / $15', description: 'Best balance of speed and capability' },
+  { id: 'haiku', label: 'Haiku', subtitle: 'claude-haiku-4-5', provider: 'Anthropic', cli: 'claude', costTier: '$1 / $5', description: 'Cheapest, fast for simple tasks' },
+  { id: 'opus', label: 'Opus', subtitle: 'claude-opus-4-6', provider: 'Anthropic', cli: 'claude', costTier: '$5 / $25', description: 'Most capable, 1M context, deep reasoning' },
 ]
 
 // ── Env var definitions ─────────────────────────────────────────────────────

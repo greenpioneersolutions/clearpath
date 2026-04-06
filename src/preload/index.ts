@@ -136,6 +136,12 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   // Local Models
   'local-models:is-available', 'local-models:detect',
 
+  // Auto-updater
+  'updater:check', 'updater:install',
+
+  // Accessibility
+  'accessibility:get', 'accessibility:set', 'accessibility:reset',
+
   // Wizards
   'wizard:get-config', 'wizard:save-config', 'wizard:reset-config',
   'wizard:get-state', 'wizard:mark-completed',
@@ -171,6 +177,7 @@ const ALLOWED_RECEIVE_CHANNELS = new Set([
   'files:changed',
   'notification:new',
   'subagent:output', 'subagent:spawned', 'subagent:status-changed',
+  'updater:status',
 ])
 
 contextBridge.exposeInMainWorld('electronAPI', {

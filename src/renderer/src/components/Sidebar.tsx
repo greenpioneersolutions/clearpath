@@ -50,18 +50,18 @@ const NAV_ITEMS: Array<{ to: string; label: string; flagKey?: keyof FeatureFlags
       </svg>
     ),
   },
-  {
-    to: '/configure',
-    label: 'Configure',
-    flagKey: 'showConfigure',
-    icon: (
-      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-      </svg>
-    ),
-  },
 ]
+
+const CONFIGURE_ITEM = {
+  to: '/configure',
+  label: 'Configure',
+  icon: (
+    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+    </svg>
+  ),
+}
 
 export default function Sidebar(): JSX.Element {
   const { flags } = useFeatureFlags()
@@ -122,36 +122,19 @@ export default function Sidebar(): JSX.Element {
       : { color: brand.colorSidebarText }
 
   return (
-    <aside className={`${collapsed ? 'w-16' : 'w-52'} flex flex-col h-screen transition-all duration-200 flex-shrink-0`}
+    <aside role="navigation" aria-label="Main navigation"
+      className={`${collapsed ? 'w-16' : 'w-52'} flex flex-col h-screen transition-all duration-200 flex-shrink-0`}
       style={{ backgroundColor: brand.colorSidebarBg }}>
 
       {/* ── Header: Logo + Bell ──────────────────────────────────────────── */}
       <div className={`px-3 pt-4 pb-2 ${collapsed ? 'text-center' : ''}`}>
         <div className="flex items-center justify-between">
           {collapsed ? (
-            /* Collapsed: compass icon only */
-            <div className="mx-auto w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: brand.colorPrimary }}>
-              <svg width="20" height="20" viewBox="0 0 40 40" fill="none">
-                <circle cx="20" cy="20" r="13" stroke="#fff" strokeWidth="1" opacity="0.15"/>
-                <g opacity="0.35">
-                  <line x1="20" y1="7" x2="20" y2="10" stroke="#fff" strokeWidth="1.5" strokeLinecap="round"/>
-                  <line x1="20" y1="30" x2="20" y2="33" stroke="#fff" strokeWidth="1.5" strokeLinecap="round"/>
-                  <line x1="7" y1="20" x2="10" y2="20" stroke="#fff" strokeWidth="1.5" strokeLinecap="round"/>
-                  <line x1="30" y1="20" x2="33" y2="20" stroke="#fff" strokeWidth="1.5" strokeLinecap="round"/>
-                </g>
-                <path d="M20 20 L30 10" fill="none" stroke={brand.colorAccentLight} strokeWidth="1.5" strokeLinecap="round" opacity="0.85"/>
-                <g transform="translate(20,20) rotate(-45)">
-                  <polygon points="0,-11 2.5,-2 0,-4 -2.5,-2" fill="#fff"/>
-                </g>
-                <circle cx="20" cy="20" r="3" fill={brand.colorPrimary} stroke="#fff" strokeWidth="1.5"/>
-                <circle cx="20" cy="20" r="1.5" fill={brand.colorAccentLight}/>
-                <circle cx="31" cy="9" r="2" fill={brand.colorAccentLight}/>
-              </svg>
-            </div>
-          ) : (
-            /* Expanded: compass icon + wordmark */
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: brand.colorPrimary }}>
+            /* Collapsed: icon only */
+            brand.useCustomLogo && brand.customLogoDataUrl ? (
+              <img src={brand.customLogoDataUrl} alt={brand.appName} className="mx-auto w-8 h-8 rounded-lg object-contain" />
+            ) : (
+              <div className="mx-auto w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: brand.colorPrimary }}>
                 <svg width="20" height="20" viewBox="0 0 40 40" fill="none">
                   <circle cx="20" cy="20" r="13" stroke="#fff" strokeWidth="1" opacity="0.15"/>
                   <g opacity="0.35">
@@ -169,11 +152,37 @@ export default function Sidebar(): JSX.Element {
                   <circle cx="31" cy="9" r="2" fill={brand.colorAccentLight}/>
                 </svg>
               </div>
-              <h1 className="font-semibold text-sm tracking-tight">
+            )
+          ) : (
+            /* Expanded: icon + wordmark */
+            <div className="flex items-center gap-2">
+              {brand.useCustomLogo && brand.customLogoDataUrl ? (
+                <img src={brand.customLogoDataUrl} alt={brand.appName} className="w-8 h-8 rounded-lg object-contain flex-shrink-0" />
+              ) : (
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: brand.colorPrimary }}>
+                  <svg width="20" height="20" viewBox="0 0 40 40" fill="none">
+                    <circle cx="20" cy="20" r="13" stroke="#fff" strokeWidth="1" opacity="0.15"/>
+                    <g opacity="0.35">
+                      <line x1="20" y1="7" x2="20" y2="10" stroke="#fff" strokeWidth="1.5" strokeLinecap="round"/>
+                      <line x1="20" y1="30" x2="20" y2="33" stroke="#fff" strokeWidth="1.5" strokeLinecap="round"/>
+                      <line x1="7" y1="20" x2="10" y2="20" stroke="#fff" strokeWidth="1.5" strokeLinecap="round"/>
+                      <line x1="30" y1="20" x2="33" y2="20" stroke="#fff" strokeWidth="1.5" strokeLinecap="round"/>
+                    </g>
+                    <path d="M20 20 L30 10" fill="none" stroke={brand.colorAccentLight} strokeWidth="1.5" strokeLinecap="round" opacity="0.85"/>
+                    <g transform="translate(20,20) rotate(-45)">
+                      <polygon points="0,-11 2.5,-2 0,-4 -2.5,-2" fill="#fff"/>
+                    </g>
+                    <circle cx="20" cy="20" r="3" fill={brand.colorPrimary} stroke="#fff" strokeWidth="1.5"/>
+                    <circle cx="20" cy="20" r="1.5" fill={brand.colorAccentLight}/>
+                    <circle cx="31" cy="9" r="2" fill={brand.colorAccentLight}/>
+                  </svg>
+                </div>
+              )}
+              <div className="font-semibold text-sm tracking-tight">
                 <span className="text-white">{brand.wordmarkParts[0]}</span>
                 <span style={{ color: brand.colorSecondary }}>{brand.wordmarkParts[1]}</span>
                 <span style={{ color: brand.colorAccent }}>{brand.wordmarkParts[2]}</span>
-              </h1>
+              </div>
             </div>
           )}
           {!collapsed && <NotificationBell />}
@@ -191,6 +200,7 @@ export default function Sidebar(): JSX.Element {
                 copilotOk ? 'bg-gray-700 text-white' : 'text-gray-500'
               }`}
               title={copilotOk ? 'Copilot connected' : 'Copilot not found'}
+              aria-label={copilotOk ? 'Copilot: connected' : 'Copilot: not connected'}
             >
               <span className={`w-1.5 h-1.5 rounded-full ${copilotOk ? 'bg-green-400' : 'bg-red-400/60'}`} />
               Copilot
@@ -201,6 +211,7 @@ export default function Sidebar(): JSX.Element {
                 claudeOk ? 'text-gray-400 hover:bg-gray-700 hover:text-white' : 'text-gray-600'
               }`}
               title={claudeOk ? 'Claude connected' : 'Claude not found'}
+              aria-label={claudeOk ? 'Claude: connected' : 'Claude: not connected'}
             >
               <span className={`w-1.5 h-1.5 rounded-full ${claudeOk ? 'bg-green-400' : 'bg-red-400/60'}`} />
               Claude
@@ -237,7 +248,7 @@ export default function Sidebar(): JSX.Element {
       <div className="mx-3 border-t" style={{ borderColor: `${brand.colorSidebarText}22` }} />
 
       {/* ── Nav items ────────────────────────────────────────────────────── */}
-      <nav className="flex-1 px-2 py-3 space-y-1">
+      <nav className="flex-1 px-2 py-3 space-y-1" aria-label="Primary">
         {NAV_ITEMS.filter((item) => {
           if (item.requiredFlags) return item.requiredFlags.every((f) => flags[f])
           if (item.flagKey) return flags[item.flagKey]
@@ -251,7 +262,7 @@ export default function Sidebar(): JSX.Element {
 
             {/* Conditional Learn nav — between Work (idx 1) and Insights (idx 2) */}
             {idx === 1 && flags.showLearn && !learnDismissed && learnPct < 100 && (
-              <NavLink to="/learn" className={linkClass}>
+              <NavLink to="/learn" className={linkClass} style={({ isActive }) => linkStyle(isActive)}>
                 {/* Graduation cap with progress ring */}
                 <div className="relative w-5 h-5 flex-shrink-0">
                   <svg className="w-5 h-5 -rotate-90" viewBox="0 0 20 20">
@@ -275,10 +286,23 @@ export default function Sidebar(): JSX.Element {
         ))}
       </nav>
 
+      {/* ── Configure (pinned to bottom) ─────────────────────────────────── */}
+      {flags.showConfigure && (
+        <div className="px-2 pb-1">
+          <div className="mx-1 border-t mb-2" style={{ borderColor: `${brand.colorSidebarText}22` }} />
+          <NavLink to={CONFIGURE_ITEM.to} className={linkClass} style={({ isActive }) => linkStyle(isActive)}>
+            {CONFIGURE_ITEM.icon}
+            {!collapsed && <span>{CONFIGURE_ITEM.label}</span>}
+          </NavLink>
+        </div>
+      )}
+
       {/* ── Collapse toggle ──────────────────────────────────────────────── */}
       <div className="px-2 pb-3">
         <button
           onClick={() => setCollapsed(!collapsed)}
+          aria-expanded={!collapsed}
+          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           className="w-full flex items-center justify-center gap-2 px-3 py-2 text-gray-600 hover:text-gray-400 rounded-lg hover:bg-gray-800 transition-colors"
         >
           <svg className={`w-4 h-4 transition-transform ${collapsed ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">

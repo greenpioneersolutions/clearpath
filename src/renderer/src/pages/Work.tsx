@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation, useSearchParams } from 'react-router-dom'
 import type { IpcRendererEvent } from 'electron'
 import type { ParsedOutput, SessionInfo, HistoricalSession } from '../types/ipc'
 import type { PromptTemplate } from '../types/template'
@@ -12,15 +12,13 @@ import QuickCompose, { type QuickComposeConfig } from '../components/composer/Qu
 import TemplateForm from '../components/templates/TemplateForm'
 import SessionManager from '../components/SessionManager'
 import SchedulePanel from '../components/SchedulePanel'
+import { useFeatureFlags } from '../contexts/FeatureFlagContext'
 
 // Lazy-load panel contents
 import Agents from './Agents'
 import Tools from './Tools'
-import FileExplorer from './FileExplorer'
-import GitWorkflow from './GitWorkflow'
 import Templates from './Templates'
 import SubAgents from './SubAgents'
-import KnowledgeBase from './KnowledgeBase'
 import SkillsPanel from '../components/skills/SkillsPanel'
 import SkillWizard from '../components/skills/SkillWizard'
 import SessionSummary from '../components/shared/SessionSummary'
@@ -32,18 +30,17 @@ import NotesManager from '../components/memory/NotesManager'
 
 // ── Panel definitions ────────────────────────────────────────────────────────
 
-type PanelId = 'agents' | 'tools' | 'files' | 'git' | 'work-items' | 'templates' | 'skills' | 'subagents' | 'knowledge'
+type PanelId = 'agents' | 'tools' | 'work-items' | 'templates' | 'skills' | 'subagents'
 
-const PANELS: Array<{ id: PanelId; icon: JSX.Element; label: string }> = [
-  { id: 'agents', label: 'Agents', icon: <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" /></svg> },
+type FlagKey = import('../contexts/FeatureFlagContext').FeatureFlags
+
+const PANELS: Array<{ id: PanelId; icon: JSX.Element; label: string; flagKey?: keyof FlagKey }> = [
+  { id: 'agents', label: 'Agents', icon: <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" /></svg>, flagKey: 'showAgentSelection' },
   { id: 'tools', label: 'Tools', icon: <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg> },
-  { id: 'files', label: 'Files', icon: <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg> },
-  { id: 'git', label: 'Git', icon: <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" /></svg> },
   { id: 'work-items', label: 'Work Items', icon: <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" /></svg> },
-  { id: 'templates', label: 'Templates', icon: <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg> },
-  { id: 'skills', label: 'Skills', icon: <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11 4a2 2 0 114 0v1a1 1 0 001 1h3a1 1 0 011 1v3a1 1 0 01-1 1h-1a2 2 0 100 4h1a1 1 0 011 1v3a1 1 0 01-1 1h-3a1 1 0 01-1-1v-1a2 2 0 10-4 0v1a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 00-1-1H4a2 2 0 110-4h1a1 1 0 001-1V7a1 1 0 011-1h3a1 1 0 001-1V4z" /></svg> },
-  { id: 'subagents', label: 'Sub-Agents', icon: <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg> },
-  { id: 'knowledge', label: 'Knowledge', icon: <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /></svg> },
+  { id: 'templates', label: 'Templates', icon: <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>, flagKey: 'showTemplates' },
+  { id: 'skills', label: 'Skills', icon: <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11 4a2 2 0 114 0v1a1 1 0 001 1h3a1 1 0 011 1v3a1 1 0 01-1 1h-1a2 2 0 100 4h1a1 1 0 011 1v3a1 1 0 01-1 1h-3a1 1 0 01-1-1v-1a2 2 0 10-4 0v1a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 00-1-1H4a2 2 0 110-4h1a1 1 0 001-1V7a1 1 0 011-1h3a1 1 0 001-1V4z" /></svg>, flagKey: 'showSkillsManagement' },
+  { id: 'subagents', label: 'Sub-Agents', icon: <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>, flagKey: 'showSubAgents' },
 ]
 
 // ── Session state ────────────────────────────────────────────────────────────
@@ -74,6 +71,9 @@ interface ActiveSessionState {
 
 export default function Work(): JSX.Element {
   const navigate = useNavigate()
+  const location = useLocation()
+  const [searchParams] = useSearchParams()
+  const { flags } = useFeatureFlags()
   const [activePanel, setActivePanel] = useState<PanelId | null>(null)
   const [sessions, setSessions] = useState<Map<string, ActiveSessionState>>(new Map())
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -87,8 +87,28 @@ export default function Work(): JSX.Element {
   const [viewingStoppedSession, setViewingStoppedSession] = useState(false) // true = show conversation for a stopped session instead of welcome screen
   const [selectedNoteIds, setSelectedNoteIds] = useState<Set<string>>(new Set())
   const [showSaveNoteModal, setShowSaveNoteModal] = useState<string | null>(null) // content to save
+  const [wizardOptionId, setWizardOptionId] = useState<string | undefined>(undefined)
+  const [wizardStep, setWizardStep] = useState<string | undefined>(undefined)
   const sessionsRef = useRef(sessions)
   sessionsRef.current = sessions
+
+  // ── Deep-link: parse URL params and location state ──────────────────────
+  useEffect(() => {
+    const panel = searchParams.get('panel') as PanelId | null
+    if (panel && PANELS.some((p) => p.id === panel)) setActivePanel(panel)
+
+    const tab = searchParams.get('tab') as typeof workMode | null
+    if (tab && ['session', 'wizard', 'compose', 'schedule', 'memory'].includes(tab)) setWorkMode(tab)
+
+    // Wizard deep-link: ?wizardOption=question or ?wizardStep=context
+    const wo = searchParams.get('wizardOption')
+    if (wo) setWizardOptionId(wo)
+    const ws = searchParams.get('wizardStep')
+    if (ws) setWizardStep(ws)
+
+    const state = location.state as { sessionId?: string } | null
+    if (state?.sessionId) setSelectedId(state.sessionId)
+  }, [location, searchParams])
 
   // ── Rehydrate sessions from main process on mount ──────────────────────
   // This recovers sessions that are still alive after navigating away and back.
@@ -490,7 +510,7 @@ export default function Work(): JSX.Element {
     <div className="flex h-full overflow-hidden">
       {/* Left: Panel Toolbar */}
       <div className="w-12 flex flex-col items-center py-2 gap-1 flex-shrink-0" style={{ backgroundColor: 'var(--brand-dark-page)', borderRight: '1px solid var(--brand-dark-border)' }}>
-        {PANELS.map((p) => (
+        {PANELS.filter((p) => !p.flagKey || flags[p.flagKey]).map((p) => (
           <button
             key={p.id}
             onClick={() => togglePanel(p.id)}
@@ -508,7 +528,7 @@ export default function Work(): JSX.Element {
       </div>
 
       {/* Center: Session / Compose area */}
-      <div className="flex-1 flex flex-col min-w-0" style={{ backgroundColor: 'var(--brand-dark-page)' }}>
+      <div className="flex-1 flex flex-col min-w-0 min-h-0" style={{ backgroundColor: 'var(--brand-dark-page)' }}>
         {/* Header bar with mode toggle */}
         <div className="flex items-center gap-2 px-3 py-2 flex-shrink-0" style={{ backgroundColor: 'var(--brand-dark-page)', borderBottom: '1px solid var(--brand-dark-border)' }}>
           {/* Mode toggle */}
@@ -519,30 +539,38 @@ export default function Work(): JSX.Element {
                 workMode === 'session' ? 'text-white' : 'text-gray-400 hover:text-gray-200'
               }`}
             >Session</button>
+            {flags.showSessionWizard && (
             <button
               onClick={() => setWorkMode('wizard')}
               className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
                 workMode === 'wizard' ? 'text-white' : 'text-gray-400 hover:text-gray-200'
               }`}
             >Wizard</button>
+            )}
+            {flags.showComposer && (
             <button
               onClick={() => setWorkMode('compose')}
               className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
                 workMode === 'compose' ? 'text-white' : 'text-gray-400 hover:text-gray-200'
               }`}
             >Compose</button>
+            )}
+            {flags.showScheduler && (
             <button
               onClick={() => setWorkMode('schedule')}
               className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
                 workMode === 'schedule' ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:text-gray-200'
               }`}
             >Schedule</button>
+            )}
+            {flags.showMemory && (
             <button
               onClick={() => setWorkMode('memory')}
               className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
                 workMode === 'memory' ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:text-gray-200'
               }`}
             >Memory</button>
+            )}
           </div>
 
           {/* Session controls (only in session mode) */}
@@ -686,6 +714,8 @@ export default function Work(): JSX.Element {
         {workMode === 'wizard' && (
           <SessionWizard
             defaultCli={lastUsedCli}
+            initialOptionId={wizardOptionId}
+            initialStep={wizardStep as 'choose' | 'fill' | 'context' | 'review' | undefined}
             onLaunchSession={(opts) => {
               void (async () => {
                 await startSession({ cli: opts.cli, name: opts.name, initialPrompt: opts.initialPrompt, agent: opts.agent })
@@ -697,7 +727,7 @@ export default function Work(): JSX.Element {
 
         {/* Compose mode content */}
         {workMode === 'compose' && (
-          <div className="flex-1 flex flex-col bg-gray-50">
+          <div className="flex-1 flex flex-col min-h-0 bg-gray-50 overflow-y-auto">
             <Composer
               onSendToSession={(prompt) => {
                 if (selectedId) {
@@ -726,7 +756,9 @@ export default function Work(): JSX.Element {
 
         {/* Schedule mode content */}
         {workMode === 'schedule' && (
-          <SchedulePanel cli={selectedSession?.info.cli ?? 'copilot'} />
+          <div className="flex-1 overflow-y-auto">
+            <SchedulePanel cli={selectedSession?.info.cli ?? 'copilot'} />
+          </div>
         )}
 
         {/* Memory mode content */}
@@ -757,8 +789,6 @@ export default function Work(): JSX.Element {
           <div className="p-4">
             {activePanel === 'agents' && <Agents />}
             {activePanel === 'tools' && <Tools />}
-            {activePanel === 'files' && <FileExplorer />}
-            {activePanel === 'git' && <GitWorkflow />}
             {activePanel === 'work-items' && (
               <GitHubPanel onInjectContext={(text) => {
                 if (selectedId) {
@@ -786,7 +816,6 @@ export default function Work(): JSX.Element {
               />
             )}
             {activePanel === 'subagents' && <SubAgents />}
-            {activePanel === 'knowledge' && <KnowledgeBase />}
           </div>
         </div>
       </div>

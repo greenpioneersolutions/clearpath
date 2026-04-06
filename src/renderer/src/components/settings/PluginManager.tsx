@@ -114,6 +114,9 @@ export default function PluginManager({ cli }: Props): JSX.Element {
                     className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
                       plugin.enabled ? 'bg-indigo-600' : 'bg-gray-300'
                     }`}
+                    role="switch"
+                    aria-checked={plugin.enabled}
+                    aria-label={`Toggle plugin ${plugin.name}`}
                   >
                     <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
                       plugin.enabled ? 'translate-x-4' : 'translate-x-0.5'

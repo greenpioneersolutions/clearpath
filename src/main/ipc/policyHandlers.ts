@@ -4,6 +4,7 @@ import Store from 'electron-store'
 import { readFileSync, writeFileSync } from 'fs'
 import { randomUUID } from 'crypto'
 import { getStoreEncryptionKey } from '../utils/storeEncryption'
+import type { NotificationManager } from '../notifications/NotificationManager'
 
 interface PolicyRules {
   maxBudgetPerSession: number | null
@@ -98,7 +99,7 @@ function getActiveRules(): { rules: PolicyRules; presetName: string } {
   return { rules: preset.rules, presetName: preset.name }
 }
 
-export function registerPolicyHandlers(ipcMain: IpcMain): void {
+export function registerPolicyHandlers(ipcMain: IpcMain, notificationManager?: NotificationManager): void {
   ipcMain.handle('policy:get-active', () => {
     const { rules, presetName } = getActiveRules()
     return { activePresetId: store.get('activePresetId'), rules, presetName }
@@ -169,6 +170,15 @@ export function registerPolicyHandlers(ipcMain: IpcMain): void {
         if (viols.length > 500) viols.splice(0, viols.length - 500)
         store.set('violations', viols)
       }
+      // Emit a notification for policy violations
+      notificationManager?.emit({
+        type: 'policy-violation',
+        severity: 'warning',
+        title: `Policy violation: ${args.action}`,
+        message: violations.join('; '),
+        source: 'policy-engine',
+        action: { label: 'View Policies', ipcChannel: '', navigate: '/configure', tab: 'policies' },
+      })
     }
 
     return { allowed: violations.length === 0, violations, presetName }

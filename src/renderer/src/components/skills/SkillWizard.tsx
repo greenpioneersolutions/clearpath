@@ -160,7 +160,10 @@ export default function SkillWizard({ onSaved, onCancel, initialContent }: Props
                 </p>
               </div>
               <button onClick={() => setAutoInvoke(!autoInvoke)}
-                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors flex-shrink-0 ml-3 ${autoInvoke ? 'bg-indigo-600' : 'bg-gray-300'}`}>
+                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors flex-shrink-0 ml-3 ${autoInvoke ? 'bg-indigo-600' : 'bg-gray-300'}`}
+                role="switch"
+                aria-checked={autoInvoke}
+                aria-label="Toggle auto-invoke">
                 <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${autoInvoke ? 'translate-x-4' : 'translate-x-0.5'}`} />
               </button>
             </div>

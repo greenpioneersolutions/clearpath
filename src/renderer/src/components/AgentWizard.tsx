@@ -17,20 +17,9 @@ const CLAUDE_TOOLS = [
   'Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep',
   'WebSearch', 'WebFetch', 'Agent', 'TodoWrite',
 ]
-const COPILOT_MODELS = [
-  'claude-sonnet-4.5',
-  'claude-sonnet-4',
-  'claude-opus-4-6',
-  'gpt-5',
-  'gpt-5.3-codex',
-  'gemini-3-pro',
-  'gpt-5.4-mini',
-]
-const CLAUDE_MODELS = [
-  'sonnet',
-  'opus',
-  'haiku',
-]
+import { COPILOT_MODELS as _CM, CLAUDE_MODELS as _CLM } from '../types/settings'
+const COPILOT_MODELS = _CM.map((m) => m.id)
+const CLAUDE_MODELS = _CLM.map((m) => m.id)
 
 type Step = 'basic' | 'model-tools' | 'prompt'
 

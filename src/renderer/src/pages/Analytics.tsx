@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import type { DailySpend, SessionCostSummary, ModelBreakdown, AgentTokens, DateRange, AnalyticsDisplayMode } from '../types/cost'
 import { DailySpendChart, SessionCostChart, ModelBreakdownChart, AgentTokensChart } from '../components/cost/CostCharts'
 import BudgetAlerts, { ToastContainer } from '../components/cost/BudgetAlerts'
@@ -25,6 +26,7 @@ function rangeToSince(range: DateRange): number {
 
 export default function Analytics(): JSX.Element {
   const [tab, setTab] = useState<Tab>('overview')
+  const [searchParams] = useSearchParams()
   const [range, setRange] = useState<DateRange>('month')
   const [summary, setSummary] = useState<Record<string, number | string> | null>(null)
   const [daily, setDaily] = useState<DailySpend[]>([])
@@ -56,6 +58,11 @@ export default function Analytics(): JSX.Element {
   }, [since])
 
   useEffect(() => { void loadData() }, [loadData])
+
+  useEffect(() => {
+    const urlTab = searchParams.get('tab') as Tab | null
+    if (urlTab && ['overview', 'budget'].includes(urlTab)) setTab(urlTab)
+  }, [searchParams])
 
   const toggleDisplayMode = async () => {
     const newMode: AnalyticsDisplayMode = displayMode === 'tokens' ? 'monetary' : 'tokens'

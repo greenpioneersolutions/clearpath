@@ -68,11 +68,11 @@ const ALL_ON: FeatureFlags = {
   showDashboard: true, showWork: true, showInsights: true, showConfigure: true, showLearn: true,
   showSetupWizard: true, showSettings: true, showPolicies: true, showIntegrations: true,
   showMemory: true, showSkillsManagement: true, showSessionWizard: true, showWorkspaces: true,
-  showTeamHub: true, showScheduler: true,
-  showComposer: true, showSubAgents: true, showTemplates: true, showKnowledgeBase: true, showVoice: true,
-  showUseContext: true, showAgentSelection: true, showCostTracking: true, showComplianceLogs: true,
-  showDataManagement: true, showBudgetLimits: true, showPlugins: true, showEnvVars: true, showWebhooks: true,
-  enableExperimentalFeatures: true, showPrScores: true, prScoresAiReview: false,
+  showTeamHub: true, showScheduler: false,
+  showComposer: false, showSubAgents: false, showTemplates: true, showKnowledgeBase: false, showVoice: false,
+  showUseContext: true, showAgentSelection: true, showCostTracking: true, showComplianceLogs: false,
+  showDataManagement: true, showBudgetLimits: true, showPlugins: false, showEnvVars: false, showWebhooks: false,
+  enableExperimentalFeatures: false, showPrScores: false, prScoresAiReview: false,
 }
 
 // ── Context ──────────────────────────────────────────────────────────────────

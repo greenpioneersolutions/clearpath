@@ -102,7 +102,7 @@ export default function OutputDisplay({ messages, onPermissionResponse, onSaveAs
   const totalUsage = usageHistory?.length ?? 0
 
   return (
-    <div className="flex-1 overflow-y-auto bg-gray-950">
+    <div className="flex-1 overflow-y-auto bg-gray-950" role="log" aria-label="Chat messages" aria-live="polite">
       {/* Welcome state */}
       {messages.length === 0 && !processing && (
         <div className="flex flex-col items-center justify-center h-full text-center px-8">

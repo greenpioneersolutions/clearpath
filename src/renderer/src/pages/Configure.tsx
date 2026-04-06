@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import Settings from './Settings'
 import Policies from './Policies'
 import Memory from './Memory'
@@ -10,16 +10,20 @@ import SkillsManagement from './SkillsManagement'
 import WizardSettings from '../components/wizard/WizardSettings'
 import SetupWizardFull from '../components/onboarding/SetupWizardFull'
 import WhiteLabel from '../components/settings/WhiteLabel'
+import AccessibilitySettings from '../components/settings/AccessibilitySettings'
+import Agents from './Agents'
 import { useFeatureFlags } from '../contexts/FeatureFlagContext'
 
-type Tab = 'setup' | 'settings' | 'policies' | 'integrations' | 'memory' | 'skills' | 'wizard' | 'workspaces' | 'team' | 'scheduler' | 'branding'
+type Tab = 'setup' | 'accessibility' | 'settings' | 'policies' | 'integrations' | 'memory' | 'agents' | 'skills' | 'wizard' | 'workspaces' | 'team' | 'scheduler' | 'branding'
 
 const TABS: { key: Tab; label: string }[] = [
   { key: 'setup', label: 'Setup Wizard' },
+  { key: 'accessibility', label: 'Accessibility' },
   { key: 'settings', label: 'Settings' },
   { key: 'policies', label: 'Policies' },
   { key: 'integrations', label: 'Integrations' },
   { key: 'memory', label: 'Memory' },
+  { key: 'agents', label: 'Agents' },
   { key: 'skills', label: 'Skills' },
   { key: 'wizard', label: 'Session Wizard' },
   { key: 'workspaces', label: 'Workspaces' },
@@ -131,6 +135,9 @@ function IntegrationsTab(): JSX.Element {
                       className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
                         flags.showPrScores ? 'bg-indigo-600' : 'bg-gray-300'
                       }`}
+                      role="switch"
+                      aria-checked={flags.showPrScores}
+                      aria-label="Toggle PR Scores"
                     >
                       <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
                         flags.showPrScores ? 'translate-x-4' : 'translate-x-0.5'
@@ -149,10 +156,12 @@ function IntegrationsTab(): JSX.Element {
               <div className="flex gap-2">
                 <input
                   type="password"
+                  id="github-token-input"
                   value={token}
                   onChange={(e) => setToken(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') void handleConnect() }}
                   placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+                  aria-label="GitHub personal access token"
                   className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                   autoFocus
                 />
@@ -201,16 +210,25 @@ function IntegrationsTab(): JSX.Element {
 export default function Configure(): JSX.Element {
   const [tab, setTab] = useState<Tab>('settings')
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+
+  useEffect(() => {
+    const urlTab = searchParams.get('tab') as Tab | null
+    if (urlTab && TABS.some(t => t.key === urlTab)) setTab(urlTab)
+  }, [searchParams])
 
   return (
     <div className="flex h-full">
       {/* Left: vertical tab list */}
       <div className="w-44 flex-shrink-0 bg-gray-50 border-r border-gray-200 py-4 flex flex-col">
-        <div className="flex-1">
+        <div className="flex-1" role="tablist" aria-label="Configure sections">
           {TABS.map((t) => (
             <button
               key={t.key}
               onClick={() => setTab(t.key)}
+              role="tab"
+              aria-selected={tab === t.key}
+              id={`tab-${t.key}`}
               className={`w-full text-left px-5 py-2.5 text-sm font-medium transition-colors ${
                 tab === t.key
                   ? 'bg-white text-indigo-600 border-r-2 border-indigo-600'
@@ -232,12 +250,14 @@ export default function Configure(): JSX.Element {
       </div>
 
       {/* Right: tab content */}
-      <div className="flex-1 overflow-y-auto p-6">
+      <div className="flex-1 overflow-y-auto p-6" role="tabpanel" aria-labelledby={`tab-${tab}`}>
         {tab === 'setup' && <SetupWizardFull />}
+        {tab === 'accessibility' && <AccessibilitySettings />}
         {tab === 'settings' && <Settings />}
         {tab === 'policies' && <Policies />}
         {tab === 'integrations' && <IntegrationsTab />}
         {tab === 'memory' && <Memory />}
+        {tab === 'agents' && <Agents />}
         {tab === 'skills' && <SkillsManagement />}
         {tab === 'wizard' && <WizardSettings />}
         {tab === 'workspaces' && <Workspaces />}

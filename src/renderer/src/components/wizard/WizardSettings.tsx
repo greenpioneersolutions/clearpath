@@ -214,7 +214,10 @@ export default function WizardSettings(): JSX.Element {
               <p className="text-[10px] text-gray-400 mt-0.5">When off, the option is hidden from the wizard entirely</p>
             </div>
             <button onClick={() => void updateCtxSetting('showUseContext', !ctxSettings.showUseContext)}
-              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${ctxSettings.showUseContext ? 'bg-indigo-600' : 'bg-gray-300'}`}>
+              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${ctxSettings.showUseContext ? 'bg-indigo-600' : 'bg-gray-300'}`}
+              role="switch"
+              aria-checked={ctxSettings.showUseContext}
+              aria-label="Toggle Use Context">
               <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${ctxSettings.showUseContext ? 'translate-x-4' : 'translate-x-0.5'}`} />
             </button>
           </div>
@@ -232,7 +235,10 @@ export default function WizardSettings(): JSX.Element {
                     <p className="text-[10px] text-gray-400">{desc}</p>
                   </div>
                   <button onClick={() => void updateCtxSetting(key, !ctxSettings[key])}
-                    className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${ctxSettings[key] ? 'bg-indigo-600' : 'bg-gray-300'}`}>
+                    className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${ctxSettings[key] ? 'bg-indigo-600' : 'bg-gray-300'}`}
+                    role="switch"
+                    aria-checked={ctxSettings[key]}
+                    aria-label={`Toggle ${label}`}>
                     <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${ctxSettings[key] ? 'translate-x-3' : 'translate-x-0.5'}`} />
                   </button>
                 </div>

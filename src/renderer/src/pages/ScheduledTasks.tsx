@@ -163,7 +163,10 @@ export default function ScheduledTasks(): JSX.Element {
                       <div className="flex items-center gap-2 flex-shrink-0">
                         <button onClick={() => void handleRunNow(job.id)} className="px-2 py-1 text-xs text-indigo-600 border border-indigo-200 rounded-md hover:bg-indigo-50">Run Now</button>
                         <button onClick={() => void handleToggle(job.id, !job.enabled)}
-                          className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${job.enabled ? 'bg-indigo-600' : 'bg-gray-300'}`}>
+                          className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${job.enabled ? 'bg-indigo-600' : 'bg-gray-300'}`}
+                          role="switch"
+                          aria-checked={job.enabled}
+                          aria-label={`Toggle task ${job.name}`}>
                           <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${job.enabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
                         </button>
                         <button onClick={() => void handleDuplicate(job.id)} className="text-xs text-gray-400 hover:text-gray-600">Dup</button>

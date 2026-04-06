@@ -76,12 +76,12 @@ export default function MemoryViewer({ cli }: Props): JSX.Element {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search memories…"
-          className="flex-1 bg-gray-800 border border-gray-600 rounded-md px-3 py-1.5 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-indigo-500"
+          className="flex-1 border border-gray-300 rounded-md px-3 py-1.5 text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
         />
         <select
           value={filterType}
           onChange={(e) => setFilterType(e.target.value)}
-          className="bg-gray-800 border border-gray-600 rounded-md px-3 py-1.5 text-sm text-gray-200 focus:outline-none focus:border-indigo-500"
+          className="border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
         >
           {allTypes.map((t) => (
             <option key={t} value={t}>

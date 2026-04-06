@@ -67,33 +67,37 @@ export default function LaunchCommandPreview({ cli, settings }: Props): JSX.Elem
   }
 
   return (
-    <div className="bg-gray-900 rounded-xl overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-2 border-b border-gray-800">
-        <span className="text-xs font-medium text-gray-400 uppercase tracking-wide">
+    <div className="rounded-xl overflow-hidden" style={{ backgroundColor: '#111827' }}>
+      <div className="flex items-center justify-between px-4 py-2" style={{ borderBottom: '1px solid #1F2937' }}>
+        <span className="text-xs font-medium uppercase tracking-wide" style={{ color: '#9CA3AF' }}>
           Launch Command Preview
         </span>
         <div className="flex gap-2">
           <button
             onClick={handleCopy}
-            className="text-xs text-gray-500 hover:text-gray-300 transition-colors px-2 py-1"
+            className="text-xs transition-colors px-2 py-1"
+            style={{ color: '#6B7280' }}
+            aria-label="Copy command to clipboard"
           >
             Copy
           </button>
           <button
             onClick={handleRunInTerminal}
-            className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors px-2 py-1"
+            className="text-xs transition-colors px-2 py-1"
+            style={{ color: '#818CF8' }}
+            aria-label="Run command in terminal"
           >
             Run in Terminal
           </button>
         </div>
       </div>
       <div className="px-4 py-3">
-        <pre className="text-sm font-mono whitespace-pre-wrap break-all leading-relaxed">
-          <span className="text-green-400">$</span>{' '}
+        <pre className="text-sm font-mono whitespace-pre-wrap break-all leading-relaxed" style={{ color: '#E5E7EB' }}>
+          <span style={{ color: '#4ADE80' }}>$</span>{' '}
           {hasFlags ? (
-            <span className="text-gray-200">{command}</span>
+            <span>{command}</span>
           ) : (
-            <span className="text-gray-500">{command} <span className="italic">(no flags configured)</span></span>
+            <span style={{ color: '#6B7280' }}>{command} <span className="italic">(no flags configured)</span></span>
           )}
         </pre>
       </div>

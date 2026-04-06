@@ -217,6 +217,7 @@ export class SchedulerService {
         title: isOk ? `${job.name} completed` : `${job.name} failed`,
         message: isOk ? 'Scheduled task finished successfully.' : 'Scheduled task did not complete. Check execution history for details.',
         source: 'scheduler',
+        action: { label: 'View Scheduler', ipcChannel: '', navigate: '/configure', tab: 'scheduler' },
       })
 
       return execution
@@ -263,7 +264,7 @@ export class SchedulerService {
           title: `Missed run: ${job.name}`,
           message: `Scheduled task "${job.name}" missed its run while the app was closed.`,
           source: 'scheduler',
-          action: { label: 'Run Now', ipcChannel: 'scheduler:run-now', args: { id: job.id } },
+          action: { label: 'View Scheduler', ipcChannel: 'scheduler:run-now', args: { id: job.id }, navigate: '/configure', tab: 'scheduler' },
         })
       }
     }

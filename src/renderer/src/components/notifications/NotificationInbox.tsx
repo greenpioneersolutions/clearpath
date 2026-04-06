@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { useFocusTrap } from '../../hooks/useFocusTrap'
 import { useNavigate } from 'react-router-dom'
 import type { IpcRendererEvent } from 'electron'
 import type { AppNotification, NotificationType } from '../../types/notification'
@@ -30,10 +31,13 @@ interface Props {
 
 export default function NotificationInbox({ isOpen, onClose }: Props): JSX.Element {
   const navigate = useNavigate()
+  const panelRef = useRef<HTMLDivElement>(null)
   const [notifications, setNotifications] = useState<AppNotification[]>([])
   const [filter, setFilter] = useState<FilterTab>('all')
   const [expanded, setExpanded] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+
+  useFocusTrap(panelRef, isOpen)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -106,17 +110,21 @@ export default function NotificationInbox({ isOpen, onClose }: Props): JSX.Eleme
   return (
     <div className="fixed inset-0 z-50" onClick={onClose}>
       <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="notif-inbox-title"
         className="absolute right-4 top-14 w-96 max-h-[600px] bg-white rounded-xl shadow-2xl border border-gray-200 flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
-          <h3 className="text-sm font-semibold text-gray-900">Notifications</h3>
+          <h3 id="notif-inbox-title" className="text-sm font-semibold text-gray-900">Notifications</h3>
           <div className="flex gap-2">
-            <button onClick={() => void handleMarkAllRead()} className="text-xs text-indigo-600 hover:text-indigo-800">
+            <button onClick={() => void handleMarkAllRead()} aria-label="Mark all notifications as read" className="text-xs text-indigo-600 hover:text-indigo-800">
               Mark all read
             </button>
-            <button onClick={() => void handleClearAll()} className="text-xs text-gray-400 hover:text-red-500">
+            <button onClick={() => void handleClearAll()} aria-label="Clear all notifications" className="text-xs text-gray-400 hover:text-red-500">
               Clear all
             </button>
           </div>
@@ -150,7 +158,14 @@ export default function NotificationInbox({ isOpen, onClose }: Props): JSX.Eleme
                 return (
                   <div key={n.id} className={`border-b border-gray-50 ${!n.read ? 'bg-indigo-50/30' : ''}`}>
                     <button
-                      onClick={() => { setExpanded(isExpanded ? null : n.id); if (!n.read) void handleMarkRead(n.id) }}
+                      onClick={() => {
+                        if (isExpanded && n.action?.navigate) {
+                          void handleAction(n)
+                        } else {
+                          setExpanded(isExpanded ? null : n.id)
+                          if (!n.read) void handleMarkRead(n.id)
+                        }
+                      }}
                       className="w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors"
                     >
                       <div className="flex items-start gap-2.5">
@@ -169,7 +184,13 @@ export default function NotificationInbox({ isOpen, onClose }: Props): JSX.Eleme
                             <span>{n.source}</span>
                           </div>
                         </div>
+                        {n.action?.navigate && (
+                          <svg className="w-3.5 h-3.5 text-gray-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                          </svg>
+                        )}
                         <button onClick={(e) => { e.stopPropagation(); void handleDismiss(n.id) }}
+                          aria-label="Dismiss notification"
                           className="text-gray-300 hover:text-red-400 flex-shrink-0 text-xs p-0.5">
                           x
                         </button>

@@ -1,5 +1,7 @@
 import { app, BrowserWindow, ipcMain, dialog } from 'electron'
+import { autoUpdater } from 'electron-updater'
 import { join } from 'path'
+import { log } from './utils/logger'
 import { registerIpcHandlers } from './ipc/handlers'
 import { registerAuthHandlers } from './ipc/authHandlers'
 import { registerAgentHandlers } from './ipc/agentHandlers'
@@ -35,6 +37,7 @@ import { registerFeatureFlagHandlers } from './ipc/featureFlagHandlers'
 import { registerBrandingHandlers } from './ipc/brandingHandlers'
 import { registerStarterPackHandlers } from './ipc/starterPackHandlers'
 import { registerPrScoresHandlers } from './ipc/prScoresHandlers'
+import { registerAccessibilityHandlers } from './ipc/accessibilityHandlers'
 import { CLIManager } from './cli/CLIManager'
 import { AuthManager } from './auth/AuthManager'
 import { AgentManager } from './agents/AgentManager'
@@ -71,15 +74,15 @@ registerMemoryHandlers(ipcMain)
 registerToolHandlers(ipcMain)
 registerSubAgentHandlers(ipcMain, cliManager)
 registerSettingsHandlers(ipcMain)
-registerCostHandlers(ipcMain)
+registerCostHandlers(ipcMain, notificationManager)
 registerTemplateHandlers(ipcMain)
 registerTeamHandlers(ipcMain)
 registerOnboardingHandlers(ipcMain)
 registerGitHandlers(ipcMain)
 registerFileExplorerHandlers(ipcMain, getWebContents)
-registerPolicyHandlers(ipcMain)
+registerPolicyHandlers(ipcMain, notificationManager)
 registerWorkspaceHandlers(ipcMain)
-registerComplianceHandlers(ipcMain)
+registerComplianceHandlers(ipcMain, notificationManager)
 registerNotificationHandlers(ipcMain, notificationManager)
 registerSchedulerHandlers(ipcMain, schedulerService)
 registerKnowledgeBaseHandlers(ipcMain, cliManager)
@@ -96,6 +99,7 @@ registerFeatureFlagHandlers(ipcMain)
 registerBrandingHandlers(ipcMain)
 registerStarterPackHandlers(ipcMain)
 registerPrScoresHandlers(ipcMain)
+registerAccessibilityHandlers(ipcMain)
 
 // Wire CLIManager to emit notifications through the central hub
 cliManager.setNotifyCallback((args) => {
@@ -106,6 +110,7 @@ cliManager.setNotifyCallback((args) => {
     message: args.message,
     source: args.source,
     sessionId: args.sessionId,
+    action: args.action as import('./notifications/NotificationManager').NotificationAction | undefined,
   })
 })
 
@@ -201,6 +206,48 @@ app.whenReady().then(() => {
 
   createWindow()
   schedulerService.start()
+
+  // ── Auto-updater (checks GitHub Releases) ──────────────────────────────
+  autoUpdater.autoDownload = true
+  autoUpdater.autoInstallOnAppQuit = true
+
+  autoUpdater.on('update-available', (info) => {
+    mainWindow?.webContents.send('updater:status', {
+      status: 'available',
+      version: info.version,
+    })
+  })
+
+  autoUpdater.on('update-downloaded', (info) => {
+    mainWindow?.webContents.send('updater:status', {
+      status: 'downloaded',
+      version: info.version,
+    })
+  })
+
+  autoUpdater.on('error', (err) => {
+    // Silently ignore update errors — not critical to app operation
+    log.warn('[updater] Update check failed:', err.message)
+  })
+
+  // Check for updates after a short delay (don't block startup)
+  setTimeout(() => {
+    autoUpdater.checkForUpdates().catch(() => {
+      // No-op — errors handled by 'error' event
+    })
+  }, 5000)
+
+  // IPC handlers for manual update control
+  ipcMain.handle('updater:check', () => {
+    return autoUpdater.checkForUpdates().then((r) => ({
+      available: !!r?.updateInfo,
+      version: r?.updateInfo?.version,
+    })).catch(() => ({ available: false }))
+  })
+
+  ipcMain.handle('updater:install', () => {
+    autoUpdater.quitAndInstall(false, true)
+  })
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

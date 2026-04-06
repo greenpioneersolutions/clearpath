@@ -12,8 +12,10 @@ interface RecentSession {
   endedAt?: number
 }
 
-interface SetupState {
-  completedAt: number | null
+interface ContextCounts {
+  memories: number
+  agents: number
+  skills: number
 }
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -23,28 +25,32 @@ export default function HomeHub(): JSX.Element {
   const { brand } = useBranding()
   const [recentSessions, setRecentSessions] = useState<RecentSession[]>([])
   const [setupComplete, setSetupComplete] = useState(true)
-  const [prompt, setPrompt] = useState('')
-  const [copilotOk, setCopilotOk] = useState(false)
-  const [claudeOk, setClaudeOk] = useState(false)
   const [greeting, setGreeting] = useState('')
-  const [promptSuggestions, setPromptSuggestions] = useState<Array<{ id: string; displayText: string; targetAgentId: string; followUpQuestions: string[]; category: string }>>([])
-  const [starterAgents, setStarterAgents] = useState<Array<{ id: string; name: string; tagline: string; category: string }>>([])
+  const [prompt, setPrompt] = useState('')
+  const [context, setContext] = useState<ContextCounts>({ memories: 0, agents: 0, skills: 0 })
 
   const load = useCallback(async () => {
     try {
-      const [sessions, setup, auth, prompts, agents] = await Promise.all([
+      const [sessions, setup, notes, agents] = await Promise.all([
         window.electronAPI.invoke('cli:get-persisted-sessions') as Promise<RecentSession[]>,
         window.electronAPI.invoke('setup-wizard:is-complete') as Promise<{ complete: boolean }>,
-        window.electronAPI.invoke('auth:get-status') as Promise<{ copilot: { authenticated: boolean }; claude: { authenticated: boolean } }>,
-        window.electronAPI.invoke('starter-pack:get-prompts') as Promise<Array<{ id: string; displayText: string; targetAgentId: string; followUpQuestions: string[]; category: string }>>,
-        window.electronAPI.invoke('starter-pack:get-visible-agents') as Promise<Array<{ id: string; name: string; tagline: string; category: string }>>,
+        window.electronAPI.invoke('notes:list') as Promise<unknown[]>,
+        window.electronAPI.invoke('agent:list') as Promise<{ copilot: unknown[]; claude: unknown[] }>,
       ])
+      // Skills count fetched separately — handler requires workingDirectory
+      let skillCount = 0
+      try {
+        const cwd = await window.electronAPI.invoke('app:get-cwd') as string
+        const skills = await window.electronAPI.invoke('skills:list', { workingDirectory: cwd }) as unknown[]
+        skillCount = (skills ?? []).length
+      } catch { /* no skills */ }
       setRecentSessions((sessions ?? []).sort((a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0)).slice(0, 3))
       setSetupComplete(setup.complete)
-      setCopilotOk(auth.copilot.authenticated)
-      setClaudeOk(auth.claude.authenticated)
-      setPromptSuggestions(prompts ?? [])
-      setStarterAgents(agents ?? [])
+      setContext({
+        memories: (notes ?? []).length,
+        agents: ((agents?.copilot ?? []).length + (agents?.claude ?? []).length),
+        skills: skillCount,
+      })
     } catch { /* handlers not ready */ }
 
     const hour = new Date().getHours()
@@ -54,7 +60,6 @@ export default function HomeHub(): JSX.Element {
   useEffect(() => { void load() }, [load])
 
   const handleQuickStart = () => {
-    // Navigate to Work page — it will pick up from there
     navigate('/work')
   }
 
@@ -67,30 +72,52 @@ export default function HomeHub(): JSX.Element {
     return `${Math.floor(hours / 24)}d ago`
   }
 
-  return (
-    <div className="flex-1 flex flex-col items-center justify-center min-h-full px-6 py-10">
-      <div className="w-full max-w-2xl space-y-10">
+  const hasContext = context.memories > 0 || context.agents > 0 || context.skills > 0
 
-        {/* ── Greeting ──────────────────────────────────────────────────────── */}
-        <div className="text-center space-y-2">
+  return (
+    <div className="flex-1 overflow-y-auto">
+      <div className="max-w-lg mx-auto px-6 py-10 space-y-8 flex flex-col items-center min-h-full justify-center">
+
+        {/* ── Logo + Greeting ────────────────────────────────────────────── */}
+        <div className="text-center space-y-2 w-full">
+          <div className="flex justify-center mb-3">
+            <div className="w-14 h-14 rounded-2xl flex items-center justify-center shadow-lg" style={{ backgroundColor: brand.colorPrimary }}>
+              <svg width="32" height="32" viewBox="0 0 40 40" fill="none">
+                <circle cx="20" cy="20" r="13" stroke="#fff" strokeWidth="1" opacity="0.15"/>
+                <g opacity="0.35">
+                  <line x1="20" y1="7" x2="20" y2="10" stroke="#fff" strokeWidth="1.5" strokeLinecap="round"/>
+                  <line x1="20" y1="30" x2="20" y2="33" stroke="#fff" strokeWidth="1.5" strokeLinecap="round"/>
+                  <line x1="7" y1="20" x2="10" y2="20" stroke="#fff" strokeWidth="1.5" strokeLinecap="round"/>
+                  <line x1="30" y1="20" x2="33" y2="20" stroke="#fff" strokeWidth="1.5" strokeLinecap="round"/>
+                </g>
+                <path d="M20 20 L30 10" fill="none" stroke={brand.colorAccentLight} strokeWidth="1.5" strokeLinecap="round" opacity="0.85"/>
+                <g transform="translate(20,20) rotate(-45)">
+                  <polygon points="0,-11 2.5,-2 0,-4 -2.5,-2" fill="#fff"/>
+                </g>
+                <circle cx="20" cy="20" r="3" fill={brand.colorPrimary} stroke="#fff" strokeWidth="1.5"/>
+                <circle cx="20" cy="20" r="1.5" fill={brand.colorAccentLight}/>
+              </svg>
+            </div>
+          </div>
           <h1 className="text-2xl font-bold text-gray-900">{greeting}</h1>
-          <p className="text-sm text-gray-500">What would you like to do?</p>
+          <p className="text-sm text-gray-500">Type below to jump in, or pick an option.</p>
         </div>
 
-        {/* ── Quick prompt ───────────────────────────────────────────────────── */}
-        <div className="relative">
+        {/* ── Quick prompt input ─────────────────────────────────────────── */}
+        <div className="relative w-full">
           <input
             type="text"
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter' && prompt.trim()) handleQuickStart() }}
-            placeholder="Ask anything — describe a task, question, or idea..."
+            placeholder="What do you need help with?"
+            aria-label="Quick prompt"
             className="w-full bg-white border border-gray-200 rounded-2xl pl-5 pr-14 py-4 text-sm text-gray-800 placeholder-gray-400 shadow-sm focus:outline-none focus:ring-2 focus:border-transparent transition-shadow"
-            style={{ focusRingColor: brand.colorButtonPrimary } as React.CSSProperties}
           />
           <button
             onClick={handleQuickStart}
             disabled={!prompt.trim()}
+            aria-label="Start session"
             className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-xl text-white flex items-center justify-center transition-colors disabled:opacity-30"
             style={{ backgroundColor: brand.colorButtonPrimary }}
           >
@@ -100,98 +127,141 @@ export default function HomeHub(): JSX.Element {
           </button>
         </div>
 
-        {/* ── Prompt suggestions ─────────────────────────────────────── */}
-        {promptSuggestions.length > 0 && (
-          <div className="space-y-2">
-            <span className="text-xs font-medium text-gray-500 px-1">Try asking...</span>
-            <div className="space-y-1.5">
-              {promptSuggestions.map((s) => (
-                <button
-                  key={s.id}
-                  onClick={() => { setPrompt(s.displayText); handleQuickStart() }}
-                  className="w-full text-left bg-white border border-gray-200 rounded-xl px-4 py-3 hover:border-gray-300 hover:shadow-sm transition-all group"
-                >
-                  <span className="text-sm text-gray-700 group-hover:text-gray-900">{s.displayText}</span>
-                </button>
-              ))}
+        {/* ── Action Cards ──────────────────────────────────────────────── */}
+        <div className="space-y-3 w-full">
+          {/* Card 1: Ask a question or get guidance → Wizard pre-selects "question" option */}
+          <button onClick={() => navigate('/work?tab=wizard&wizardOption=question')}
+            className="w-full text-left bg-white border border-gray-200 rounded-2xl p-5 hover:shadow-md hover:border-gray-300 transition-all group flex items-center gap-4">
+            <div className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: brand.colorPrimary + '12' }}>
+              <span className="text-xl">💬</span>
             </div>
-          </div>
-        )}
-
-        {/* ── Action cards ──────────────────────────────────────────────────── */}
-        <div className="grid grid-cols-2 gap-3">
-          {/* Card 1: Guided Session */}
-          <button onClick={() => navigate('/work')}
-            className="group text-left bg-white border border-gray-200 rounded-2xl p-5 hover:shadow-md hover:border-gray-300 transition-all">
-            <div className="w-10 h-10 rounded-xl flex items-center justify-center mb-3" style={{ backgroundColor: brand.colorPrimary + '15' }}>
-              <svg className="w-5 h-5" style={{ color: brand.colorPrimary }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-              </svg>
+            <div className="flex-1 min-w-0">
+              <h3 className="text-sm font-semibold text-gray-900 group-hover:text-gray-700">Ask a question or get guidance</h3>
+              <p className="text-xs text-gray-500 mt-0.5">Need information, an explanation, or advice? The wizard walks you through it.</p>
             </div>
-            <h3 className="text-sm font-semibold text-gray-900 group-hover:text-gray-700">Start a Session</h3>
-            <p className="text-xs text-gray-500 mt-1 leading-relaxed">
-              {starterAgents.length > 0
-                ? `${starterAgents.length} AI agents ready — Communication Coach, Research Analyst, and more.`
-                : 'Open a new AI session with the wizard or go freestyle.'}
-            </p>
+            <svg className="w-4 h-4 text-gray-300 group-hover:text-gray-400 flex-shrink-0 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
           </button>
 
-          {/* Card 2: Continue Recent */}
-          <button onClick={() => navigate('/work')}
-            className="group text-left bg-white border border-gray-200 rounded-2xl p-5 hover:shadow-md hover:border-gray-300 transition-all">
-            <div className="w-10 h-10 rounded-xl flex items-center justify-center mb-3" style={{ backgroundColor: brand.colorAccent + '15' }}>
-              <svg className="w-5 h-5" style={{ color: brand.colorAccent }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
+          {/* Card 2: Write or do something → Wizard context step (memories/agents/skills) */}
+          <button onClick={() => navigate('/work?tab=wizard&wizardStep=context')}
+            className="w-full text-left bg-white border border-gray-200 rounded-2xl p-5 hover:shadow-md hover:border-gray-300 transition-all group flex items-center gap-4">
+            <div className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: brand.colorAccent + '12' }}>
+              <span className="text-xl">🎯</span>
             </div>
-            <h3 className="text-sm font-semibold text-gray-900 group-hover:text-gray-700">Continue Recent Work</h3>
-            <p className="text-xs text-gray-500 mt-1 leading-relaxed">
-              {recentSessions.length > 0
-                ? `Pick up where you left off — ${recentSessions.length} recent session${recentSessions.length !== 1 ? 's' : ''}.`
-                : 'No recent sessions yet. Start one above!'}
-            </p>
+            <div className="flex-1 min-w-0">
+              <h3 className="text-sm font-semibold text-gray-900 group-hover:text-gray-700">Write or do something</h3>
+              <p className="text-xs text-gray-500 mt-0.5">
+                {hasContext
+                  ? `Draft, build, or review — with ${context.memories > 0 ? `${context.memories} memories` : ''}${context.memories > 0 && context.agents > 0 ? ', ' : ''}${context.agents > 0 ? `${context.agents} agents` : ''}${(context.memories > 0 || context.agents > 0) && context.skills > 0 ? ', ' : ''}${context.skills > 0 ? `${context.skills} skills` : ''} ready to help.`
+                  : 'Draft, build, or review with AI — add memories, agents, and skills to make it even smarter.'}
+              </p>
+            </div>
+            <svg className="w-4 h-4 text-gray-300 group-hover:text-gray-400 flex-shrink-0 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
           </button>
 
-          {/* Card 3: Learn */}
+          {/* Card 3: Explore what I can do */}
           <button onClick={() => navigate('/learn')}
-            className="group text-left bg-white border border-gray-200 rounded-2xl p-5 hover:shadow-md hover:border-gray-300 transition-all">
-            <div className="w-10 h-10 rounded-xl flex items-center justify-center mb-3" style={{ backgroundColor: brand.colorSecondary + '15' }}>
+            className="w-full text-left bg-white border border-gray-200 rounded-2xl p-5 hover:shadow-md hover:border-gray-300 transition-all group flex items-center gap-4">
+            <div className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: brand.colorSecondary + '12' }}>
               <svg className="w-5 h-5" style={{ color: brand.colorSecondary }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
               </svg>
             </div>
-            <h3 className="text-sm font-semibold text-gray-900 group-hover:text-gray-700">Learn & Explore</h3>
-            <p className="text-xs text-gray-500 mt-1 leading-relaxed">
-              Step-by-step guides and learning tracks tailored to your role.
-            </p>
+            <div className="flex-1 min-w-0">
+              <h3 className="text-sm font-semibold text-gray-900 group-hover:text-gray-700">Explore what I can do</h3>
+              <p className="text-xs text-gray-500 mt-0.5">Browse guides, examples, and ideas for how AI can help with your day-to-day work.</p>
+            </div>
+            <svg className="w-4 h-4 text-gray-300 group-hover:text-gray-400 flex-shrink-0 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
           </button>
 
-          {/* Card 4: Configure */}
-          <button onClick={() => navigate('/configure')}
-            className="group text-left bg-white border border-gray-200 rounded-2xl p-5 hover:shadow-md hover:border-gray-300 transition-all">
-            <div className="w-10 h-10 rounded-xl flex items-center justify-center mb-3 bg-gray-100">
+          {/* Card 4: Set up my workspace */}
+          <button onClick={() => navigate(setupComplete ? '/configure' : '/configure?tab=setup')}
+            className="w-full text-left bg-white border border-gray-200 rounded-2xl p-5 hover:shadow-md hover:border-gray-300 transition-all group flex items-center gap-4">
+            <div className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 bg-gray-100">
               <svg className="w-5 h-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
               </svg>
             </div>
-            <h3 className="text-sm font-semibold text-gray-900 group-hover:text-gray-700">Settings & Setup</h3>
-            <p className="text-xs text-gray-500 mt-1 leading-relaxed">
-              {setupComplete ? 'Agents, skills, integrations, and preferences.' : 'Finish your setup and configure your workspace.'}
-            </p>
+            <div className="flex-1 min-w-0">
+              <h3 className="text-sm font-semibold text-gray-900 group-hover:text-gray-700">
+                {setupComplete ? 'Customize my setup' : 'Set up my workspace'}
+              </h3>
+              <p className="text-xs text-gray-500 mt-0.5">
+                {setupComplete
+                  ? 'Fine-tune agents, skills, memories, and preferences to match your workflow.'
+                  : 'Quick guided setup to connect your AI tools and personalize the experience.'}
+              </p>
+            </div>
+            {!setupComplete && (
+              <span className="text-[9px] px-2 py-0.5 rounded-full font-medium flex-shrink-0" style={{ backgroundColor: brand.colorPrimary + '15', color: brand.colorPrimary }}>
+                Recommended
+              </span>
+            )}
+            <svg className="w-4 h-4 text-gray-300 group-hover:text-gray-400 flex-shrink-0 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
           </button>
         </div>
 
-        {/* ── Recent sessions strip ─────────────────────────────────────────── */}
+        {/* ── Context nudge (when no memories/agents/skills exist) ───────── */}
+        {!hasContext && (
+          <div className="w-full bg-white border border-gray-200 rounded-2xl p-5 space-y-3">
+            <div>
+              <h3 className="text-sm font-semibold text-gray-900">Make the AI work smarter for you</h3>
+              <p className="text-xs text-gray-500 mt-0.5">The more context you give it, the better the results. Start with any of these:</p>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <button onClick={() => navigate('/configure?tab=memory')}
+                className="text-left rounded-xl border border-gray-200 p-3 hover:border-gray-300 hover:shadow-sm transition-all group">
+                <div className="w-7 h-7 rounded-lg flex items-center justify-center mb-1.5" style={{ backgroundColor: brand.colorAccent + '12' }}>
+                  <svg className="w-3.5 h-3.5" style={{ color: brand.colorAccent }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                </div>
+                <span className="text-xs font-medium text-gray-800">Add a memory</span>
+                <p className="text-[10px] text-gray-400 mt-0.5 leading-snug">Meeting notes, project context, decisions</p>
+              </button>
+              <button onClick={() => navigate('/configure?tab=agents')}
+                className="text-left rounded-xl border border-gray-200 p-3 hover:border-gray-300 hover:shadow-sm transition-all group">
+                <div className="w-7 h-7 rounded-lg flex items-center justify-center mb-1.5" style={{ backgroundColor: brand.colorPrimary + '12' }}>
+                  <svg className="w-3.5 h-3.5" style={{ color: brand.colorPrimary }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                </div>
+                <span className="text-xs font-medium text-gray-800">Create an agent</span>
+                <p className="text-[10px] text-gray-400 mt-0.5 leading-snug">Communication coach, reviewer, analyst</p>
+              </button>
+              <button onClick={() => navigate('/configure?tab=skills')}
+                className="text-left rounded-xl border border-gray-200 p-3 hover:border-gray-300 hover:shadow-sm transition-all group">
+                <div className="w-7 h-7 rounded-lg flex items-center justify-center mb-1.5" style={{ backgroundColor: brand.colorSecondary + '12' }}>
+                  <svg className="w-3.5 h-3.5" style={{ color: brand.colorSecondary }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 4a2 2 0 114 0v1a1 1 0 001 1h3a1 1 0 011 1v3a1 1 0 01-1 1h-1a2 2 0 100 4h1a1 1 0 011 1v3a1 1 0 01-1 1h-3a1 1 0 01-1-1v-1a2 2 0 10-4 0v1a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 00-1-1H4a2 2 0 110-4h1a1 1 0 001-1V7a1 1 0 011-1h3a1 1 0 001-1V4z" />
+                  </svg>
+                </div>
+                <span className="text-xs font-medium text-gray-800">Build a skill</span>
+                <p className="text-[10px] text-gray-400 mt-0.5 leading-snug">Email drafts, research briefs, summaries</p>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── Recent sessions (only if they exist) ──────────────────────── */}
         {recentSessions.length > 0 && (
-          <div className="space-y-2">
+          <div className="space-y-2 pt-2 w-full">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-gray-500">Recent sessions</span>
-              <button onClick={() => navigate('/work')} className="text-[10px] text-gray-400 hover:text-gray-600 transition-colors">View all</button>
+              <span className="text-xs font-medium text-gray-400">Pick up where you left off</span>
+              <button onClick={() => navigate('/work')} className="text-[10px] text-gray-400 hover:text-gray-600 transition-colors">All sessions</button>
             </div>
             <div className="flex gap-2">
               {recentSessions.map((s) => (
-                <button key={s.sessionId} onClick={() => navigate('/work')}
+                <button key={s.sessionId} onClick={() => navigate('/work', { state: { sessionId: s.sessionId } })}
                   className="flex-1 bg-white border border-gray-200 rounded-xl px-3 py-2.5 text-left hover:border-gray-300 hover:shadow-sm transition-all">
                   <div className="flex items-center gap-2">
                     <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${s.endedAt ? 'bg-gray-300' : 'bg-green-400'}`} />
@@ -207,34 +277,6 @@ export default function HomeHub(): JSX.Element {
           </div>
         )}
 
-        {/* ── Setup nudge (only if not complete) ────────────────────────────── */}
-        {!setupComplete && (
-          <button onClick={() => navigate('/configure')}
-            className="w-full text-left rounded-2xl px-5 py-4 flex items-center gap-4 transition-all hover:shadow-md"
-            style={{ backgroundColor: brand.colorPrimary + '08', borderColor: brand.colorPrimary + '20', borderWidth: 1 }}>
-            <div className="text-2xl flex-shrink-0">🚀</div>
-            <div className="flex-1 min-w-0">
-              <span className="text-xs font-semibold text-gray-800">Finish your setup</span>
-              <p className="text-[10px] text-gray-500 mt-0.5">Complete the Setup Wizard to get the most out of your AI tools.</p>
-            </div>
-            <svg className="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-            </svg>
-          </button>
-        )}
-
-        {/* ── Status strip ──────────────────────────────────────────────────── */}
-        <div className="flex items-center justify-center gap-4 text-[10px] text-gray-400">
-          <div className="flex items-center gap-1.5">
-            <span className={`w-1.5 h-1.5 rounded-full ${copilotOk ? 'bg-green-400' : 'bg-gray-300'}`} />
-            Copilot {copilotOk ? 'connected' : 'offline'}
-          </div>
-          <span className="text-gray-300">|</span>
-          <div className="flex items-center gap-1.5">
-            <span className={`w-1.5 h-1.5 rounded-full ${claudeOk ? 'bg-green-400' : 'bg-gray-300'}`} />
-            Claude {claudeOk ? 'connected' : 'offline'}
-          </div>
-        </div>
       </div>
     </div>
   )

@@ -1,5 +1,6 @@
 import type { IpcMain } from 'electron'
 import Store from 'electron-store'
+import { getStoreEncryptionKey } from '../utils/storeEncryption'
 
 // ── Content Types ────────────────────────────────────────────────────────────
 
@@ -89,6 +90,7 @@ interface LearnStoreSchema {
 
 const store = new Store<LearnStoreSchema>({
   name: 'clear-path-learn',
+  encryptionKey: getStoreEncryptionKey(),
   defaults: {
     completedLessons: {},
     selectedPath: null,

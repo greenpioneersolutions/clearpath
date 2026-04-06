@@ -67,8 +67,10 @@
 .text-gray-500 { color: var(--brand-text-secondary) !important; }
 .text-gray-400 { color: var(--brand-text-tertiary) !important; }
 .text-gray-300 { color: var(--brand-text-secondary) !important; }
-.text-gray-200 { color: var(--brand-text-primary) !important; }
-.text-gray-100 { color: var(--brand-text-primary) !important; }
+/* NOTE: text-gray-200 and text-gray-100 are NOT remapped.
+   These classes are used exclusively on dark backgrounds (chat, wizard, modals)
+   to mean "light text on dark surface." Remapping them to --brand-text-primary
+   would make them dark-on-dark and invisible. */
 
 /* ── Indigo → brand primary action color ──────────────────────────────── */
 .bg-indigo-600 { background-color: var(--brand-btn-primary) !important; }
@@ -112,7 +114,7 @@
 .hover\:text-gray-800:hover { color: var(--brand-text-primary) !important; }
 .hover\:text-gray-700:hover { color: var(--brand-text-secondary) !important; }
 .hover\:text-gray-300:hover { color: var(--brand-text-secondary) !important; }
-.hover\:text-gray-200:hover { color: var(--brand-text-primary) !important; }
+/* hover:text-gray-200 NOT remapped — same reason as text-gray-200 (light text on dark bg) */
 .hover\:text-indigo-500:hover { color: var(--brand-btn-hover) !important; }
 .hover\:text-indigo-600:hover { color: var(--brand-btn-primary) !important; }
 .hover\:border-indigo-300:hover { border-color: color-mix(in srgb, var(--brand-btn-primary) 40%, transparent) !important; }
@@ -124,9 +126,28 @@
 .shadow-indigo-600\/20 { --tw-shadow-color: color-mix(in srgb, var(--brand-btn-primary) 20%, transparent) !important; }
 .shadow-indigo-100 { --tw-shadow-color: color-mix(in srgb, var(--brand-btn-primary) 10%, transparent) !important; }
 
-/* ── Caret color for inputs ───────────────────────────────────────────── */
+/* ── Form elements — inherit brand colors so dark mode works ─────────── */
 input, textarea, select {
   caret-color: var(--brand-btn-primary);
+  color: var(--brand-text-primary);
+  background-color: var(--brand-card-bg);
+  border-color: var(--brand-border);
+}
+input::placeholder, textarea::placeholder {
+  color: var(--brand-text-tertiary);
+}
+/* Preserve explicitly dark-themed inputs (chat area, sidebar, modals on dark bg).
+   Elements with explicit bg-gray-700/800/900 classes opt out of the light-card default. */
+input.bg-gray-700, input.bg-gray-800, input.bg-gray-900,
+textarea.bg-gray-700, textarea.bg-gray-800, textarea.bg-gray-900,
+select.bg-gray-700, select.bg-gray-800, select.bg-gray-900 {
+  color: #E5E7EB !important;
+  background-color: var(--brand-dark-card) !important;
+  border-color: var(--brand-dark-border) !important;
+}
+input.bg-gray-700::placeholder, input.bg-gray-800::placeholder, input.bg-gray-900::placeholder,
+textarea.bg-gray-700::placeholder, textarea.bg-gray-800::placeholder, textarea.bg-gray-900::placeholder {
+  color: #9CA3AF !important;
 }
 
 /* ── Dark mode class toggle ───────────────────────────────────────────── */
@@ -329,4 +350,94 @@ input, textarea, select {
   text-decoration: underline;
   text-underline-offset: 2px;
   text-decoration-color: var(--brand-btn-hover);
+}
+
+/* ── Accessibility ─────────────────────────────────────────────────────────── */
+
+/* Screen-reader only utility */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* Skip-to-content link — hidden until focused */
+.skip-link {
+  position: absolute;
+  top: -100%;
+  left: 0;
+  z-index: 9999;
+  padding: 0.75rem 1.25rem;
+  background: var(--brand-btn-primary);
+  color: white;
+  font-weight: 600;
+  font-size: 0.875rem;
+  text-decoration: none;
+  border-radius: 0 0 0.5rem 0;
+}
+.skip-link:focus {
+  top: 0;
+}
+
+/* ── Reduced motion ─────────────────────────────────────────────────────── */
+.a11y-reduced-motion *,
+.a11y-reduced-motion *::before,
+.a11y-reduced-motion *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not(.a11y-motion-override) *,
+  :root:not(.a11y-motion-override) *::before,
+  :root:not(.a11y-motion-override) *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ── Focus indicators ───────────────────────────────────────────────────── */
+.a11y-focus-ring *:focus-visible {
+  outline: none !important;
+  box-shadow: 0 0 0 3px var(--brand-btn-primary), 0 0 0 5px rgba(255,255,255,0.8) !important;
+}
+
+.a11y-focus-outline *:focus-visible {
+  outline: 3px solid var(--brand-btn-primary) !important;
+  outline-offset: 2px !important;
+}
+
+.a11y-focus-both *:focus-visible {
+  outline: 2px solid var(--brand-btn-primary) !important;
+  outline-offset: 2px !important;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--brand-btn-primary) 30%, transparent) !important;
+}
+
+/* ── High contrast mode ─────────────────────────────────────────────────── */
+.a11y-high-contrast {
+  --brand-text-primary: #000000;
+  --brand-text-secondary: #1a1a1a;
+  --brand-text-tertiary: #333333;
+  --brand-border: #555555;
+}
+
+/* High contrast + dark mode */
+.a11y-high-contrast[data-theme="dark"],
+.a11y-high-contrast.dark {
+  --brand-text-primary: #ffffff;
+  --brand-text-secondary: #e0e0e0;
+  --brand-text-tertiary: #cccccc;
+  --brand-border: #aaaaaa;
+  --brand-dark-page: #000000;
+  --brand-dark-card: #111111;
+  --brand-dark-border: #666666;
 }

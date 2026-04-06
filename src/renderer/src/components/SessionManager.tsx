@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { useFocusTrap } from '../hooks/useFocusTrap'
 
 interface SessionEntry {
   sessionId: string
@@ -30,6 +31,7 @@ type Tab = 'all' | 'archived' | 'search'
 type SortBy = 'recent' | 'oldest' | 'name'
 
 export default function SessionManager({ onClose, onSelectSession, currentSessionId }: Props): JSX.Element {
+  const panelRef = useRef<HTMLDivElement>(null)
   const [tab, setTab] = useState<Tab>('all')
   const [sessions, setSessions] = useState<SessionEntry[]>([])
   const [searchQuery, setSearchQuery] = useState('')
@@ -42,6 +44,8 @@ export default function SessionManager({ onClose, onSelectSession, currentSessio
   const [renameValue, setRenameValue] = useState('')
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
   const [cliFilter, setCliFilter] = useState<'all' | 'copilot' | 'claude'>('all')
+
+  useFocusTrap(panelRef, true)
 
   // Load sessions
   const loadSessions = useCallback(async () => {
@@ -165,14 +169,21 @@ export default function SessionManager({ onClose, onSelectSession, currentSessio
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col animate-fadeIn" onClick={(e) => e.stopPropagation()}>
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="session-mgr-title"
+        className="bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col animate-fadeIn"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header */}
         <div className="px-5 py-4 border-b border-gray-800 flex items-center justify-between flex-shrink-0">
           <div>
-            <h2 className="text-white font-semibold text-base">Sessions</h2>
+            <h2 id="session-mgr-title" className="text-white font-semibold text-base">Sessions</h2>
             <p className="text-gray-500 text-xs mt-0.5">{sessions.length} total sessions</p>
           </div>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-300 transition-colors p-1">
+          <button onClick={onClose} aria-label="Close session manager" className="text-gray-500 hover:text-gray-300 transition-colors p-1">
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
@@ -189,12 +200,14 @@ export default function SessionManager({ onClose, onSelectSession, currentSessio
             {tab !== 'search' && (
               <div className="flex items-center gap-2">
                 <select value={cliFilter} onChange={(e) => setCliFilter(e.target.value as typeof cliFilter)}
+                  aria-label="Filter by CLI"
                   className="bg-gray-800 border border-gray-700 text-gray-300 text-[11px] rounded-lg px-2 py-1 focus:outline-none">
                   <option value="all">All CLIs</option>
                   <option value="copilot">Copilot</option>
                   <option value="claude">Claude</option>
                 </select>
                 <select value={sortBy} onChange={(e) => setSortBy(e.target.value as SortBy)}
+                  aria-label="Sort sessions by"
                   className="bg-gray-800 border border-gray-700 text-gray-300 text-[11px] rounded-lg px-2 py-1 focus:outline-none">
                   <option value="recent">Most Recent</option>
                   <option value="oldest">Oldest First</option>
@@ -216,6 +229,7 @@ export default function SessionManager({ onClose, onSelectSession, currentSessio
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Search across all sessions..."
+                  aria-label="Search sessions"
                   className="flex-1 bg-transparent text-gray-200 text-sm outline-none placeholder-gray-500"
                   autoFocus
                 />
@@ -226,6 +240,8 @@ export default function SessionManager({ onClose, onSelectSession, currentSessio
                   useRegex ? 'bg-indigo-900/40 border-indigo-600 text-indigo-300' : 'bg-gray-800 border-gray-700 text-gray-500 hover:text-gray-300'
                 }`}
                 title="Toggle regex search"
+                aria-label="Toggle regex search"
+                aria-pressed={useRegex}
               >.*</button>
             </div>
           )}
@@ -304,6 +320,7 @@ export default function SessionManager({ onClose, onSelectSession, currentSessio
                     type="checkbox"
                     checked={selected.has(session.sessionId)}
                     onChange={() => toggleSelect(session.sessionId)}
+                    aria-label={`Select session ${session.name ?? session.sessionId.slice(0, 8)}`}
                     className="w-3.5 h-3.5 rounded border-gray-600 bg-gray-800 accent-indigo-500 flex-shrink-0"
                   />
 
@@ -321,6 +338,7 @@ export default function SessionManager({ onClose, onSelectSession, currentSessio
                           onChange={(e) => setRenameValue(e.target.value)}
                           onKeyDown={(e) => { if (e.key === 'Enter') void handleRename(session.sessionId); if (e.key === 'Escape') setRenaming(null) }}
                           onBlur={() => void handleRename(session.sessionId)}
+                          aria-label="Rename session"
                           className="bg-gray-800 border border-indigo-500 rounded px-2 py-0.5 text-sm text-gray-200 outline-none w-40"
                           autoFocus
                           onClick={(e) => e.stopPropagation()}
@@ -389,7 +407,7 @@ export default function SessionManager({ onClose, onSelectSession, currentSessio
               </button>
             )}
           </div>
-          <button onClick={onClose} className="px-4 py-1.5 text-sm text-gray-400 hover:text-gray-200 transition-colors">
+          <button onClick={onClose} aria-label="Close session manager" className="px-4 py-1.5 text-sm text-gray-400 hover:text-gray-200 transition-colors">
             Done
           </button>
         </div>

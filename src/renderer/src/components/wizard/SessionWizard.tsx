@@ -37,6 +37,10 @@ interface SkillItem {
 interface Props {
   onLaunchSession: (opts: { cli: 'copilot' | 'claude'; name: string; initialPrompt: string; agent?: string }) => void
   defaultCli: 'copilot' | 'claude'
+  /** Pre-select a wizard option by id (e.g. 'question', 'task') and skip to 'fill' step */
+  initialOptionId?: string
+  /** Jump directly to a step (e.g. 'context') */
+  initialStep?: Step
 }
 
 type Step = 'choose' | 'fill' | 'context' | 'review'
@@ -60,7 +64,7 @@ const CAT_COLORS: Record<string, string> = {
 
 // ── Main component ───────────────────────────────────────────────────────────
 
-export default function SessionWizard({ onLaunchSession, defaultCli }: Props): JSX.Element {
+export default function SessionWizard({ onLaunchSession, defaultCli, initialOptionId, initialStep }: Props): JSX.Element {
   const [config, setConfig] = useState<WizardConfig | null>(null)
   const [loading, setLoading] = useState(true)
   const [step, setStep] = useState<Step>('choose')
@@ -103,6 +107,25 @@ export default function SessionWizard({ onLaunchSession, defaultCli }: Props): J
   }, [])
 
   useEffect(() => { void load() }, [load])
+
+  // ── Auto-select option or step from props (deep-link from Home) ────────
+  useEffect(() => {
+    if (!config || loading) return
+    if (initialStep === 'context') {
+      setStep('context')
+      void loadContext()
+      return
+    }
+    if (initialOptionId) {
+      const option = config.options.find((o) => o.id === initialOptionId)
+      if (option) {
+        setSelectedOption(option)
+        setValues({})
+        setStep('fill')
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [config, loading])
 
   // ── Load context data when entering context step ─────────────────────────
 

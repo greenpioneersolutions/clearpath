@@ -5,11 +5,21 @@ import { AgentWizard } from '../components/AgentWizard'
 import { ProfileManager } from '../components/ProfileManager'
 import type { ActiveAgents, AgentDef, AgentListResult, AgentProfile } from '../types/ipc'
 
+interface StarterAgent {
+  id: string
+  name: string
+  tagline: string
+  description: string
+  category: 'spotlight' | 'default'
+  handles: string[]
+}
+
 export default function Agents(): JSX.Element {
   const [agentList, setAgentList] = useState<AgentListResult>({ copilot: [], claude: [] })
   const [enabledIds, setEnabledIds] = useState<string[]>([])
   const [activeAgents, setActiveAgents] = useState<ActiveAgents>({ copilot: null, claude: null })
   const [profiles, setProfiles] = useState<AgentProfile[]>([])
+  const [starterAgents, setStarterAgents] = useState<StarterAgent[]>([])
   const [loading, setLoading] = useState(true)
 
   const [editTarget, setEditTarget] = useState<AgentDef | null>(null)
@@ -20,16 +30,18 @@ export default function Agents(): JSX.Element {
 
   const loadAll = useCallback(async () => {
     setLoading(true)
-    const [list, enabled, active, profs] = await Promise.all([
+    const [list, enabled, active, profs, starters] = await Promise.all([
       window.electronAPI.invoke('agent:list', {}) as Promise<AgentListResult>,
       window.electronAPI.invoke('agent:get-enabled') as Promise<string[]>,
       window.electronAPI.invoke('agent:get-active') as Promise<ActiveAgents>,
       window.electronAPI.invoke('agent:get-profiles') as Promise<AgentProfile[]>,
+      window.electronAPI.invoke('starter-pack:get-visible-agents') as Promise<StarterAgent[]>,
     ])
     setAgentList(list)
     setEnabledIds(enabled)
     setActiveAgents(active)
     setProfiles(profs)
+    setStarterAgents(Array.isArray(starters) ? starters : [])
     setLoading(false)
   }, [])
 
@@ -155,6 +167,28 @@ export default function Agents(): JSX.Element {
 
       {view === 'agents' && (
         <div className="space-y-8">
+          {/* Starter Pack Agents */}
+          {starterAgents.length > 0 && (
+            <div className="mb-6">
+              <h3 className="text-sm font-semibold text-gray-900 mb-3">Recommended Agents</h3>
+              <p className="text-xs text-gray-500 mb-3">Production-ready agents from the Starter Pack. These provide specialized expertise for common workflows.</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {starterAgents.map((agent) => (
+                  <div key={agent.id} className="bg-white border border-gray-200 rounded-xl p-4 hover:shadow-md hover:border-gray-300 transition-all">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-sm font-semibold text-gray-900">{agent.name}</span>
+                      {agent.category === 'spotlight' && (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700 font-medium">Spotlight</span>
+                      )}
+                    </div>
+                    <p className="text-xs text-indigo-600 mb-1.5">{agent.tagline}</p>
+                    <p className="text-xs text-gray-500 line-clamp-2">{agent.description}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <AgentSection
             title="GitHub Copilot Agents"
             cli="copilot"

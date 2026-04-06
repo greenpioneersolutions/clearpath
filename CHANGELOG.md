@@ -2,6 +2,53 @@
 
 All notable changes to ClearPathAI will be documented in this file.
 
+## [1.5.0] - 2026-04-06
+
+### Added
+- **Accessibility Settings** — New "Accessibility" tab in Configure with font scaling (85%–150%), reduced motion (syncs with OS preference), high contrast mode, focus indicator style (ring/outline/both), screen reader mode, and keyboard shortcut reference table. Settings persist via encrypted electron-store
+- **Skip-to-Content Link** — Hidden link appears on Tab, jumps past sidebar to main content
+- **Route Announcer** — Screen readers announce page name on every navigation via `aria-live` region
+- **Focus Trap Hook** — Reusable `useFocusTrap` for modals — traps Tab/Shift+Tab, restores focus on close
+- **Keyboard Shortcuts** — `?` opens shortcut reference, `Ctrl/Cmd+1-5` navigates to screens, `Ctrl/Cmd+/` focuses chat input, `Ctrl/Cmd+,` opens Configure. Togglable in Accessibility settings
+- **Auto-Updater** — `electron-updater` checks GitHub Releases on launch, downloads in background, shows banner with "Restart Now" / "Later" when update is ready
+- **Agents Tab in Configure** — Full agent management (create/edit/delete/toggle/profiles) accessible from Configure alongside Memory, Skills
+- **Notification Deep-Linking** — Clicking notifications navigates to the relevant page, panel, and session. Budget alerts → Insights, policy violations → Configure > Policies, session errors → Work, schedule results → Configure > Scheduler
+- **URL Deep-Linking** — Work page parses `?panel=X`, `?tab=X`, and location state `{ sessionId }`. Configure and Insights parse `?tab=X` for direct tab navigation
+- **Context Nudge on Home** — When no memories, agents, or skills exist, Home shows quick-create cards linking to Configure > Memory, Agents, Skills
+
+### Changed
+- **Home Page Redesign** — Simplified to 4 outcome-focused cards: "Ask a question or get guidance" (→ wizard question step), "Write or do something" (→ wizard context step), "Explore what I can do" (→ Learning Center), "Set up my workspace" (→ Configure). Quick prompt input at top. Recent sessions only shown when they exist. Context counts displayed dynamically
+- **Model Lists Expanded** — Copilot: 7 → 18 models organized by cost tier (Free/0.33x/1x/3x) with provider, description. Claude: 3 models with $/1M token pricing. Default changed to GPT-5 Mini (free) for Copilot, Sonnet for Claude
+- **ModelSelector UI** — Cards grouped by cost tier with colored badges. Each model shows provider, cost, and description
+- **Sidebar Restructured** — Configure moved to bottom of nav (separated by divider). Main nav: Home, Work, Insights, Learn. Custom uploaded logos now display in sidebar (both collapsed and expanded states)
+- **Feature Flag Defaults** — Simplified starter experience: Composer, Scheduler, Sub-Agents, Knowledge Base, Voice, Compliance Logs, Plugins, Env Vars, Webhooks all default OFF. Core features (Session, Wizard, Memory, Skills, Templates) stay ON
+- **Work Page Feature Flags** — Mode tabs (Wizard, Compose, Schedule, Memory) and panel icons (Agents, Templates, Skills, Sub-Agents) now respect feature flags. Disabled features are hidden, not just non-functional
+- **Wizard Deep-Linking** — SessionWizard accepts `initialOptionId` and `initialStep` props to skip directly to a specific wizard option or the context step from the Home page
+- **Work Page Removed Panels** — File Explorer, Git/PR Builder, and Knowledge Base panels removed from Work page toolbar
+
+### Fixed
+- **Dark Mode Input Visibility** — Global CSS form rules for `input`, `textarea`, `select` now inherit brand colors. `bg-gray-900` inputs added to dark-theme exception list. `text-gray-200`/`text-gray-100` no longer remapped to brand variables (they're light-on-dark text)
+- **Launch Command Preview** — Switched from Tailwind classes (which get remapped) to inline hex colors. Always renders as light text on dark terminal background regardless of theme
+- **Sidebar Learn Link** — Was missing `style` prop for brand colors, invisible on dark sidebar. Now matches all other nav items
+- **MemoryViewer Inputs** — Changed from dark-themed classes to standard light classes (component renders on light Configure page, not dark Work page)
+- **Work Page Scroll** — Added `min-h-0` to content column and `overflow-y-auto` to Compose/Schedule wrappers. Switching between Wizard and Session no longer locks the view
+
+### Accessibility
+- **ARIA Landmarks** — Sidebar: `role="navigation"`, `aria-label`. Main: `role="main"`, `id="main-content"`. Update banner: `role="status"`
+- **Modal ARIA** — 4 modals (NewSession, Login, NotificationInbox, SessionManager) now have `role="dialog"`, `aria-modal`, `aria-labelledby`, and focus traps
+- **Toggle Switches** — 12 files updated: every custom toggle has `role="switch"`, `aria-checked`, `aria-label`
+- **Form Labels** — Priority inputs across CommandInput, HomeHub, Configure, NewSessionModal, SessionManager now have `aria-label` or `htmlFor`/`id` pairings
+- **Color-Independent Status** — ScoreBadge shows text label for screen readers. CLI status dots and NotificationBell have descriptive `aria-label`. Notification unread badge `aria-hidden`
+- **Tab Panel ARIA** — Configure page tabs: `role="tablist"`, `role="tab"` + `aria-selected`, `role="tabpanel"` + `aria-labelledby`
+- **Model Selector** — `role="radiogroup"` on grid, `role="radio"` + `aria-checked` on cards
+- **Chat Log** — OutputDisplay: `role="log"`, `aria-label`, `aria-live="polite"`
+- **Chart Accessibility** — All 4 Recharts components wrapped in `<figure>` with `<figcaption>`, `role="img"`, `aria-label`
+- **Heading Hierarchy** — Sidebar wordmark changed from `<h1>` to `<div>`
+- **Reduced Motion CSS** — `.a11y-reduced-motion` kills all animation/transition. `@media (prefers-reduced-motion)` fallback
+- **High Contrast CSS** — Overrides brand text/border variables for maximum readability (light and dark mode)
+- **Focus Indicator CSS** — 3 configurable styles on `:focus-visible` (ring, outline, both)
+- **`.sr-only` Utility** — Screen-reader-only class for hidden descriptive text
+
 ## [1.4.0] - 2026-04-06
 
 ### Added

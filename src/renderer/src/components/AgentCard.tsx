@@ -74,6 +74,7 @@ export function AgentCard({
             }`}
             role="switch"
             aria-checked={enabled}
+            aria-label="Toggle agent"
           >
             <span
               className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transform transition-transform ${

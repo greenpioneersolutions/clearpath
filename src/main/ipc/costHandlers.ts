@@ -2,6 +2,7 @@ import type { IpcMain } from 'electron'
 import Store from 'electron-store'
 import { randomUUID } from 'crypto'
 import { getStoreEncryptionKey } from '../utils/storeEncryption'
+import type { NotificationManager } from '../notifications/NotificationManager'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -93,7 +94,7 @@ function getTokensSince(since: number): number {
 
 // ── Registration ─────────────────────────────────────────────────────────────
 
-export function registerCostHandlers(ipcMain: IpcMain): void {
+export function registerCostHandlers(ipcMain: IpcMain, notificationManager?: NotificationManager): void {
   // ── Record a cost event ────────────────────────────────────────────────────
 
   ipcMain.handle('cost:record', (_e, args: Omit<CostRecord, 'id'>) => {
@@ -179,7 +180,24 @@ export function registerCostHandlers(ipcMain: IpcMain): void {
       }
     }
 
-    if (alerts.length > 0) store.set('firedAlerts', firedAlerts)
+    if (alerts.length > 0) {
+      store.set('firedAlerts', firedAlerts)
+      // Emit a notification for each new budget alert
+      if (notificationManager) {
+        for (const alert of alerts) {
+          const severity = alert.pct >= 100 ? 'critical' : alert.pct >= 90 ? 'warning' : 'info'
+          const unitLabel = alert.unit === 'tokens' ? 'tokens' : `$${alert.spend.toFixed(2)} / $${alert.ceiling.toFixed(2)}`
+          notificationManager.emit({
+            type: 'budget-alert',
+            severity: severity as 'info' | 'warning' | 'critical',
+            title: `Budget ${alert.pct}% — ${alert.period}`,
+            message: `${alert.period} usage has reached ${alert.pct}% of the ceiling (${unitLabel}).`,
+            source: 'cost-tracker',
+            action: { label: 'View Usage', ipcChannel: '', navigate: '/insights' },
+          })
+        }
+      }
+    }
     return { alerts, autoPause: budget.autoPauseAtLimit }
   })
 

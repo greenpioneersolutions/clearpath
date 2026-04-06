@@ -1,6 +1,7 @@
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { FeatureFlagProvider } from './contexts/FeatureFlagContext'
 import { BrandingProvider } from './contexts/BrandingContext'
+import { AccessibilityProvider } from './contexts/AccessibilityContext'
 import Layout from './components/Layout'
 import Home from './pages/Home'
 import Work from './pages/Work'
@@ -14,6 +15,7 @@ export default function App(): JSX.Element {
   return (
     <FeatureFlagProvider>
     <BrandingProvider>
+    <AccessibilityProvider>
     <HashRouter>
       <Routes>
         <Route path="/" element={<Layout />}>
@@ -47,6 +49,7 @@ export default function App(): JSX.Element {
         <Route path="/settings" element={<Navigate to="/configure" replace />} />
       </Routes>
     </HashRouter>
+    </AccessibilityProvider>
     </BrandingProvider>
     </FeatureFlagProvider>
   )

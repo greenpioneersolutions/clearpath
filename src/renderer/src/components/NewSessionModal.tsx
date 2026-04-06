@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
+import { useFocusTrap } from '../hooks/useFocusTrap'
 
 interface NewSessionOptions {
   cli: 'copilot' | 'claude'
@@ -14,10 +15,13 @@ interface Props {
 }
 
 export default function NewSessionModal({ onStart, onClose, defaultCli }: Props): JSX.Element {
+  const panelRef = useRef<HTMLDivElement>(null)
   const [cli, setCli] = useState<'copilot' | 'claude'>(defaultCli ?? 'copilot')
   const [name, setName] = useState('')
   const [workingDirectory, setWorkingDirectory] = useState('')
   const [initialPrompt, setInitialPrompt] = useState('')
+
+  useFocusTrap(panelRef, true)
 
   const handleStart = () => {
     onStart({
@@ -38,16 +42,22 @@ export default function NewSessionModal({ onStart, onClose, defaultCli }: Props)
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
       onKeyDown={handleKeyDown}
     >
-      <div className="bg-gray-800 border border-gray-700 rounded-xl shadow-2xl w-full max-w-md p-6">
-        <h2 className="text-lg font-semibold text-white mb-5">New Session</h2>
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="new-session-title"
+        className="bg-gray-800 border border-gray-700 rounded-xl shadow-2xl w-full max-w-md p-6"
+      >
+        <h2 id="new-session-title" className="text-lg font-semibold text-white mb-5">New Session</h2>
 
         <div className="space-y-4">
           {/* CLI selector */}
           <div>
-            <label className="block text-xs font-medium text-gray-400 mb-1.5 uppercase tracking-wide">
+            <label id="cli-selection-label" className="block text-xs font-medium text-gray-400 mb-1.5 uppercase tracking-wide">
               CLI
             </label>
-            <div className="flex gap-2">
+            <div className="flex gap-2" role="group" aria-labelledby="cli-selection-label">
               {(['copilot', 'claude'] as const).map((c) => (
                 <button
                   key={c}
@@ -66,12 +76,13 @@ export default function NewSessionModal({ onStart, onClose, defaultCli }: Props)
 
           {/* Session name */}
           <div>
-            <label className="block text-xs font-medium text-gray-400 mb-1.5 uppercase tracking-wide">
+            <label htmlFor="session-name" className="block text-xs font-medium text-gray-400 mb-1.5 uppercase tracking-wide">
               Session Name{' '}
               <span className="normal-case text-gray-500 font-normal">(optional)</span>
             </label>
             <input
               type="text"
+              id="session-name"
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g. Fix auth bug"
@@ -81,12 +92,13 @@ export default function NewSessionModal({ onStart, onClose, defaultCli }: Props)
 
           {/* Working directory */}
           <div>
-            <label className="block text-xs font-medium text-gray-400 mb-1.5 uppercase tracking-wide">
+            <label htmlFor="working-directory" className="block text-xs font-medium text-gray-400 mb-1.5 uppercase tracking-wide">
               Working Directory{' '}
               <span className="normal-case text-gray-500 font-normal">(optional)</span>
             </label>
             <input
               type="text"
+              id="working-directory"
               value={workingDirectory}
               onChange={(e) => setWorkingDirectory(e.target.value)}
               placeholder="/Users/me/my-project"
@@ -96,11 +108,12 @@ export default function NewSessionModal({ onStart, onClose, defaultCli }: Props)
 
           {/* Initial prompt */}
           <div>
-            <label className="block text-xs font-medium text-gray-400 mb-1.5 uppercase tracking-wide">
+            <label htmlFor="initial-prompt" className="block text-xs font-medium text-gray-400 mb-1.5 uppercase tracking-wide">
               Initial Prompt{' '}
               <span className="normal-case text-gray-500 font-normal">(optional)</span>
             </label>
             <textarea
+              id="initial-prompt"
               value={initialPrompt}
               onChange={(e) => setInitialPrompt(e.target.value)}
               onKeyDown={(e) => {
@@ -117,12 +130,14 @@ export default function NewSessionModal({ onStart, onClose, defaultCli }: Props)
         <div className="flex gap-3 mt-6">
           <button
             onClick={onClose}
+            aria-label="Cancel new session"
             className="flex-1 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm font-medium rounded-lg transition-colors"
           >
             Cancel
           </button>
           <button
             onClick={handleStart}
+            aria-label="Start new session"
             className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg transition-colors"
           >
             Start Session

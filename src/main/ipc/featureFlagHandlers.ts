@@ -71,27 +71,27 @@ const ALL_ON: FeatureFlags = {
   showSessionWizard: true,
   showWorkspaces: true,
   showTeamHub: true,
-  showScheduler: true,
+  showScheduler: false,
 
-  showComposer: true,
-  showSubAgents: true,
+  showComposer: false,
+  showSubAgents: false,
   showTemplates: true,
-  showKnowledgeBase: true,
-  showVoice: true,
+  showKnowledgeBase: false,
+  showVoice: false,
 
   showUseContext: true,
   showAgentSelection: true,
   showCostTracking: true,
-  showComplianceLogs: true,
+  showComplianceLogs: false,
 
   showDataManagement: true,
   showBudgetLimits: true,
-  showPlugins: true,
-  showEnvVars: true,
-  showWebhooks: true,
+  showPlugins: false,
+  showEnvVars: false,
+  showWebhooks: false,
 
-  enableExperimentalFeatures: true,
-  showPrScores: true,
+  enableExperimentalFeatures: false,
+  showPrScores: false,
   prScoresAiReview: false,
 }
 

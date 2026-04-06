@@ -6,6 +6,7 @@ import { randomUUID, createHash } from 'crypto'
 import { join } from 'path'
 import { homedir } from 'os'
 import { getStoreEncryptionKey } from '../utils/storeEncryption'
+import type { NotificationManager } from '../notifications/NotificationManager'
 
 interface AuditEntry {
   id: string
@@ -73,7 +74,7 @@ export function addAuditEntry(entry: Omit<AuditEntry, 'id' | 'timestamp'>): Audi
   return full
 }
 
-export function registerComplianceHandlers(ipcMain: IpcMain): void {
+export function registerComplianceHandlers(ipcMain: IpcMain, notificationManager?: NotificationManager): void {
   // Audit log
   ipcMain.handle('compliance:log-event', (_e, args: Omit<AuditEntry, 'id' | 'timestamp'>) =>
     addAuditEntry(args),
@@ -109,6 +110,14 @@ export function registerComplianceHandlers(ipcMain: IpcMain): void {
         actionType: 'security-warning',
         summary: `Sensitive data detected: ${matches.map((m) => m.name).join(', ')}`,
         details: JSON.stringify(matches),
+      })
+      notificationManager?.emit({
+        type: 'security-event',
+        severity: 'warning',
+        title: 'Sensitive data detected',
+        message: `Found ${matches.length} match(es): ${matches.map((m) => m.name).join(', ')}`,
+        source: 'compliance-scanner',
+        action: { label: 'View Compliance', ipcChannel: '', navigate: '/insights' },
       })
     }
 

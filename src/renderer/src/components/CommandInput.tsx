@@ -177,10 +177,12 @@ export default function CommandInput({
     <div className="relative backdrop-blur-sm flex-shrink-0" style={{ borderTop: '1px solid var(--brand-dark-border)', backgroundColor: 'var(--brand-dark-page)' }}>
       {/* Slash command suggestions */}
       {suggestions.length > 0 && (
-        <div className="absolute bottom-full left-4 right-4 mb-2 backdrop-blur-sm rounded-xl overflow-hidden max-h-52 overflow-y-auto shadow-2xl" style={{ backgroundColor: 'var(--brand-dark-card)', border: '1px solid var(--brand-dark-border)' }}>
+        <div role="listbox" aria-label="Slash command suggestions" className="absolute bottom-full left-4 right-4 mb-2 backdrop-blur-sm rounded-xl overflow-hidden max-h-52 overflow-y-auto shadow-2xl" style={{ backgroundColor: 'var(--brand-dark-card)', border: '1px solid var(--brand-dark-border)' }}>
           {suggestions.map((cmd, i) => (
             <button
               key={cmd}
+              role="option"
+              aria-selected={i === selectedIdx}
               className={`w-full text-left px-4 py-2.5 text-sm transition-colors flex items-center justify-between ${
                 i === selectedIdx
                   ? 'text-white'
@@ -215,6 +217,7 @@ export default function CommandInput({
             onKeyDown={handleKeyDown}
             disabled={disabled}
             rows={1}
+            aria-label="Message input"
             placeholder={
               processing
                 ? 'Waiting for response...'
@@ -231,6 +234,7 @@ export default function CommandInput({
             className="p-2 rounded-xl text-white transition-all flex-shrink-0 shadow-sm disabled:opacity-30"
             style={{ backgroundColor: 'var(--brand-btn-primary)' }}
             title="Send message"
+            aria-label="Send message"
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />

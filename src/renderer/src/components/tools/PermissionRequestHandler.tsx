@@ -105,6 +105,9 @@ export default function PermissionRequestHandler(): JSX.Element {
               className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
                 autoApprove ? 'bg-red-500' : 'bg-gray-300'
               }`}
+              role="switch"
+              aria-checked={autoApprove}
+              aria-label="Toggle auto-approve"
             >
               <span
                 className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${

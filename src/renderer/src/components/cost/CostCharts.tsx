@@ -18,8 +18,8 @@ export function DailySpendChart({ data, displayMode = 'tokens' }: { data: DailyS
   if (data.length === 0) return <EmptyChart label="No usage data yet" />
   const isTokens = displayMode === 'tokens'
   return (
-    <div className="bg-white border border-gray-200 rounded-xl p-4">
-      <h4 className="text-sm font-semibold text-gray-900 mb-3">{isTokens ? 'Daily Token Usage' : 'Daily Spend'}</h4>
+    <figure className="bg-white border border-gray-200 rounded-xl p-4" role="img" aria-label={isTokens ? 'Daily token usage line chart' : 'Daily spend line chart'}>
+      <figcaption className="text-sm font-semibold text-gray-900 mb-3">{isTokens ? 'Daily Token Usage' : 'Daily Spend'}</figcaption>
       <ResponsiveContainer width="100%" height={240}>
         <LineChart data={data}>
           <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
@@ -38,7 +38,7 @@ export function DailySpendChart({ data, displayMode = 'tokens' }: { data: DailyS
           />
         </LineChart>
       </ResponsiveContainer>
-    </div>
+    </figure>
   )
 }
 
@@ -50,8 +50,8 @@ export function SessionCostChart({ data, displayMode = 'tokens' }: { data: Sessi
   const sortKey = isTokens ? 'totalTokens' : 'totalCost'
   const top = [...data].sort((a, b) => (b[sortKey] as number) - (a[sortKey] as number)).slice(0, 15)
   return (
-    <div className="bg-white border border-gray-200 rounded-xl p-4">
-      <h4 className="text-sm font-semibold text-gray-900 mb-3">{isTokens ? 'Tokens per Session' : 'Cost per Session'}</h4>
+    <figure className="bg-white border border-gray-200 rounded-xl p-4" role="img" aria-label={isTokens ? 'Tokens per session bar chart' : 'Cost per session bar chart'}>
+      <figcaption className="text-sm font-semibold text-gray-900 mb-3">{isTokens ? 'Tokens per Session' : 'Cost per Session'}</figcaption>
       <ResponsiveContainer width="100%" height={240}>
         <BarChart data={top}>
           <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
@@ -64,7 +64,7 @@ export function SessionCostChart({ data, displayMode = 'tokens' }: { data: Sessi
           <Bar dataKey={isTokens ? 'totalTokens' : 'totalCost'} fill="#8b5cf6" radius={[4, 4, 0, 0]} />
         </BarChart>
       </ResponsiveContainer>
-    </div>
+    </figure>
   )
 }
 
@@ -74,8 +74,8 @@ export function ModelBreakdownChart({ data, displayMode = 'tokens' }: { data: Mo
   if (data.length === 0) return <EmptyChart label="No model data yet" />
   const isTokens = displayMode === 'tokens'
   return (
-    <div className="bg-white border border-gray-200 rounded-xl p-4">
-      <h4 className="text-sm font-semibold text-gray-900 mb-3">{isTokens ? 'Tokens by Model' : 'Cost by Model'}</h4>
+    <figure className="bg-white border border-gray-200 rounded-xl p-4" role="img" aria-label={isTokens ? 'Tokens by model pie chart' : 'Cost by model pie chart'}>
+      <figcaption className="text-sm font-semibold text-gray-900 mb-3">{isTokens ? 'Tokens by Model' : 'Cost by Model'}</figcaption>
       <ResponsiveContainer width="100%" height={240}>
         <PieChart>
           <Pie
@@ -90,7 +90,7 @@ export function ModelBreakdownChart({ data, displayMode = 'tokens' }: { data: Mo
           <Tooltip formatter={(v: number) => isTokens ? [fmtTokens(v), 'Tokens'] : [`$${v.toFixed(4)}`, 'Cost']} />
         </PieChart>
       </ResponsiveContainer>
-    </div>
+    </figure>
   )
 }
 
@@ -99,8 +99,8 @@ export function ModelBreakdownChart({ data, displayMode = 'tokens' }: { data: Mo
 export function AgentTokensChart({ data }: { data: AgentTokens[] }): JSX.Element {
   if (data.length === 0) return <EmptyChart label="No agent data yet" />
   return (
-    <div className="bg-white border border-gray-200 rounded-xl p-4">
-      <h4 className="text-sm font-semibold text-gray-900 mb-3">Tokens by Agent</h4>
+    <figure className="bg-white border border-gray-200 rounded-xl p-4" role="img" aria-label="Tokens by agent stacked bar chart">
+      <figcaption className="text-sm font-semibold text-gray-900 mb-3">Tokens by Agent</figcaption>
       <ResponsiveContainer width="100%" height={240}>
         <BarChart data={data}>
           <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
@@ -112,7 +112,7 @@ export function AgentTokensChart({ data }: { data: AgentTokens[] }): JSX.Element
           <Bar dataKey="outputTokens" name="Output" stackId="a" fill="#ec4899" radius={[4, 4, 0, 0]} />
         </BarChart>
       </ResponsiveContainer>
-    </div>
+    </figure>
   )
 }
 
