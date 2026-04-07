@@ -2,6 +2,25 @@
 
 All notable changes to ClearPathAI will be documented in this file.
 
+## [1.6.1] - 2026-04-06
+
+### Added
+- **Feature Discovery Learning Path** — New "Feature Discovery" track in the Learning Center with 10 modules covering every locked-by-default feature. Each module teaches what the feature does, when to use it, and why it matters through walkthroughs and knowledge checks. Completing a module's final quiz automatically unlocks the corresponding feature flag — no manual toggle needed
+- **Auto-Unlock Feature Flags from Learning** — Completing a Feature Discovery knowledge check lesson (without skipping) auto-enables the feature flag via the encrypted feature flag store. Covers: Composer, Scheduler, Sub-Agents, Knowledge Base, Voice, Compliance Logs, Plugins, Environment Variables, Webhooks, and Experimental Features + PR Scores
+- **Per-Session Model Override** — New model selector on the Session Wizard's review step. Users can pick a different model for a single session without changing their default. Grouped by cost tier (Free / 0.33x / 1x / 3x for Copilot; Claude models for Claude Code). Passes model override to CLI via `--model` flag for that session only
+
+### Changed
+- **Session Error Handling** — Non-zero CLI exit codes no longer mark sessions as "stopped" or show red error blocks. Instead, a gentle grey status message appears: "The AI process ended unexpectedly. You can continue typing — a new process will start automatically." Session stays active and usable
+- **Chat Display Cleanup** — Sessions launched from the wizard no longer dump raw system prompts, memory content, and skill XML into the chat. Instead shows a compact status card ("Session launched with context: Agent, Memories, Skill") and just the user's typed message. Full injected prompt goes to CLI on the backend only
+- **Message Attribution** — CLI output messages now have `sender: 'ai'` and `timestamp` in the message log. User messages already had `sender: 'user'`. Session rehydration (navigating away and back, or app restart) now preserves sender and timestamp, so messages display with correct attribution and proper turn separation instead of one merged blob
+- **Agent Resolution Overhaul** — File-based agents now resolve to full file paths (verified with `existsSync`) instead of slug names the CLI can't find. If the file is missing, auto-recovers by falling back to the matching Starter Pack agent's system prompt. Starter pack name-matching removed from the primary path to prevent double-injection. Agent errors on stderr are caught and shown as gentle status messages instead of red errors
+- **Wizard Passes Agent ID** — Session Wizard now passes the full agent ID (`copilot:file:communication-coach`) instead of the display name, so the handler can correctly resolve to the file path
+
+### Fixed
+- **Agent Not Found Error** — Sessions that selected a file-based agent would fail with "agent not found" because only the slug was passed to `--agent` instead of the full file path. Now resolves and validates the path before launch
+- **Message Blob on Rehydration** — Restored sessions showed all messages merged into one bubble because messages had no timestamps. The 2-second grouping window treated everything as one response. Now all log entries carry timestamps for correct turn separation
+- **Sender Lost on Navigation** — Active session rehydration didn't map `sender` from log entries, so all messages appeared as AI text after navigating away and back. Now maps sender correctly for both active and persisted sessions
+
 ## [1.6.0] - 2026-04-06
 
 ### Added

@@ -33,6 +33,7 @@ interface MessageLogEntry {
   content: string
   metadata?: unknown
   sender?: 'user' | 'ai' | 'system'
+  timestamp?: number
 }
 
 interface PersistedSession {
@@ -344,7 +345,7 @@ export class CLIManager {
 
     // Log the initial prompt if provided
     if (options.prompt?.trim()) {
-      session.messageLog.push({ type: 'text', content: options.prompt, sender: 'user' })
+      session.messageLog.push({ type: 'text', content: options.prompt, sender: 'user', timestamp: Date.now() })
     }
 
     this.sessions.set(sessionId, session)
@@ -376,7 +377,7 @@ export class CLIManager {
 
     // Log user input to message history
     if (input !== 'y' && input !== 'n' && !input.startsWith('\x1b')) {
-      session.messageLog.push({ type: 'text', content: input, sender: 'user' })
+      session.messageLog.push({ type: 'text', content: input, sender: 'user', timestamp: Date.now() })
     }
 
     this.runTurn(sessionId, input)
@@ -720,7 +721,7 @@ export class CLIManager {
 
         // Store in message log for rehydration (cap at 500 entries)
         if (parsed.content.trim()) {
-          session.messageLog.push({ type: parsed.type, content: parsed.content, metadata: parsed.metadata })
+          session.messageLog.push({ type: parsed.type, content: parsed.content, metadata: parsed.metadata, sender: 'ai', timestamp: Date.now() })
           if (session.messageLog.length > 500) session.messageLog.splice(0, session.messageLog.length - 500)
         }
 
@@ -752,6 +753,15 @@ export class CLIManager {
         return
       }
 
+      // Detect agent-not-found errors — suppress and show a gentle status instead
+      const isAgentError = /no (?:such )?agent|agent.*not found|cannot find agent|unknown agent/i.test(trimmed)
+      if (isAgentError) {
+        log.warn(`[CLIManager:${session.info.cli}] agent error suppressed: ${trimmed.slice(0, 100)}`)
+        wc.send('cli:output', { sessionId, output: { type: 'status', content: 'Agent not found — running without agent. You can re-create it from the Agents page.' } })
+        session.messageLog.push({ type: 'status', content: 'Agent not found — running without agent.', sender: 'system', timestamp: Date.now() })
+        return
+      }
+
       // Detect organization policy / MCP warnings — show as status, not error
       const isPolicyWarning = /(?:mcp\s+server|organization.*policy|disabled\s+by|third[- ]party|only\s+built[- ]in)/i.test(trimmed)
 
@@ -770,7 +780,7 @@ export class CLIManager {
       if (isPolicyWarning) {
         // Send as a status message (grey pill) instead of a red error block
         wc.send('cli:output', { sessionId, output: { type: 'status', content: trimmed, metadata: { source: 'policy' } } })
-        session.messageLog.push({ type: 'status', content: trimmed, metadata: { source: 'policy' } })
+        session.messageLog.push({ type: 'status', content: trimmed, metadata: { source: 'policy' }, sender: 'system', timestamp: Date.now() })
       } else {
         wc.send('cli:error', { sessionId, error: trimmed })
       }

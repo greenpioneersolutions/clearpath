@@ -35,7 +35,7 @@ interface SkillItem {
 // ── Props ────────────────────────────────────────────────────────────────────
 
 interface Props {
-  onLaunchSession: (opts: { cli: 'copilot' | 'claude'; name: string; initialPrompt: string; agent?: string }) => void
+  onLaunchSession: (opts: { cli: 'copilot' | 'claude'; name: string; initialPrompt: string; displayPrompt?: string; agent?: string; model?: string; contextSummary?: { memories: string[]; agent?: string; skill?: string } }) => void
   defaultCli: 'copilot' | 'claude'
   /** Pre-select a wizard option by id (e.g. 'question', 'task') and skip to 'fill' step */
   initialOptionId?: string
@@ -87,6 +87,7 @@ export default function SessionWizard({ onLaunchSession, defaultCli, initialOpti
   const [contextSearch, setContextSearch] = useState('')
   const [contextTab, setContextTab] = useState<'memories' | 'agents' | 'skills'>('memories')
   const [showFullPrompt, setShowFullPrompt] = useState(false)
+  const [sessionModel, setSessionModel] = useState('')
   const [contextPage, setContextPage] = useState(0)
   const CONTEXT_PAGE_SIZE = 10
 
@@ -238,10 +239,27 @@ export default function SessionWizard({ onLaunchSession, defaultCli, initialOpti
     await window.electronAPI.invoke('wizard:mark-completed')
     const name = sessionName.trim() || `${selectedOption?.label ?? 'Context'} Session`
     // Pass the selected agent name so it gets forwarded as --agent flag
-    const agentName = selectedAgent
-      ? agents.find((a) => a.id === selectedAgent)?.name ?? undefined
-      : undefined
-    onLaunchSession({ cli, name, initialPrompt: builtPrompt, agent: agentName })
+    // Pass the agent ID (e.g. "copilot:file:communication-coach") so the handler
+    // can resolve it correctly. Use the display name only for the context summary.
+    const selectedAgentDef = selectedAgent ? agents.find((a) => a.id === selectedAgent) : undefined
+    const agentId = selectedAgentDef?.id ?? undefined
+    const agentDisplayName = selectedAgentDef?.name ?? undefined
+
+    // Build a clean display prompt (just the user's message) and context summary
+    const userMessage = contextPrompt?.trim() || builtPrompt
+    const memoryNames = Array.from(selectedNoteIds).map((id) => notes.find((n) => n.id === id)?.title).filter(Boolean) as string[]
+    const skillName = selectedSkill ? skills.find((s) => s.id === selectedSkill)?.name : undefined
+    const hasContext = memoryNames.length > 0 || agentDisplayName || skillName
+
+    onLaunchSession({
+      cli,
+      name,
+      initialPrompt: builtPrompt,
+      displayPrompt: hasContext ? userMessage : undefined,
+      agent: agentId,
+      model: sessionModel || undefined,
+      contextSummary: hasContext ? { memories: memoryNames, agent: agentDisplayName, skill: skillName } : undefined,
+    })
   }
 
   const handleReset = () => {
@@ -794,6 +812,38 @@ export default function SessionWizard({ onLaunchSession, defaultCli, initialOpti
               </div>
             </div>
           )}
+
+          {/* Per-session model override */}
+          <div className="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-xs font-medium text-gray-400">Model</span>
+                <p className="text-[10px] text-gray-600 mt-0.5">Override for this session only — won't change your default</p>
+              </div>
+              <select
+                value={sessionModel}
+                onChange={(e) => setSessionModel(e.target.value)}
+                className="bg-gray-800 border border-gray-700 text-gray-300 text-xs rounded-lg px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-indigo-500 max-w-[200px]"
+              >
+                <option value="">Use default</option>
+                {(cli === 'copilot'
+                  ? [
+                      { group: 'Free', models: ['gpt-5-mini', 'gpt-4.1', 'gpt-4o'] },
+                      { group: '0.33x', models: ['claude-haiku-4.5', 'gemini-3-flash'] },
+                      { group: '1x', models: ['claude-sonnet-4.5', 'claude-sonnet-4.6', 'gpt-5', 'gemini-3-pro'] },
+                      { group: '3x', models: ['claude-opus-4.5', 'claude-opus-4.6'] },
+                    ]
+                  : [
+                      { group: 'Claude', models: ['sonnet', 'haiku', 'opus'] },
+                    ]
+                ).map((tier) => (
+                  <optgroup key={tier.group} label={tier.group}>
+                    {tier.models.map((m) => <option key={m} value={m}>{m}</option>)}
+                  </optgroup>
+                ))}
+              </select>
+            </div>
+          </div>
 
           {/* User's message */}
           <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">

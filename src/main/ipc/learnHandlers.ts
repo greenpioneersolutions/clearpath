@@ -2,6 +2,21 @@ import type { IpcMain } from 'electron'
 import Store from 'electron-store'
 import { getStoreEncryptionKey } from '../utils/storeEncryption'
 
+// ── Feature flag unlock mapping ─────────────────────────────────────────────
+// Maps lesson IDs to the feature flag(s) they unlock when completed.
+const LESSON_FLAG_UNLOCKS: Record<string, string[]> = {
+  'fd-composer-3': ['showComposer'],
+  'fd-scheduler-2': ['showScheduler'],
+  'fd-subagents-2': ['showSubAgents'],
+  'fd-kb-2': ['showKnowledgeBase'],
+  'fd-voice-2': ['showVoice'],
+  'fd-compliance-2': ['showComplianceLogs'],
+  'fd-plugins-2': ['showPlugins'],
+  'fd-envvars-2': ['showEnvVars'],
+  'fd-webhooks-2': ['showWebhooks'],
+  'fd-experimental-2': ['enableExperimentalFeatures', 'showPrScores'],
+}
+
 // ── Content Types ────────────────────────────────────────────────────────────
 
 interface WalkthroughContent {
@@ -1944,6 +1959,561 @@ const PATHS: LearningPath[] = [
       ]),
     ],
   },
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // FEATURE DISCOVERY — Learn about locked features, unlock them when ready
+  // ═══════════════════════════════════════════════════════════════════════════
+  {
+    id: 'feature-discovery', name: 'Feature Discovery', icon: '🔓',
+    description: 'Learn about advanced features that are locked by default. Complete each training to understand what the feature does, when to use it, and unlock it for your workspace.',
+    prerequisitePaths: ['getting-started'],
+    recommended: true,
+    modules: [
+
+      // ── Composer & Workflows ──────────────────────────────────────────────
+      makeModule('fd-composer', 'Composer & Multi-Step Workflows', 'Learn how to chain AI tasks into automated workflows', [], [
+        makeLesson('fd-composer-1', 'What Is the Composer?', 'interactive-walkthrough', 4,
+          'Understand multi-step workflows and when they matter',
+          {
+            kind: 'walkthrough',
+            introduction: 'The Composer lets you chain multiple AI tasks into a single automated workflow. Instead of running one prompt at a time, you design a sequence — Step 1 feeds into Step 2, which feeds into Step 3 — and ClearPath runs them all in order. This is how you turn repetitive multi-step processes into one-click automations.',
+            steps: [
+              { title: 'What problem does it solve?', description: 'Many real tasks require multiple AI interactions: analyze data, then summarize findings, then draft an email about it. Without the Composer, you\'d manually copy output from one session and paste it into the next. The Composer eliminates that friction.', tip: 'Think about tasks where you find yourself saying "now take that and do this with it."' },
+              { title: 'How it works', description: 'You add steps to a workflow canvas. Each step has a prompt. When you run the workflow, ClearPath executes Step 1, captures its output, and passes it as context to Step 2. Steps can run in sequence (one after another) or in parallel (simultaneously, for independent tasks).' },
+              { title: 'Sequential vs. parallel', description: 'Sequential steps depend on the previous step\'s output — like "analyze then summarize." Parallel steps are independent — like "check documentation quality" and "review test coverage" at the same time. Parallel steps save time when tasks don\'t depend on each other.' },
+              { title: 'Templates in workflows', description: 'Each workflow step can use a template. This means you can build tested, reliable prompt templates and wire them together into complex workflows. Change the template once, every workflow using it gets the update.' },
+              { title: 'Saving and reusing workflows', description: 'Finished workflows can be saved and rerun. Your weekly status report? Build it once as a workflow, run it every Monday. Sprint retrospective prep? One-click. Onboarding checklist? Automated.' },
+            ],
+            keyTakeaway: 'The Composer turns repetitive multi-step AI tasks into saved, rerunnable workflows. Each step feeds into the next, and you can mix templates for consistency.',
+          },
+        ),
+        makeLesson('fd-composer-2', 'When to Use Workflows vs. Single Sessions', 'interactive-walkthrough', 3,
+          'Know when a workflow is the right tool and when a simple session is better',
+          {
+            kind: 'walkthrough',
+            introduction: 'Not every task needs a workflow. Understanding when to use the Composer versus a regular session saves you time and prevents over-engineering simple tasks.',
+            steps: [
+              { title: 'Use a single session when...', description: 'The task is conversational — you\'re exploring, asking follow-up questions, or the output depends on your judgment at each step. Example: "Help me brainstorm marketing angles for our new product." You want to react and steer in real time.' },
+              { title: 'Use a workflow when...', description: 'The steps are predictable and repeatable. You know what Step 1, 2, and 3 are every time. Example: "Pull metrics, analyze trends, draft weekly report." The same structure works every week — only the data changes.' },
+              { title: 'The hybrid approach', description: 'Start with a single session to figure out the right prompts. Once you\'ve refined them, save them as templates and wire them into a workflow. This way you design interactively but execute automatically.' },
+              { title: 'Real examples', description: 'Good workflow candidates: weekly/monthly reports, code review checklists, client onboarding sequences, sprint planning prep, documentation generation. Bad candidates: creative brainstorming, debugging investigations, exploratory analysis.' },
+            ],
+            keyTakeaway: 'Single sessions are for exploration. Workflows are for repetition. Design interactively, then automate the proven process.',
+          },
+        ),
+        makeLesson('fd-composer-3', 'Composer Knowledge Check — Unlock Feature', 'knowledge-check', 3,
+          'Test your understanding and unlock the Composer',
+          {
+            kind: 'knowledge-check',
+            introduction: 'Let\'s verify you understand the Composer before we unlock it. Answer these questions to enable multi-step workflows in your workspace.',
+            questions: [
+              {
+                question: 'What does the Composer do that a regular session cannot?',
+                options: [
+                  { text: 'It uses a more powerful AI model', correct: false },
+                  { text: 'It chains multiple AI tasks where each step feeds into the next automatically', correct: true },
+                  { text: 'It lets you write code directly', correct: false },
+                  { text: 'It replaces the need for agents', correct: false },
+                ],
+                explanation: 'The Composer chains sequential and parallel AI steps into automated workflows. Each step\'s output becomes the next step\'s input — eliminating manual copy-paste between sessions.',
+              },
+              {
+                question: 'When is a workflow better than a single session?',
+                options: [
+                  { text: 'When you want to brainstorm ideas', correct: false },
+                  { text: 'When the task has predictable, repeatable steps you run regularly', correct: true },
+                  { text: 'When the task is very simple', correct: false },
+                  { text: 'Always — workflows are better for everything', correct: false },
+                ],
+                explanation: 'Workflows shine for repeatable processes with known steps. For one-off exploration or interactive conversations, a single session is faster and more flexible.',
+              },
+              {
+                question: 'What happens to Step 1\'s output in a sequential workflow?',
+                options: [
+                  { text: 'It disappears after Step 1 finishes', correct: false },
+                  { text: 'It gets emailed to your manager', correct: false },
+                  { text: 'It\'s automatically passed as context to Step 2', correct: true },
+                  { text: 'You have to manually copy it', correct: false },
+                ],
+                explanation: 'In a sequential workflow, ClearPath automatically captures each step\'s output and provides it as context to the next step. No manual intervention needed.',
+              },
+            ],
+          },
+        ),
+      ]),
+
+      // ── Scheduler ─────────────────────────────────────────────────────────
+      makeModule('fd-scheduler', 'Scheduled Tasks', 'Automate tasks on a recurring schedule', [], [
+        makeLesson('fd-scheduler-1', 'What Is the Scheduler?', 'interactive-walkthrough', 4,
+          'Understand how to run AI tasks automatically on a schedule',
+          {
+            kind: 'walkthrough',
+            introduction: 'The Scheduler lets you run AI tasks automatically at set times — daily, weekly, or on custom cron schedules. Think of it as setting an alarm clock for your AI assistant: "Every Monday at 9am, pull last week\'s metrics and draft a status report."',
+            steps: [
+              { title: 'Why schedule AI tasks?', description: 'Many tasks are time-based: weekly reports, daily standup summaries, monthly reviews, nightly code scans. Instead of remembering to run them manually, the Scheduler handles it for you. The AI runs while you focus on higher-value work.', tip: 'Start by identifying one task you do on a fixed schedule — that\'s your first candidate.' },
+              { title: 'How scheduling works', description: 'You create a scheduled job with: (1) a prompt or workflow to run, (2) a schedule (daily at 9am, every Monday, first of the month, etc.), and (3) optional agent/skill context. ClearPath spawns a CLI session at the scheduled time and runs the task.' },
+              { title: 'Cron expressions simplified', description: 'Schedules use cron format, but you don\'t need to memorize it. ClearPath provides presets: "Every day at 9am", "Every Monday", "Every first of the month", and a custom option where you pick day/time from dropdowns.' },
+              { title: 'Job history and results', description: 'Every scheduled run is logged with its output, duration, and status (success, failed, timeout). You can review past runs to verify the AI is producing correct results before trusting it with more critical tasks.' },
+              { title: 'Budget awareness', description: 'Scheduled tasks consume API credits just like manual sessions. The Scheduler respects your budget limits — if you\'re close to a ceiling, it will warn you. You can set per-job limits so a runaway task doesn\'t drain your budget.' },
+            ],
+            keyTakeaway: 'The Scheduler automates time-based AI tasks so they run without manual intervention. Always review job history when first setting up a new scheduled task.',
+          },
+        ),
+        makeLesson('fd-scheduler-2', 'Scheduler Knowledge Check — Unlock Feature', 'knowledge-check', 3,
+          'Test your understanding and unlock the Scheduler',
+          {
+            kind: 'knowledge-check',
+            introduction: 'Let\'s make sure you understand the Scheduler before enabling it. Complete this check to unlock scheduled tasks.',
+            questions: [
+              {
+                question: 'What does the Scheduler do?',
+                options: [
+                  { text: 'It schedules meetings on your calendar', correct: false },
+                  { text: 'It runs AI tasks automatically at set times without manual intervention', correct: true },
+                  { text: 'It speeds up the AI model', correct: false },
+                  { text: 'It manages your team\'s work assignments', correct: false },
+                ],
+                explanation: 'The Scheduler spawns CLI sessions at configured times (daily, weekly, etc.) to run AI tasks automatically. You define what to run and when.',
+              },
+              {
+                question: 'What should you do when first setting up a scheduled task?',
+                options: [
+                  { text: 'Set it to run every hour immediately', correct: false },
+                  { text: 'Review job history after the first few runs to verify output quality', correct: true },
+                  { text: 'Disable budget limits so it runs faster', correct: false },
+                  { text: 'Nothing — set it and forget it', correct: false },
+                ],
+                explanation: 'Always review initial runs before trusting automated output. Verify the AI produces correct results, then let it run autonomously. Budget limits protect you from runaway costs.',
+              },
+              {
+                question: 'How do scheduled tasks affect your API budget?',
+                options: [
+                  { text: 'They\'re free — scheduled tasks don\'t use credits', correct: false },
+                  { text: 'They use credits like manual sessions and respect budget limits', correct: true },
+                  { text: 'They use double the credits', correct: false },
+                  { text: 'They bypass all budget controls', correct: false },
+                ],
+                explanation: 'Scheduled tasks consume API credits just like any other session. The Scheduler respects your configured budget ceilings and can be given per-job limits.',
+              },
+            ],
+          },
+        ),
+      ]),
+
+      // ── Sub-Agents ────────────────────────────────────────────────────────
+      makeModule('fd-subagents', 'Sub-Agents & Background Tasks', 'Delegate work to background AI processes', [], [
+        makeLesson('fd-subagents-1', 'What Are Sub-Agents?', 'interactive-walkthrough', 5,
+          'Understand how to delegate tasks to background AI processes',
+          {
+            kind: 'walkthrough',
+            introduction: 'Sub-agents are background AI processes that work independently while you continue your main conversation. Think of them as junior team members you can dispatch: "Go research this while I work on something else." They run in parallel, report back when done, and you review their work.',
+            steps: [
+              { title: 'The delegation model', description: 'In a regular session, you and the AI take turns — you send a prompt, wait for a response, send another. With sub-agents, you can say "go do this in the background" and immediately continue your main task. The sub-agent works independently and reports back.', tip: 'Use the & prefix or /delegate command to spawn a sub-agent from any session.' },
+              { title: 'What sub-agents are good for', description: 'Research tasks ("find all places we use deprecated API X"), long-running analysis ("review every file in this directory for security issues"), and independent work streams ("draft the API docs while I write tests"). Anything that doesn\'t need your real-time input.' },
+              { title: 'The Fleet Status panel', description: 'The Sub-Agents page shows all running and completed background tasks. You can see their status, output, and duration. You can kill a sub-agent if it\'s stuck or taking too long.' },
+              { title: 'Resource awareness', description: 'Each sub-agent is a separate CLI process consuming its own API credits. Running 5 sub-agents simultaneously uses 5x the resources of a single session. Always be intentional about how many you spawn.', tip: 'Start with one sub-agent at a time until you understand the cost implications.' },
+              { title: 'Reviewing sub-agent output', description: 'Sub-agents produce output logs you can review. Always check the results — sub-agents work unsupervised, so their output needs your judgment before acting on it. Think of it as reviewing a report from a team member.' },
+            ],
+            keyTakeaway: 'Sub-agents let you parallelize AI work. Use them for independent, well-defined tasks. Always review their output and be mindful of costs — each one is a separate session.',
+          },
+        ),
+        makeLesson('fd-subagents-2', 'Sub-Agent Knowledge Check — Unlock Feature', 'knowledge-check', 3,
+          'Test your understanding and unlock Sub-Agents',
+          {
+            kind: 'knowledge-check',
+            introduction: 'Let\'s verify you understand sub-agents before enabling them.',
+            questions: [
+              {
+                question: 'What is a sub-agent?',
+                options: [
+                  { text: 'A smaller, less capable AI model', correct: false },
+                  { text: 'A background AI process that works independently while you continue your main task', correct: true },
+                  { text: 'A shortcut for typing prompts', correct: false },
+                  { text: 'Another name for a saved template', correct: false },
+                ],
+                explanation: 'Sub-agents are independent background processes. You delegate a task, they work on it without blocking your main session, and report back when done.',
+              },
+              {
+                question: 'Why should you be careful about running many sub-agents simultaneously?',
+                options: [
+                  { text: 'They slow down your internet connection', correct: false },
+                  { text: 'Each sub-agent uses its own API credits, multiplying resource consumption', correct: true },
+                  { text: 'They can\'t run simultaneously', correct: false },
+                  { text: 'There\'s no reason to be careful', correct: false },
+                ],
+                explanation: 'Each sub-agent is a separate CLI process with its own API usage. Five simultaneous sub-agents use roughly 5x the credits of one session. Be intentional about parallelism.',
+              },
+              {
+                question: 'What should you always do with sub-agent output?',
+                options: [
+                  { text: 'Immediately act on it without checking', correct: false },
+                  { text: 'Delete it', correct: false },
+                  { text: 'Review it carefully before acting — sub-agents work unsupervised', correct: true },
+                  { text: 'Forward it to your manager', correct: false },
+                ],
+                explanation: 'Sub-agents work without your real-time guidance. Always review their output like you would review work from a team member — verify before acting.',
+              },
+            ],
+          },
+        ),
+      ]),
+
+      // ── Knowledge Base ────────────────────────────────────────────────────
+      makeModule('fd-knowledgebase', 'Knowledge Base', 'Auto-generate project documentation the AI can reference', [], [
+        makeLesson('fd-kb-1', 'What Is the Knowledge Base?', 'interactive-walkthrough', 4,
+          'Understand how auto-generated documentation helps AI work better',
+          {
+            kind: 'walkthrough',
+            introduction: 'The Knowledge Base is ClearPath\'s auto-generated documentation system. It analyzes your project and produces structured documentation — architecture overviews, file summaries, dependency maps, and more. This documentation then feeds into your AI sessions as context, so the AI understands your project deeply without you having to explain everything from scratch.',
+            steps: [
+              { title: 'The problem it solves', description: 'Every time you start a new AI session, the AI starts with zero knowledge about your project. You end up re-explaining the same architecture, the same conventions, the same context. The Knowledge Base eliminates this by providing persistent, structured project knowledge.' },
+              { title: 'How generation works', description: 'ClearPath scans your project files and auto-generates up to 10 documentation sections: architecture overview, file index, dependency map, API endpoints, coding conventions, and more. You can edit any section and regenerate as the project evolves.' },
+              { title: 'Browsing and searching', description: 'The Knowledge Base has a section browser (like chapters in a book) and full-text search. You can quickly find information about any part of your project.' },
+              { title: 'Q&A mode', description: 'You can ask natural language questions about the Knowledge Base content — "How does authentication work in this project?" — and get answers drawn from the generated documentation.' },
+              { title: 'When to regenerate', description: 'After major project changes (new modules, architecture shifts, dependency updates), regenerate the Knowledge Base so it stays current. Think of it like updating your team\'s wiki after a big release.' },
+            ],
+            keyTakeaway: 'The Knowledge Base gives your AI persistent project understanding. Generate it once, keep it updated, and every session starts with deep context instead of a blank slate.',
+          },
+        ),
+        makeLesson('fd-kb-2', 'Knowledge Base Knowledge Check — Unlock Feature', 'knowledge-check', 3,
+          'Test your understanding and unlock the Knowledge Base',
+          {
+            kind: 'knowledge-check',
+            introduction: 'Let\'s verify you understand the Knowledge Base before enabling it.',
+            questions: [
+              {
+                question: 'What problem does the Knowledge Base solve?',
+                options: [
+                  { text: 'It makes the AI faster', correct: false },
+                  { text: 'It eliminates the need to re-explain project context in every new session', correct: true },
+                  { text: 'It replaces your project\'s README', correct: false },
+                  { text: 'It stores your chat history', correct: false },
+                ],
+                explanation: 'The Knowledge Base provides persistent project documentation that feeds into AI sessions as context. Instead of re-explaining your architecture every time, the AI already knows.',
+              },
+              {
+                question: 'When should you regenerate the Knowledge Base?',
+                options: [
+                  { text: 'Every time you start a session', correct: false },
+                  { text: 'Never — it\'s always up to date', correct: false },
+                  { text: 'After major project changes like new modules, architecture shifts, or dependency updates', correct: true },
+                  { text: 'Only when it breaks', correct: false },
+                ],
+                explanation: 'The Knowledge Base is a snapshot. After significant project changes, regenerate it so the AI has current information. Minor changes don\'t require regeneration.',
+              },
+            ],
+          },
+        ),
+      ]),
+
+      // ── Voice ─────────────────────────────────────────────────────────────
+      makeModule('fd-voice', 'Voice Commands', 'Control ClearPath with your voice', [], [
+        makeLesson('fd-voice-1', 'What Are Voice Commands?', 'interactive-walkthrough', 3,
+          'Understand how voice input works in ClearPath',
+          {
+            kind: 'walkthrough',
+            introduction: 'Voice Commands let you speak to ClearPath instead of typing. Your speech is converted to text and sent as a prompt — useful for quick questions, hands-free operation, or when typing is inconvenient. It also supports audio notifications so you hear when tasks complete.',
+            steps: [
+              { title: 'How it works', description: 'Click the microphone icon to start recording. Speak your prompt naturally. ClearPath uses speech-to-text to convert your words and sends them as a regular prompt. The AI responds in text (not audio) in the chat.' },
+              { title: 'When voice is useful', description: 'Quick queries while multitasking ("What\'s the status of the build?"), dictating long descriptions, hands-free use while reviewing documents on another screen, or accessibility needs.' },
+              { title: 'Voice command mapping', description: 'Certain phrases map to app actions: "start a new session" opens a session, "go to settings" navigates to Configure. These voice shortcuts mirror keyboard shortcuts for accessibility.' },
+              { title: 'Audio notifications', description: 'When enabled, ClearPath plays audio cues for events: task completion, errors, and permission requests. Useful when you\'re not watching the screen.' },
+            ],
+            keyTakeaway: 'Voice is an input method, not a different AI. Everything you can type, you can say. Audio notifications keep you informed when you\'re not looking at the screen.',
+          },
+        ),
+        makeLesson('fd-voice-2', 'Voice Knowledge Check — Unlock Feature', 'knowledge-check', 2,
+          'Test your understanding and unlock Voice Commands',
+          {
+            kind: 'knowledge-check',
+            introduction: 'Quick check before unlocking Voice Commands.',
+            questions: [
+              {
+                question: 'How does Voice input work in ClearPath?',
+                options: [
+                  { text: 'It uses a separate AI that understands only voice', correct: false },
+                  { text: 'Speech is converted to text and sent as a regular prompt', correct: true },
+                  { text: 'It replaces keyboard input entirely', correct: false },
+                  { text: 'It only works with specific phrases', correct: false },
+                ],
+                explanation: 'Voice is a speech-to-text input method. Your spoken words become text prompts processed by the same AI. Everything you can type, you can say.',
+              },
+              {
+                question: 'What are audio notifications useful for?',
+                options: [
+                  { text: 'Making the app louder', correct: false },
+                  { text: 'Replacing visual notifications entirely', correct: false },
+                  { text: 'Alerting you when tasks complete or need attention while you\'re not watching the screen', correct: true },
+                  { text: 'Nothing — they\'re just for fun', correct: false },
+                ],
+                explanation: 'Audio notifications are useful when you\'re multitasking or not looking at the screen — you\'ll hear when a task finishes, errors occur, or permissions are needed.',
+              },
+            ],
+          },
+        ),
+      ]),
+
+      // ── Compliance Logs ───────────────────────────────────────────────────
+      makeModule('fd-compliance', 'Compliance & Audit Logs', 'Track every action for governance and compliance', [], [
+        makeLesson('fd-compliance-1', 'What Are Compliance Logs?', 'interactive-walkthrough', 5,
+          'Understand audit logging and why it matters for your organization',
+          {
+            kind: 'walkthrough',
+            introduction: 'Compliance Logs record every significant action taken in ClearPath — sessions started, prompts sent, tools used, files accessed, configuration changes, and policy violations. This audit trail is essential for organizations that need to demonstrate governance over AI tool usage.',
+            steps: [
+              { title: 'Why audit logging matters', description: 'In regulated industries (finance, healthcare, government) or security-conscious organizations, you need to prove who did what, when, and why. Compliance logs answer: "What AI prompts were sent?", "What files did the AI access?", "Who changed the security policy?", "Were there any policy violations?"' },
+              { title: 'What gets logged', description: 'Six categories: Session events (start, stop, duration), Prompt events (every input sent to AI), Tool events (file reads, writes, shell commands), File events (files created, modified, deleted), Config events (settings and policy changes), Policy events (violations, blocks, overrides).' },
+              { title: 'Security event tracking', description: 'Specific high-risk actions are flagged as security events: permission escalations, sensitive file access, policy overrides, and unusual usage patterns. These are surfaced separately for quick review.' },
+              { title: 'File pattern protection', description: 'You can define file patterns (like *.env, credentials.*, secrets/*) that trigger alerts when accessed. This creates a second layer of awareness beyond what the CLI\'s built-in permissions provide.' },
+              { title: 'Compliance snapshot export', description: 'You can export the full audit log as a JSON file for external compliance tools, auditors, or your security team. This is how you demonstrate governance to stakeholders who don\'t use ClearPath.' },
+              { title: 'Policy enforcement modes', description: 'Policies can operate in "monitor" mode (log but don\'t block), "warn" mode (show warning, let user proceed), or "enforce" mode (block the action). Start with monitor to understand patterns, then tighten as needed.' },
+            ],
+            keyTakeaway: 'Compliance logs create an audit trail for every AI interaction. Start with monitor mode to understand patterns, then enforce policies based on real data. Export snapshots for auditors.',
+          },
+        ),
+        makeLesson('fd-compliance-2', 'Compliance Knowledge Check — Unlock Feature', 'knowledge-check', 3,
+          'Test your understanding and unlock Compliance Logs',
+          {
+            kind: 'knowledge-check',
+            introduction: 'Let\'s verify you understand compliance logging before enabling it.',
+            questions: [
+              {
+                question: 'What do compliance logs record?',
+                options: [
+                  { text: 'Only error messages', correct: false },
+                  { text: 'Every significant action: sessions, prompts, tool use, file access, config changes, and policy events', correct: true },
+                  { text: 'Only what the AI says back to you', correct: false },
+                  { text: 'Keyboard shortcuts you use', correct: false },
+                ],
+                explanation: 'Compliance logs capture six categories of events across all AI interactions, configuration changes, and policy enforcement actions.',
+              },
+              {
+                question: 'What is the recommended approach when first enabling compliance policies?',
+                options: [
+                  { text: 'Start in enforce mode to block everything suspicious', correct: false },
+                  { text: 'Start in monitor mode to understand patterns, then tighten based on real data', correct: true },
+                  { text: 'Don\'t set any policies — just review logs manually', correct: false },
+                  { text: 'Only enable logging for one person', correct: false },
+                ],
+                explanation: 'Monitor mode gives you visibility without disruption. Once you understand normal usage patterns, you can create targeted policies and move to warn or enforce mode.',
+              },
+              {
+                question: 'How do you share compliance data with auditors or security teams?',
+                options: [
+                  { text: 'Take screenshots', correct: false },
+                  { text: 'Read them the logs over the phone', correct: false },
+                  { text: 'Export a compliance snapshot as JSON for external tools and auditors', correct: true },
+                  { text: 'Give them access to the app', correct: false },
+                ],
+                explanation: 'The compliance snapshot export produces a structured JSON file that external compliance tools, auditors, and security teams can process and review.',
+              },
+            ],
+          },
+        ),
+      ]),
+
+      // ── Plugins ───────────────────────────────────────────────────────────
+      makeModule('fd-plugins', 'Plugin Management', 'Extend ClearPath with third-party plugins', [], [
+        makeLesson('fd-plugins-1', 'What Are Plugins?', 'interactive-walkthrough', 4,
+          'Understand how plugins extend ClearPath\'s capabilities',
+          {
+            kind: 'walkthrough',
+            introduction: 'Plugins extend what ClearPath and the underlying CLIs can do. They add new tools, data sources, and capabilities — like connecting to Jira, Slack, databases, or custom internal systems. Think of them as apps for your AI assistant.',
+            steps: [
+              { title: 'How plugins work', description: 'Plugins are loaded from directories on your file system. They follow the MCP (Model Context Protocol) standard, which means they provide tools that the AI can call during sessions. When a plugin is loaded, the AI gains new abilities.' },
+              { title: 'Examples of plugin capabilities', description: 'A Jira plugin lets the AI create and update tickets. A Slack plugin lets it send messages. A database plugin lets it query your data. A custom plugin could connect to any internal API your team uses.' },
+              { title: 'MCP server configuration', description: 'ClearPath manages MCP server connections — these are the plugin backends. You can add servers via JSON configuration, enable/disable them per session, and see which tools each server provides.' },
+              { title: 'Security considerations', description: 'Plugins can access external systems and data. Only install plugins from trusted sources. Review what tools a plugin provides before enabling it. ClearPath\'s permission system applies to plugin tools just like built-in tools.', tip: 'The AI still needs your approval to use plugin tools unless you\'re in auto-approve mode.' },
+            ],
+            keyTakeaway: 'Plugins extend the AI\'s capabilities by connecting to external systems. Only install from trusted sources, and review what tools each plugin provides.',
+          },
+        ),
+        makeLesson('fd-plugins-2', 'Plugin Knowledge Check — Unlock Feature', 'knowledge-check', 2,
+          'Test your understanding and unlock Plugin Management',
+          {
+            kind: 'knowledge-check',
+            introduction: 'Quick check before unlocking Plugin Management.',
+            questions: [
+              {
+                question: 'What do plugins do in ClearPath?',
+                options: [
+                  { text: 'They change the app\'s visual theme', correct: false },
+                  { text: 'They add new tools and capabilities the AI can use, like connecting to external systems', correct: true },
+                  { text: 'They replace the built-in AI models', correct: false },
+                  { text: 'They speed up the application', correct: false },
+                ],
+                explanation: 'Plugins provide new tools (via MCP protocol) that extend what the AI can do — connecting to Jira, Slack, databases, or custom APIs.',
+              },
+              {
+                question: 'What is the most important consideration when installing a plugin?',
+                options: [
+                  { text: 'Whether it has a nice icon', correct: false },
+                  { text: 'Only install from trusted sources and review what tools it provides', correct: true },
+                  { text: 'Install as many as possible for maximum capability', correct: false },
+                  { text: 'Plugins are always safe — no review needed', correct: false },
+                ],
+                explanation: 'Plugins can access external systems and data. Only install from trusted sources, review their tool list, and remember that ClearPath\'s permission system still applies.',
+              },
+            ],
+          },
+        ),
+      ]),
+
+      // ── Environment Variables ──────────────────────────────────────────────
+      makeModule('fd-envvars', 'Environment Variables', 'Configure environment variables for CLI sessions', [], [
+        makeLesson('fd-envvars-1', 'What Are Environment Variables?', 'interactive-walkthrough', 4,
+          'Understand how environment variables configure CLI behavior',
+          {
+            kind: 'walkthrough',
+            introduction: 'Environment variables are configuration values that the CLI tools read when they start. They control things like API keys, default models, proxy settings, and feature flags. ClearPath lets you manage these from a UI instead of editing terminal configuration files.',
+            steps: [
+              { title: 'Why they matter', description: 'Environment variables control how the CLI connects to AI services. GH_TOKEN authenticates GitHub Copilot. ANTHROPIC_API_KEY authenticates Claude Code. HTTP_PROXY routes through corporate proxies. Without the right variables, the CLI can\'t function.' },
+              { title: 'Common variables', description: 'GH_TOKEN / GITHUB_TOKEN — GitHub authentication. ANTHROPIC_API_KEY — Claude API key. COPILOT_CUSTOM_INSTRUCTIONS_DIRS — Extra instruction directories. CLAUDE_CODE_MODEL — Default Claude model. HTTP_PROXY / HTTPS_PROXY — Corporate proxy settings.' },
+              { title: 'The editor interface', description: 'ClearPath provides a key-value editor where you can add, edit, and remove environment variables. Values are stored encrypted and injected into CLI sessions when they launch. You never need to edit .bashrc or .zshrc.' },
+              { title: 'Security awareness', description: 'Environment variables often contain secrets (API keys, tokens). ClearPath encrypts stored values, but be careful about sharing configuration exports. Never put secrets in plain text files or share them in messages.', tip: 'ClearPath masks secret values in the UI by default. Click to reveal.' },
+            ],
+            keyTakeaway: 'Environment variables configure how CLI tools authenticate and behave. ClearPath manages them securely in a UI so you don\'t need terminal expertise.',
+          },
+        ),
+        makeLesson('fd-envvars-2', 'Environment Variables Knowledge Check — Unlock Feature', 'knowledge-check', 2,
+          'Test your understanding and unlock Environment Variables',
+          {
+            kind: 'knowledge-check',
+            introduction: 'Quick check before unlocking Environment Variable management.',
+            questions: [
+              {
+                question: 'What do environment variables control in the CLI tools?',
+                options: [
+                  { text: 'The color of the app', correct: false },
+                  { text: 'Authentication, default models, proxy settings, and feature flags', correct: true },
+                  { text: 'How fast your internet is', correct: false },
+                  { text: 'The AI\'s personality', correct: false },
+                ],
+                explanation: 'Environment variables configure CLI behavior: API authentication, model defaults, proxy routing, and various feature toggles.',
+              },
+              {
+                question: 'Why should you be careful with environment variable values?',
+                options: [
+                  { text: 'They\'re case-sensitive', correct: false },
+                  { text: 'They often contain secrets like API keys and tokens that must be kept secure', correct: true },
+                  { text: 'They use a lot of memory', correct: false },
+                  { text: 'They can\'t be changed once set', correct: false },
+                ],
+                explanation: 'Many environment variables contain secrets (API keys, auth tokens). ClearPath encrypts them, but never share exports or put secrets in plain text.',
+              },
+            ],
+          },
+        ),
+      ]),
+
+      // ── Webhooks ──────────────────────────────────────────────────────────
+      makeModule('fd-webhooks', 'Webhooks', 'Send notifications to external services', [], [
+        makeLesson('fd-webhooks-1', 'What Are Webhooks?', 'interactive-walkthrough', 4,
+          'Understand how webhooks push ClearPath events to external services',
+          {
+            kind: 'walkthrough',
+            introduction: 'Webhooks send HTTP notifications from ClearPath to external services when events happen. When a task completes, a budget limit is hit, or a policy violation occurs, ClearPath can POST a message to Slack, Teams, PagerDuty, or any system that accepts webhooks.',
+            steps: [
+              { title: 'How webhooks work', description: 'You configure a webhook URL (like a Slack incoming webhook). You select which events trigger it (task completion, errors, budget alerts, policy violations). When the event occurs, ClearPath sends a formatted HTTP POST to your URL with event details.' },
+              { title: 'Common use cases', description: 'Slack/Teams notifications when scheduled tasks complete. PagerDuty alerts for security events. Custom dashboards that aggregate AI usage data. Email notifications via webhook-to-email services. CI/CD triggers when code review agents finish.' },
+              { title: 'Event types', description: 'You can trigger on: session events (start/stop/error), budget events (threshold reached, limit exceeded), policy events (violations, blocks), scheduled task events (success/failure), and notification events (any ClearPath notification).' },
+              { title: 'Testing and reliability', description: 'Always test webhooks before relying on them. ClearPath shows delivery status and response codes for each webhook call. If a webhook fails, it logs the error but doesn\'t retry automatically — check your endpoint configuration.', tip: 'Use a service like webhook.site to test your URL before connecting production systems.' },
+            ],
+            keyTakeaway: 'Webhooks push ClearPath events to external services. Always test endpoints before relying on them for critical alerts.',
+          },
+        ),
+        makeLesson('fd-webhooks-2', 'Webhook Knowledge Check — Unlock Feature', 'knowledge-check', 2,
+          'Test your understanding and unlock Webhooks',
+          {
+            kind: 'knowledge-check',
+            introduction: 'Quick check before unlocking Webhooks.',
+            questions: [
+              {
+                question: 'What do webhooks do in ClearPath?',
+                options: [
+                  { text: 'They let external services control ClearPath', correct: false },
+                  { text: 'They send HTTP notifications to external services when events happen', correct: true },
+                  { text: 'They download updates for the app', correct: false },
+                  { text: 'They connect to social media', correct: false },
+                ],
+                explanation: 'Webhooks are outbound notifications — ClearPath POSTs event data to your configured URL when specific events occur.',
+              },
+              {
+                question: 'What should you always do before relying on a webhook for critical alerts?',
+                options: [
+                  { text: 'Configure as many events as possible', correct: false },
+                  { text: 'Test the endpoint to verify it receives and processes messages correctly', correct: true },
+                  { text: 'Disable all other notification methods', correct: false },
+                  { text: 'Nothing — webhooks always work', correct: false },
+                ],
+                explanation: 'Always test webhook endpoints before relying on them. Verify delivery status and response codes. Failed webhooks are logged but not automatically retried.',
+              },
+            ],
+          },
+        ),
+      ]),
+
+      // ── Experimental Features & PR Scores ────────────────────────────────
+      makeModule('fd-experimental', 'Experimental Features & PR Scores', 'Access cutting-edge features still in development', [], [
+        makeLesson('fd-experimental-1', 'What Are Experimental Features?', 'interactive-walkthrough', 5,
+          'Understand what experimental means and what PR Scores do',
+          {
+            kind: 'walkthrough',
+            introduction: 'Experimental features are capabilities that are still being refined. They work, but may change, have rough edges, or lack polish. Enabling them gives you early access to powerful functionality — but you should understand what you\'re opting into.',
+            steps: [
+              { title: 'What "experimental" means', description: 'Experimental features have been built and tested internally but haven\'t gone through the same level of user validation as core features. They may change behavior between updates, have incomplete documentation, or occasionally produce unexpected results. They won\'t break your data or settings.', tip: 'Think of them as beta features — functional but evolving.' },
+              { title: 'PR Scores', description: 'The flagship experimental feature is PR Scores — a system that scores GitHub pull requests from 0-100 based on size, complexity, review patterns, cycle time, and code quality signals. You can browse repos, view PR lists, score individual or batch PRs, and drill into score breakdowns.' },
+              { title: 'Score breakdown', description: 'Each PR score breaks down into weighted dimensions: size and complexity (are PRs too large?), review coverage (is everything reviewed?), cycle time (how long from open to merge?), description quality (is context provided?), and test coverage signals. Each dimension gets a sub-score.' },
+              { title: 'AI-powered code review', description: 'From any scored PR, you can launch an AI Review session. ClearPath pipes the PR context (score, breakdown, file changes) into a CLI session for AI-powered code review. The AI already knows the score, so it focuses on the areas that need attention.' },
+              { title: 'Team analytics', description: 'The repo-level dashboard shows score distribution, trend over time, author comparison, and cycle time charts. This helps engineering managers identify patterns — are PRs getting larger? Is review coverage declining? Which team members consistently ship high-quality PRs?' },
+              { title: 'Why it\'s experimental', description: 'PR scoring algorithms are being tuned. Weight distributions may change. New scoring dimensions may be added. The UI may evolve. Your scores and data are preserved across updates, but the scoring criteria may shift as we learn what matters most.' },
+            ],
+            keyTakeaway: 'Experimental features give you early access to powerful tools that are still being refined. PR Scores provide data-driven insights into pull request quality. Features may change between updates.',
+          },
+        ),
+        makeLesson('fd-experimental-2', 'Experimental Features Knowledge Check — Unlock Feature', 'knowledge-check', 3,
+          'Test your understanding and unlock Experimental Features',
+          {
+            kind: 'knowledge-check',
+            introduction: 'Let\'s verify you understand experimental features before enabling them.',
+            questions: [
+              {
+                question: 'What does "experimental" mean for ClearPath features?',
+                options: [
+                  { text: 'They\'re dangerous and might delete your files', correct: false },
+                  { text: 'They\'re functional but still evolving — may change behavior between updates', correct: true },
+                  { text: 'They\'re only available on weekends', correct: false },
+                  { text: 'They\'re more expensive to use', correct: false },
+                ],
+                explanation: 'Experimental features work but are still being refined. They won\'t break your data, but may change behavior, have rough edges, or evolve between updates.',
+              },
+              {
+                question: 'What does a PR Score measure?',
+                options: [
+                  { text: 'How popular the repository is', correct: false },
+                  { text: 'Size, complexity, review coverage, cycle time, and description quality of pull requests', correct: true },
+                  { text: 'How many lines of code were changed', correct: false },
+                  { text: 'Whether the code compiles', correct: false },
+                ],
+                explanation: 'PR Scores evaluate multiple dimensions: size/complexity, review coverage, cycle time, description quality, and test coverage signals — producing a 0-100 composite score.',
+              },
+              {
+                question: 'What should you expect when using experimental features?',
+                options: [
+                  { text: 'Perfect stability and no changes', correct: false },
+                  { text: 'Features may change between updates, but your data is preserved', correct: true },
+                  { text: 'Features will be removed without notice', correct: false },
+                  { text: 'You need special permission from your manager', correct: false },
+                ],
+                explanation: 'Experimental features evolve. Scoring algorithms, UI layouts, and behavior may change as improvements are made. Your data and settings are always preserved.',
+              },
+            ],
+          },
+        ),
+      ]),
+
+    ],
+  },
 ]
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -2048,6 +2618,26 @@ export function registerLearnHandlers(ipcMain: IpcMain): void {
 
     if (args.timeMinutes) {
       store.set('totalTimeMinutes', store.get('totalTimeMinutes') + args.timeMinutes)
+    }
+
+    // Auto-unlock feature flags when completing discovery lessons (not skipped)
+    if (!args.skipped) {
+      const flagsToUnlock = LESSON_FLAG_UNLOCKS[args.lessonId]
+      if (flagsToUnlock) {
+        try {
+          const flagStore = new Store<{ flags: Record<string, boolean>; activePresetId: string | null }>({
+            name: 'clear-path-feature-flags',
+            encryptionKey: getStoreEncryptionKey(),
+            defaults: { flags: {}, activePresetId: 'all-on' },
+          })
+          const current = flagStore.get('flags')
+          for (const flag of flagsToUnlock) {
+            current[flag] = true
+          }
+          flagStore.set('flags', current)
+          flagStore.set('activePresetId', null) // Custom mode since we changed flags
+        } catch { /* flag store unavailable — skip unlock */ }
+      }
     }
 
     updateStreak()

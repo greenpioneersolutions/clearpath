@@ -6,11 +6,7 @@ import { checkRateLimit } from '../utils/rateLimiter'
 import { STARTER_AGENTS } from '../starter-pack/agents'
 import Store from 'electron-store'
 import { getStoreEncryptionKey } from '../utils/storeEncryption'
-
-// Starter pack agent IDs — these exist only in memory, not as CLI agent files.
-// When one is active, we inject its system prompt into the session prompt
-// instead of passing --agent (which would fail with "no agent with that name").
-const STARTER_AGENT_IDS = new Set(STARTER_AGENTS.map((a) => a.id))
+import { existsSync, readFileSync } from 'fs'
 
 export function registerIpcHandlers(
   ipcMain: IpcMain,
@@ -49,26 +45,78 @@ export function registerIpcHandlers(
     }
 
     if (agentId) {
-      // Check by ID or by name (wizard passes display name like "Communication Coach")
-      const starterAgent = STARTER_AGENTS.find((a) => a.id === agentId || a.name === agentId)
-      if (starterAgent) {
-        // Starter pack agent: inject system prompt into the initial prompt
-        // instead of passing --agent (CLI doesn't have these as files)
-        const systemContext = `[System: You are "${starterAgent.name}". ${starterAgent.systemPrompt}]\n\n`
-        resolved = {
-          ...resolved,
-          agent: undefined, // don't pass --agent
-          prompt: resolved.prompt ? systemContext + resolved.prompt : systemContext,
+      let agentResolved = false
+
+      // 1. File-based agent — look up the actual file path and verify it exists
+      if (agentId.includes(':file:') && agentManager) {
+        const allAgents = agentManager.listAgents()
+        const match = [...allAgents.copilot, ...allAgents.claude].find((a) => a.id === agentId)
+        if (match?.filePath && existsSync(match.filePath)) {
+          // Pass the full file path so the CLI can find it
+          resolved = { ...resolved, agent: match.filePath }
+          agentResolved = true
+        } else {
+          // File doesn't exist — try to recover by injecting the prompt as system context
+          // Read what we can from the file, or find the matching starter pack agent
+          const slug = agentId.split(':file:').pop()!
+          const starterMatch = STARTER_AGENTS.find(
+            (a) => a.id === slug || a.name.toLowerCase().replace(/[^a-z0-9]+/g, '-') === slug
+          )
+          if (match?.filePath) {
+            // File reference exists but file was deleted — try to read it anyway
+            try {
+              const content = readFileSync(match.filePath, 'utf8')
+              const bodyMatch = /^---[\s\S]*?---\s*\n([\s\S]*)$/.exec(content)
+              const prompt = bodyMatch?.[1]?.trim()
+              if (prompt) {
+                resolved = {
+                  ...resolved,
+                  agent: undefined,
+                  prompt: resolved.prompt ? `${prompt}\n\n${resolved.prompt}` : prompt,
+                }
+                agentResolved = true
+              }
+            } catch { /* file unreadable, fall through */ }
+          }
+          if (!agentResolved && starterMatch) {
+            // Recover from starter pack — inject system prompt and continue without error
+            resolved = {
+              ...resolved,
+              agent: undefined,
+              prompt: resolved.prompt
+                ? `${starterMatch.systemPrompt}\n\n${resolved.prompt}`
+                : starterMatch.systemPrompt,
+            }
+            agentResolved = true
+          }
         }
-      } else if (agentId.includes(':file:')) {
-        // File-based agent: pass the file path via --agent flag
-        const flagValue = agentId.split(':file:').pop()!
-        resolved = { ...resolved, agent: flagValue }
-      } else if (agentWasExplicit) {
-        // Explicitly requested agent (not auto-injected): pass as-is
+      }
+
+      // 2. Starter pack agent ID or name (not a file agent)
+      if (!agentResolved) {
+        const starterAgent = STARTER_AGENTS.find(
+          (a) => a.id === agentId || a.name === agentId
+        )
+        if (starterAgent) {
+          resolved = {
+            ...resolved,
+            agent: undefined,
+            prompt: resolved.prompt
+              ? `${starterAgent.systemPrompt}\n\n${resolved.prompt}`
+              : starterAgent.systemPrompt,
+          }
+          agentResolved = true
+        }
+      }
+
+      // 3. Explicitly requested agent name — pass as-is (let CLI resolve)
+      if (!agentResolved && agentWasExplicit) {
         resolved = { ...resolved, agent: agentId }
-      } else {
-        // Unrecognized agent ID (not file-based, not starter pack, not explicit) — skip it.
+        agentResolved = true
+      }
+
+      // 4. Unresolved — don't pass a bad agent flag
+      if (!agentResolved) {
         resolved = { ...resolved, agent: undefined }
       }
     }

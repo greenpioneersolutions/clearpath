@@ -143,10 +143,15 @@ export default function Work(): JSX.Element {
         for (const info of activeSessions) {
           if (!updated.has(info.sessionId)) {
             const savedLog = logMap.get(info.sessionId) ?? []
-            const messages: OutputMessage[] = savedLog.map((entry, i) => ({
-              id: String(i),
-              output: { type: entry.type as OutputMessage['output']['type'], content: entry.content, metadata: entry.metadata as Record<string, unknown> | undefined },
-            }))
+            const messages: OutputMessage[] = savedLog.map((entry, i) => {
+              const e = entry as Record<string, unknown>
+              return {
+                id: String(i),
+                output: { type: entry.type as OutputMessage['output']['type'], content: entry.content, metadata: entry.metadata as Record<string, unknown> | undefined },
+                sender: (e.sender as OutputMessage['sender']) ?? undefined,
+                timestamp: (e.timestamp as number) ?? undefined,
+              }
+            })
             if (messages.length === 0) {
               messages.push({ id: '0', output: { type: 'status', content: `Session restored (${info.cli})` } })
             }
@@ -168,6 +173,7 @@ export default function Work(): JSX.Element {
             id: String(i),
             output: { type: entry.type as OutputMessage['output']['type'], content: entry.content, metadata: entry.metadata as Record<string, unknown> | undefined },
             sender: (entry.sender as OutputMessage['sender']) ?? undefined,
+            timestamp: (entry as Record<string, unknown>).timestamp as number | undefined,
           }))
           if (messages.length === 0) continue // Skip empty sessions
           const info: SessionInfo = {
@@ -227,7 +233,7 @@ export default function Work(): JSX.Element {
         const s = prev.get(sessionId)
         if (!s) return prev
         const updated = new Map(prev)
-        updated.set(sessionId, { ...s, messages: [...s.messages, { id: String(s.msgIdCounter), output, timestamp: Date.now() }], msgIdCounter: s.msgIdCounter + 1 })
+        updated.set(sessionId, { ...s, messages: [...s.messages, { id: String(s.msgIdCounter), output, sender: 'ai' as const, timestamp: Date.now() }], msgIdCounter: s.msgIdCounter + 1 })
         return updated
       })
     }
@@ -244,20 +250,20 @@ export default function Work(): JSX.Element {
       setSessions((prev) => {
         const s = prev.get(sessionId)
         if (!s) return prev
-        // Only mark as stopped and show exit message for non-zero exits (real failures).
         // Exit code 0 on the per-turn model is normal — the CLI exited after responding.
-        if (code !== 0) {
-          const updated = new Map(prev)
-          updated.set(sessionId, {
-            ...s,
-            info: { ...s.info, status: 'stopped' },
-            messages: [...s.messages, { id: String(s.msgIdCounter), output: { type: 'error', content: `Session error (exit code ${code})` } }],
-            msgIdCounter: s.msgIdCounter + 1,
-            processing: false,
-          })
-          return updated
-        }
-        return prev
+        if (code === 0) return prev
+
+        // Non-zero exit: show a gentle status message instead of a blocking error.
+        // Keep the session as 'running' so users can retry by sending another message.
+        // The CLI process will be respawned on the next input.
+        const updated = new Map(prev)
+        updated.set(sessionId, {
+          ...s,
+          messages: [...s.messages, { id: String(s.msgIdCounter), output: { type: 'status', content: 'The AI process ended unexpectedly. You can continue typing — a new process will start automatically.' }, sender: 'system' as const, timestamp: Date.now() }],
+          msgIdCounter: s.msgIdCounter + 1,
+          processing: false,
+        })
+        return updated
       })
     }
     const handleTurnStart = ({ sessionId }: { sessionId: string }) => {
@@ -302,12 +308,30 @@ export default function Work(): JSX.Element {
 
   // ── Session management ──────────────────────────────────────────────────
 
-  const startSession = useCallback(async (opts: { cli: 'copilot' | 'claude'; name?: string; workingDirectory?: string; initialPrompt?: string; agent?: string }) => {
+  const startSession = useCallback(async (opts: { cli: 'copilot' | 'claude'; name?: string; workingDirectory?: string; initialPrompt?: string; displayPrompt?: string; agent?: string; model?: string; contextSummary?: { memories: string[]; agent?: string; skill?: string } }) => {
     const { sessionId } = (await window.electronAPI.invoke('cli:start-session', {
-      cli: opts.cli, mode: 'interactive', name: opts.name, workingDirectory: opts.workingDirectory, prompt: opts.initialPrompt, agent: opts.agent,
+      cli: opts.cli, mode: 'interactive', name: opts.name, workingDirectory: opts.workingDirectory, prompt: opts.initialPrompt, agent: opts.agent, model: opts.model,
     })) as { sessionId: string }
     const info: SessionInfo = { sessionId, name: opts.name, cli: opts.cli, status: 'running', startedAt: Date.now() }
-    const initial: OutputMessage[] = opts.initialPrompt ? [{ id: '0', output: { type: 'text', content: opts.initialPrompt }, sender: 'user', timestamp: Date.now() }] : []
+
+    // Show the clean user message in chat, not the raw injected context
+    const initial: OutputMessage[] = []
+    if (opts.initialPrompt) {
+      // If we have context (memories, agent, skill), show a summary card instead of raw text
+      if (opts.contextSummary) {
+        const parts: string[] = []
+        if (opts.contextSummary.agent) parts.push(`**Agent:** ${opts.contextSummary.agent}`)
+        if (opts.contextSummary.memories.length > 0) parts.push(`**Memories:** ${opts.contextSummary.memories.join(', ')}`)
+        if (opts.contextSummary.skill) parts.push(`**Skill:** ${opts.contextSummary.skill}`)
+        if (parts.length > 0) {
+          initial.push({ id: 'ctx', output: { type: 'status', content: `Session launched with context:\n${parts.join(' · ')}` }, sender: 'system', timestamp: Date.now() })
+        }
+      }
+      // Show the user's actual message (not the full injected prompt)
+      const userMsg = opts.displayPrompt ?? opts.initialPrompt
+      initial.push({ id: '0', output: { type: 'text', content: userMsg }, sender: 'user', timestamp: Date.now() })
+    }
+
     setSessions((prev) => { const u = new Map(prev); u.set(sessionId, { info, messages: initial, mode: 'normal', msgIdCounter: initial.length, processing: !!opts.initialPrompt, usageHistory: [] }); return u })
     setSelectedId(sessionId)
   }, [])
@@ -734,7 +758,7 @@ export default function Work(): JSX.Element {
             initialStep={wizardStep as 'choose' | 'fill' | 'context' | 'review' | undefined}
             onLaunchSession={(opts) => {
               void (async () => {
-                await startSession({ cli: opts.cli, name: opts.name, initialPrompt: opts.initialPrompt, agent: opts.agent })
+                await startSession({ cli: opts.cli, name: opts.name, initialPrompt: opts.initialPrompt, displayPrompt: opts.displayPrompt, agent: opts.agent, model: opts.model, contextSummary: opts.contextSummary })
                 setWorkMode('session')
               })()
             }}

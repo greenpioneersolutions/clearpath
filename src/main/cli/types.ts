@@ -34,7 +34,7 @@ export interface ActiveSession {
   /** The prompt text sent for the current turn. */
   lastPrompt: string
   /** Full message history for this session (for rehydration when UI remounts). */
-  messageLog: Array<{ type: string; content: string; metadata?: unknown; sender?: 'user' | 'ai' | 'system' }>
+  messageLog: Array<{ type: string; content: string; metadata?: unknown; sender?: 'user' | 'ai' | 'system'; timestamp?: number }>
 }
 
 // ── Sub-agent / delegated task types ─────────────────────────────────────────
