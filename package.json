@@ -59,6 +59,7 @@
     "files": [
       "out/**/*"
     ],
+    "npmRebuild": false,
     "icon": "build/icon",
     "mac": {
       "target": "dmg",
