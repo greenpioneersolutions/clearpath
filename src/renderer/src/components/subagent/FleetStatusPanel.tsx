@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import type { IpcRendererEvent } from 'electron'
 import type { ParsedOutput, SessionInfo } from '../../types/ipc'
 import type { FleetAgent } from '../../types/subagent'
 
@@ -90,7 +89,7 @@ export default function FleetStatusPanel({ copilotSessions }: Props): JSX.Elemen
     // Listen for output from this session
     const offOutput = window.electronAPI.on(
       'cli:output',
-      (_e: IpcRendererEvent, data: { sessionId: string; output: ParsedOutput }) => {
+      (data: { sessionId: string; output: ParsedOutput }) => {
         if (data.sessionId !== selectedSession) return
         bufferRef.current.push(data.output.content)
         setRawOutput([...bufferRef.current])
@@ -103,7 +102,7 @@ export default function FleetStatusPanel({ copilotSessions }: Props): JSX.Elemen
 
     const offTurnEnd = window.electronAPI.on(
       'cli:turn-end',
-      (_e: IpcRendererEvent, data: { sessionId: string }) => {
+      (data: { sessionId: string }) => {
         if (data.sessionId !== selectedSession) return
         setFetching(false)
         setLastFetched(Date.now())

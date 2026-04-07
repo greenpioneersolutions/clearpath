@@ -43,7 +43,7 @@ function UpdateBanner(): JSX.Element | null {
   const [dismissed, setDismissed] = useState(false)
 
   useEffect(() => {
-    const unsub = window.electronAPI.on('updater:status', (_e, data: unknown) => {
+    const unsub = window.electronAPI.on('updater:status', (data: unknown) => {
       const status = data as UpdateStatus
       setUpdate(status)
       setDismissed(false)

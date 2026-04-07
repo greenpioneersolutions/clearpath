@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from 'react'
-import type { IpcRendererEvent } from 'electron'
 import type { SessionInfo } from '../types/ipc'
 import type { SubAgentInfo } from '../types/subagent'
 import ProcessCard from '../components/subagent/ProcessCard'
@@ -45,14 +44,14 @@ export default function SubAgents(): JSX.Element {
   useEffect(() => {
     const offSpawned = window.electronAPI.on(
       'subagent:spawned',
-      (_e: IpcRendererEvent, info: SubAgentInfo) => {
+      (info: SubAgentInfo) => {
         setAgents((prev) => [info, ...prev])
       },
     )
 
     const offStatus = window.electronAPI.on(
       'subagent:status-changed',
-      (_e: IpcRendererEvent, info: SubAgentInfo) => {
+      (info: SubAgentInfo) => {
         setAgents((prev) =>
           prev.map((a) => (a.id === info.id ? info : a)),
         )

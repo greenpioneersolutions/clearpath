@@ -45,19 +45,21 @@ export default function SetupWizardFull(): JSX.Element {
   const [authState, setAuthState] = useState<AuthState | null>(null)
   const [loading, setLoading] = useState(true)
 
-  // Agent creation form
-  const [agentName, setAgentName] = useState('My Communication Style')
-  const [agentStyle, setAgentStyle] = useState('')
-  const [agentTraits, setAgentTraits] = useState('')
+  // Agent creation form — pre-filled from Communication Coach starter
+  const [agentName, setAgentName] = useState('Communication Coach')
+  const [agentDesc, setAgentDesc] = useState('')
+  const [agentPrompt, setAgentPrompt] = useState('')
   const [agentCli, setAgentCli] = useState<'copilot' | 'claude'>('copilot')
   const [agentSaving, setAgentSaving] = useState(false)
+  const [agentLoaded, setAgentLoaded] = useState(false)
 
-  // Skill creation form
-  const [skillName, setSkillName] = useState('')
+  // Skill creation form — pre-filled from Audience & Tone Rewrite starter
+  const [skillName, setSkillName] = useState('Audience & Tone Rewrite')
   const [skillDesc, setSkillDesc] = useState('')
   const [skillBody, setSkillBody] = useState('')
   const [skillCli, setSkillCli] = useState<'copilot' | 'claude'>('copilot')
   const [skillSaving, setSkillSaving] = useState(false)
+  const [skillLoaded, setSkillLoaded] = useState(false)
 
   // Memory creation form
   const [memTitle, setMemTitle] = useState('')
@@ -90,12 +92,35 @@ export default function SetupWizardFull(): JSX.Element {
 
   useEffect(() => { void loadState() }, [loadState])
 
+  // Pre-fill agent and skill from starter pack
+  useEffect(() => {
+    if (agentLoaded && skillLoaded) return
+    void (async () => {
+      const [agentDef, skillDef] = await Promise.all([
+        window.electronAPI.invoke('starter-pack:get-agent', { id: 'communication-coach' }) as Promise<{ name: string; description: string; systemPrompt: string } | null>,
+        window.electronAPI.invoke('starter-pack:get-skill', { id: 'audience-tone-rewrite' }) as Promise<{ name: string; description: string; skillPrompt: string } | null>,
+      ])
+      if (agentDef && !agentLoaded) {
+        setAgentName(agentDef.name)
+        setAgentDesc(agentDef.description)
+        setAgentPrompt(agentDef.systemPrompt)
+        setAgentLoaded(true)
+      }
+      if (skillDef && !skillLoaded) {
+        setSkillName(skillDef.name)
+        setSkillDesc(skillDef.description)
+        setSkillBody(skillDef.skillPrompt)
+        setSkillLoaded(true)
+      }
+    })()
+  }, [agentLoaded, skillLoaded])
+
   // Listen for login events
   useEffect(() => {
-    const unsub1 = window.electronAPI.on('auth:login-output', (_e: unknown, data: { line: string }) => {
+    const unsub1 = window.electronAPI.on('auth:login-output', (data: { line: string }) => {
       setLoginOutput((prev) => [...prev.slice(-50), data.line])
     })
-    const unsub2 = window.electronAPI.on('auth:login-complete', (_e: unknown, data: { success: boolean }) => {
+    const unsub2 = window.electronAPI.on('auth:login-complete', (data: { success: boolean }) => {
       setLoginStatus(data.success ? 'success' : 'failed')
       if (data.success) void refreshAuth()
     })
@@ -346,11 +371,27 @@ export default function SetupWizardFull(): JSX.Element {
         {step === 'agent' && (
           <div className="space-y-5">
             <div>
-              <h2 className="text-lg font-bold text-gray-900">Step 3: Your Communication Agent</h2>
+              <h2 className="text-lg font-bold text-gray-900">Step 3: Set Up Your First Agent</h2>
               <p className="text-sm text-gray-500 mt-1">
-                Let's create an agent that matches your communication style. This agent will help you draft messages,
-                emails, and documents that sound like <em>you</em>.
+                Agents are specialized AI assistants with a clear focus. We recommend starting with a <strong>Communication Coach</strong> — an agent
+                that helps you draft emails, prepare for difficult conversations, write stakeholder updates, and communicate with confidence.
               </p>
+            </div>
+
+            <div className="bg-indigo-50 border border-indigo-200 rounded-xl px-5 py-4">
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-lg bg-indigo-100 flex items-center justify-center flex-shrink-0 mt-0.5 text-base">
+                  🤖
+                </div>
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-900">Why a Communication Coach?</h3>
+                  <p className="text-xs text-gray-600 mt-1 leading-relaxed">
+                    Communication is the single skill every professional uses daily. A Communication Coach agent knows your style,
+                    your audience, and your goals — so instead of staring at a blank email for 10 minutes, you get a polished draft
+                    in seconds. It's the quickest way to see the power of a personalized agent.
+                  </p>
+                </div>
+              </div>
             </div>
 
             <div className="space-y-4">
@@ -361,22 +402,10 @@ export default function SetupWizardFull(): JSX.Element {
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">How do you communicate most effectively?</label>
-                <textarea value={agentStyle} onChange={(e) => setAgentStyle(e.target.value)} rows={3}
-                  placeholder="e.g., I keep things concise and action-oriented. I lead with the bottom line, then provide supporting details. I prefer bullet points over paragraphs."
+                <label className="block text-xs font-medium text-gray-700 mb-1">Description</label>
+                <textarea value={agentDesc} onChange={(e) => setAgentDesc(e.target.value)} rows={2}
+                  placeholder="What this agent does..."
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none" />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">What would colleagues say about your communication style?</label>
-                <textarea value={agentTraits} onChange={(e) => setAgentTraits(e.target.value)} rows={2}
-                  placeholder="e.g., Direct but friendly. Good at explaining technical concepts simply. Always includes next steps."
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none" />
-              </div>
-
-              <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 text-xs text-blue-700">
-                We'll combine your answers into a system prompt that defines how the AI communicates on your behalf.
-                You can always edit this later in the Agents panel.
               </div>
 
               {authState && (
@@ -386,18 +415,25 @@ export default function SetupWizardFull(): JSX.Element {
                     {authState.copilot.authenticated && (
                       <button onClick={() => setAgentCli('copilot')}
                         className={`px-3 py-1.5 text-xs rounded-lg border transition-colors ${agentCli === 'copilot' ? 'bg-indigo-600 text-white border-indigo-600' : 'border-gray-300 text-gray-600 hover:bg-gray-50'}`}>
-                        Copilot
+                        GitHub Copilot
                       </button>
                     )}
                     {authState.claude.authenticated && (
                       <button onClick={() => setAgentCli('claude')}
                         className={`px-3 py-1.5 text-xs rounded-lg border transition-colors ${agentCli === 'claude' ? 'bg-orange-500 text-white border-orange-500' : 'border-gray-300 text-gray-600 hover:bg-gray-50'}`}>
-                        Claude
+                        Claude Code
                       </button>
                     )}
                   </div>
                 </div>
               )}
+
+              <div className="bg-gray-50 border border-gray-200 rounded-lg px-4 py-3">
+                <p className="text-xs text-gray-600">
+                  This agent comes pre-loaded with a full Communication Coach system prompt from our Starter Pack.
+                  It's ready to use as-is — just create it and go. You can customize the prompt anytime from the <strong>Agents</strong> page.
+                </p>
+              </div>
             </div>
 
             <div className="flex items-center gap-3">
@@ -406,15 +442,13 @@ export default function SetupWizardFull(): JSX.Element {
                 onClick={async () => {
                   if (!agentName.trim()) return
                   setAgentSaving(true)
-                  const prompt = [
-                    `You are a communication assistant that writes in the user's personal style.`,
-                    agentStyle && `\n## Communication Style\n${agentStyle}`,
-                    agentTraits && `\n## Key Traits\n${agentTraits}`,
-                    `\nAlways match this style when drafting emails, messages, documents, or any written communication.`,
-                  ].filter(Boolean).join('\n')
-
                   await window.electronAPI.invoke('agent:create', {
-                    def: { cli: agentCli, name: agentName.trim(), description: 'Personal communication style agent', prompt },
+                    def: {
+                      cli: agentCli,
+                      name: agentName.trim(),
+                      description: agentDesc.trim() || 'Communication Coach from Starter Pack',
+                      prompt: agentPrompt,
+                    },
                   })
                   await updateStep({ agentCreated: true })
                   setAgentSaving(false)
@@ -435,41 +469,49 @@ export default function SetupWizardFull(): JSX.Element {
         {step === 'skill' && (
           <div className="space-y-5">
             <div>
-              <h2 className="text-lg font-bold text-gray-900">Step 4: Your First Skill</h2>
+              <h2 className="text-lg font-bold text-gray-900">Step 4: Pair It with a Skill</h2>
               <p className="text-sm text-gray-500 mt-1">
-                A skill teaches the AI how to do something you're good at. Think about what you do best in your job —
-                that's what we want to capture here.
+                Skills teach agents <em>how</em> to do specific tasks. We recommend pairing your Communication Coach
+                with the <strong>Audience & Tone Rewrite</strong> skill — it helps rewrite any message for a specific
+                audience and tone, so your communication always lands the right way.
               </p>
             </div>
 
-            <div className="bg-purple-50 border border-purple-200 rounded-lg px-4 py-3 text-xs text-purple-700">
-              <strong>Examples:</strong> "Data Analysis Process" — step-by-step how you analyze datasets.
-              "Sprint Planning Checklist" — your framework for running sprint planning.
-              "Client Onboarding Email Sequence" — templates and structure you follow for new clients.
+            <div className="bg-amber-50 border border-amber-200 rounded-xl px-5 py-4">
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center flex-shrink-0 mt-0.5 text-base">
+                  ⚡
+                </div>
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-900">Why this skill?</h3>
+                  <p className="text-xs text-gray-600 mt-1 leading-relaxed">
+                    Every time you write something for a different audience — an executive summary, a team update,
+                    a client email — the tone, detail level, and structure need to change. This skill handles that automatically.
+                    Give it your rough draft, tell it who's reading, and it produces a calibrated rewrite with an explanation of what changed.
+                  </p>
+                </div>
+              </div>
             </div>
 
             <div className="space-y-4">
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">What are you creating a skill for?</label>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Skill Name</label>
                 <input type="text" value={skillName} onChange={(e) => setSkillName(e.target.value)}
-                  placeholder="e.g., Sprint Planning Checklist"
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Brief description</label>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Description</label>
                 <input type="text" value={skillDesc} onChange={(e) => setSkillDesc(e.target.value)}
-                  placeholder="A few words about what this skill does"
+                  placeholder="What this skill does"
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
               </div>
 
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">
-                  Write out your process, checklist, or framework
-                </label>
-                <textarea value={skillBody} onChange={(e) => setSkillBody(e.target.value)} rows={8}
-                  placeholder={"Write the instructions here. For example:\n\n1. Start by reviewing the previous sprint's velocity\n2. Check the backlog and prioritize by business impact\n3. Assign story points based on complexity\n4. Ensure no one is over-allocated\n5. Document risks and dependencies"}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-y" />
+              <div className="bg-gray-50 border border-gray-200 rounded-lg px-4 py-3">
+                <p className="text-xs text-gray-600">
+                  This skill comes pre-loaded with a full Audience & Tone Rewrite prompt from our Starter Pack.
+                  It's ready to use as-is. You can edit the prompt anytime from the <strong>Skills</strong> page.
+                </p>
               </div>
             </div>
 
@@ -482,7 +524,7 @@ export default function SetupWizardFull(): JSX.Element {
                   const cwd = await window.electronAPI.invoke('app:get-cwd') as string
                   await window.electronAPI.invoke('skills:save', {
                     name: skillName.trim(), description: skillDesc.trim(), body: skillBody.trim(),
-                    scope: 'project', cli: skillCli, workingDirectory: cwd,
+                    scope: 'global', cli: skillCli, workingDirectory: cwd,
                   })
                   await updateStep({ skillCreated: true })
                   setSkillSaving(false)
@@ -491,7 +533,7 @@ export default function SetupWizardFull(): JSX.Element {
                 disabled={skillSaving || !skillName.trim() || !skillBody.trim()}
                 className="px-6 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-500 disabled:opacity-40 transition-colors"
               >
-                {skillSaving ? 'Saving...' : 'Save Skill & Continue'}
+                {skillSaving ? 'Saving...' : 'Create Skill & Continue'}
               </button>
               <button onClick={() => { void updateStep({ skillCreated: true }); setStep('memory') }}
                 className="text-xs text-gray-400 hover:text-gray-600 ml-auto">Skip for now</button>
@@ -503,39 +545,82 @@ export default function SetupWizardFull(): JSX.Element {
         {step === 'memory' && (
           <div className="space-y-5">
             <div>
-              <h2 className="text-lg font-bold text-gray-900">Step 5: Your First Memory</h2>
+              <h2 className="text-lg font-bold text-gray-900">Step 5: Create Your First Memory</h2>
               <p className="text-sm text-gray-500 mt-1">
-                Memories are notes and context you save for the AI to reference later.
-                Think of something recent — a meeting, a conversation, an idea — that you'd normally have to rewrite or re-explain.
+                Memories are the context that makes your agents truly powerful. When you save a memory, your agent can reference it
+                later — so instead of re-explaining the same meeting, project, or decision, the AI already knows what happened.
               </p>
+            </div>
+
+            <div className="bg-green-50 border border-green-200 rounded-xl px-5 py-4">
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-lg bg-green-100 flex items-center justify-center flex-shrink-0 mt-0.5 text-base">
+                  📝
+                </div>
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-900">Why memory matters</h3>
+                  <p className="text-xs text-gray-600 mt-1 leading-relaxed">
+                    You save a memory once and then use it over and over. Capture a meeting, and your agent
+                    can draft the follow-up emails, track the action items, and reference the decisions weeks later.
+                    That's the power: save it once, never re-explain it.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <p className="text-xs font-medium text-gray-700 mb-2">Pick a category to get started — what do you want to capture?</p>
+              <div className="grid grid-cols-2 gap-2">
+                {([
+                  { id: 'meeting', label: 'A Meeting', desc: 'Meeting notes, decisions made, action items to follow up on', icon: '🗓️', placeholder: 'Paste or type your meeting notes here. Include who attended, what was decided, and what needs to happen next.' },
+                  { id: 'conversation', label: 'A Conversation', desc: 'Something you need to communicate or take action on', icon: '💬', placeholder: 'Describe the conversation — who it was with, what was discussed, and what action you need to take.' },
+                  { id: 'reference', label: 'A Reference', desc: 'Something you want to come back to later — a newsletter, a report, research', icon: '📌', placeholder: 'Paste the reference material here — an article summary, report findings, or notes you want to revisit.' },
+                  { id: 'outcome', label: 'An Outcome', desc: 'A decision or result you need to drive or track', icon: '🎯', placeholder: 'Describe the outcome — what decision was made, what the expected result is, and what you need to do next.' },
+                  { id: 'idea', label: 'An Idea', desc: 'Something you\'re developing that you want to refine', icon: '💡', placeholder: 'Write out your idea — even rough notes are fine. You can ask your agent to help refine it later.' },
+                ] as const).map((cat) => (
+                  <button key={cat.id}
+                    onClick={() => {
+                      setMemCategory(cat.id)
+                      if (!memTitle) setMemTitle('')
+                      if (!memContent) setMemContent('')
+                    }}
+                    className={`text-left px-4 py-3 border rounded-xl transition-all ${
+                      memCategory === cat.id
+                        ? 'border-indigo-400 bg-indigo-50 ring-1 ring-indigo-200'
+                        : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                    }`}>
+                    <div className="flex items-center gap-2">
+                      <span className="text-base">{cat.icon}</span>
+                      <span className="text-xs font-medium text-gray-800">{cat.label}</span>
+                    </div>
+                    <p className="text-[10px] text-gray-500 mt-1">{cat.desc}</p>
+                  </button>
+                ))}
+              </div>
             </div>
 
             <div className="space-y-4">
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">Title</label>
                 <input type="text" value={memTitle} onChange={(e) => setMemTitle(e.target.value)}
-                  placeholder="e.g., Q1 Planning Meeting Notes"
+                  placeholder={memCategory === 'meeting' ? 'e.g., Q1 Planning Meeting Notes'
+                    : memCategory === 'conversation' ? 'e.g., Follow-up with Sarah re: project timeline'
+                    : memCategory === 'reference' ? 'e.g., Industry Report Key Findings'
+                    : memCategory === 'outcome' ? 'e.g., Budget Approval Decision'
+                    : 'e.g., New onboarding flow idea'}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Category</label>
-                <div className="flex gap-2 flex-wrap">
-                  {['meeting', 'conversation', 'reference', 'outcome', 'idea'].map((cat) => (
-                    <button key={cat} onClick={() => setMemCategory(cat)}
-                      className={`px-3 py-1.5 text-xs rounded-lg border capitalize transition-colors ${
-                        memCategory === cat ? 'bg-indigo-600 text-white border-indigo-600' : 'border-gray-300 text-gray-600 hover:bg-gray-50'
-                      }`}>
-                      {cat}
-                    </button>
-                  ))}
-                </div>
               </div>
 
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">Content</label>
                 <textarea value={memContent} onChange={(e) => setMemContent(e.target.value)} rows={8}
-                  placeholder={"Write your notes here. This could be:\n\n• Meeting notes with key decisions\n• A conversation summary with action items\n• Reference material you need to cite often\n• An outcome or result you want to remember\n• An idea you're developing"}
+                  placeholder={
+                    memCategory === 'meeting' ? 'Paste or type your meeting notes here. Include who attended, what was decided, and what needs to happen next.'
+                    : memCategory === 'conversation' ? 'Describe the conversation — who it was with, what was discussed, and what action you need to take.'
+                    : memCategory === 'reference' ? 'Paste the reference material here — an article summary, report findings, or notes you want to revisit.'
+                    : memCategory === 'outcome' ? 'Describe the outcome — what decision was made, what the expected result is, and what you need to do next.'
+                    : 'Write out your idea — even rough notes are fine. You can ask your agent to help refine it later.'
+                  }
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-y" />
               </div>
             </div>

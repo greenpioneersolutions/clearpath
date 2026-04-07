@@ -93,6 +93,10 @@ export default function SessionWizard({ onLaunchSession, defaultCli, initialOpti
   // Context visibility settings
   const [ctxSettings, setCtxSettings] = useState({ showUseContext: true, showMemories: true, showAgents: true, showSkills: true })
 
+  // Starter agents for empty state
+  const [starterAgents, setStarterAgents] = useState<{ id: string; name: string; description: string; systemPrompt: string }[]>([])
+  const [creatingStarterAgent, setCreatingStarterAgent] = useState<string | null>(null)
+
   // ── Load config ──────────────────────────────────────────────────────────
 
   const load = useCallback(async () => {
@@ -146,6 +150,15 @@ export default function SessionWizard({ onLaunchSession, defaultCli, initialOpti
     const allAgents = [...(agentResult?.copilot ?? []), ...(agentResult?.claude ?? [])]
     setAgents(allAgents)
     setSkills(skillResult ?? [])
+
+    // If no agents, load starter pack agents for quick creation
+    if (allAgents.length === 0) {
+      try {
+        const starters = await window.electronAPI.invoke('starter-pack:get-visible-agents') as
+          { id: string; name: string; description: string; systemPrompt: string }[]
+        setStarterAgents(Array.isArray(starters) ? starters.slice(0, 3) : [])
+      } catch { /* ignore */ }
+    }
   }, [])
 
   // ── Step handlers ────────────────────────────────────────────────────────
@@ -441,9 +454,46 @@ export default function SessionWizard({ onLaunchSession, defaultCli, initialOpti
           {contextTab === 'agents' && (
             <div className="space-y-2">
               {filteredAgents.length === 0 ? (
-                <p className="text-xs text-gray-500 text-center py-6">
-                  {agents.length === 0 ? 'No agents available. Create agents in the Agents panel.' : 'No matches found.'}
-                </p>
+                agents.length === 0 && starterAgents.length > 0 ? (
+                  <div className="space-y-3 py-2">
+                    <p className="text-xs text-gray-400 text-center">
+                      No agents yet. Create one from the Starter Pack to get started:
+                    </p>
+                    {starterAgents.map((sa) => (
+                      <div key={sa.id} className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <span className="text-sm font-medium text-gray-200">{sa.name}</span>
+                            <p className="text-[10px] text-gray-500 mt-0.5 line-clamp-2">{sa.description}</p>
+                          </div>
+                          <button
+                            onClick={async () => {
+                              setCreatingStarterAgent(sa.id)
+                              try {
+                                const result = await window.electronAPI.invoke('agent:create', {
+                                  def: { cli: defaultCli, name: sa.name, description: sa.description, prompt: sa.systemPrompt },
+                                }) as { agentDef: AgentItem }
+                                // Add to agents list and auto-select
+                                setAgents((prev) => [...prev, result.agentDef])
+                                setSelectedAgent(result.agentDef.id)
+                                setStarterAgents([])
+                              } catch { /* ignore */ }
+                              setCreatingStarterAgent(null)
+                            }}
+                            disabled={creatingStarterAgent === sa.id}
+                            className="px-3 py-1.5 text-xs font-medium bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-40 transition-colors flex-shrink-0"
+                          >
+                            {creatingStarterAgent === sa.id ? 'Creating...' : 'Create'}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-gray-500 text-center py-6">
+                    {agents.length === 0 ? 'No agents available. Create agents in the Agents panel.' : 'No matches found.'}
+                  </p>
+                )
               ) : paginatedAgents.map((agent) => {
                 const isSelected = selectedAgent === agent.id
                 return (

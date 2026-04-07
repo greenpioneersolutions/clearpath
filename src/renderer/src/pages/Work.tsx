@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom'
-import type { IpcRendererEvent } from 'electron'
 import type { ParsedOutput, SessionInfo, HistoricalSession } from '../types/ipc'
 import type { PromptTemplate } from '../types/template'
 import OutputDisplay, { type OutputMessage, type UsageStats } from '../components/OutputDisplay'
@@ -91,6 +90,7 @@ export default function Work(): JSX.Element {
   const [wizardStep, setWizardStep] = useState<string | undefined>(undefined)
   const sessionsRef = useRef(sessions)
   sessionsRef.current = sessions
+  const pendingQuickPrompt = useRef<string | null>(null)
 
   // ── Deep-link: parse URL params and location state ──────────────────────
   useEffect(() => {
@@ -106,8 +106,9 @@ export default function Work(): JSX.Element {
     const ws = searchParams.get('wizardStep')
     if (ws) setWizardStep(ws)
 
-    const state = location.state as { sessionId?: string } | null
+    const state = location.state as { sessionId?: string; quickPrompt?: string } | null
     if (state?.sessionId) setSelectedId(state.sessionId)
+    if (state?.quickPrompt) pendingQuickPrompt.current = state.quickPrompt
   }, [location, searchParams])
 
   // ── Rehydrate sessions from main process on mount ──────────────────────
@@ -204,6 +205,11 @@ export default function Work(): JSX.Element {
   // ── Check wizard state — default to wizard tab if never used ─────────────
 
   useEffect(() => {
+    // Skip auto-wizard if arriving with a quick prompt or explicit tab param
+    if (pendingQuickPrompt.current) { setWizardChecked(true); return }
+    const urlTab = searchParams.get('tab')
+    if (urlTab) { setWizardChecked(true); return }
+
     void (async () => {
       const state = await window.electronAPI.invoke('wizard:get-state') as { hasCompletedWizard: boolean }
       if (!state.hasCompletedWizard) {
@@ -216,7 +222,7 @@ export default function Work(): JSX.Element {
   // ── IPC event listeners ─────────────────────────────────────────────────
 
   useEffect(() => {
-    const handleOutput = (_e: IpcRendererEvent, { sessionId, output }: { sessionId: string; output: ParsedOutput }) => {
+    const handleOutput = ({ sessionId, output }: { sessionId: string; output: ParsedOutput }) => {
       setSessions((prev) => {
         const s = prev.get(sessionId)
         if (!s) return prev
@@ -225,7 +231,7 @@ export default function Work(): JSX.Element {
         return updated
       })
     }
-    const handleError = (_e: IpcRendererEvent, { sessionId, error: errMsg }: { sessionId: string; error: string }) => {
+    const handleError = ({ sessionId, error: errMsg }: { sessionId: string; error: string }) => {
       setSessions((prev) => {
         const s = prev.get(sessionId)
         if (!s) return prev
@@ -234,7 +240,7 @@ export default function Work(): JSX.Element {
         return updated
       })
     }
-    const handleExit = (_e: IpcRendererEvent, { sessionId, code }: { sessionId: string; code: number }) => {
+    const handleExit = ({ sessionId, code }: { sessionId: string; code: number }) => {
       setSessions((prev) => {
         const s = prev.get(sessionId)
         if (!s) return prev
@@ -254,14 +260,14 @@ export default function Work(): JSX.Element {
         return prev
       })
     }
-    const handleTurnStart = (_e: IpcRendererEvent, { sessionId }: { sessionId: string }) => {
+    const handleTurnStart = ({ sessionId }: { sessionId: string }) => {
       setSessions((prev) => { const s = prev.get(sessionId); if (!s) return prev; const u = new Map(prev); u.set(sessionId, { ...s, processing: true }); return u })
     }
-    const handleTurnEnd = (_e: IpcRendererEvent, { sessionId }: { sessionId: string }) => {
+    const handleTurnEnd = ({ sessionId }: { sessionId: string }) => {
       setSessions((prev) => { const s = prev.get(sessionId); if (!s) return prev; const u = new Map(prev); u.set(sessionId, { ...s, processing: false }); return u })
       void window.electronAPI.invoke('starter-pack:record-interaction')
     }
-    const handlePermission = (_e: IpcRendererEvent, { sessionId, request }: { sessionId: string; request: ParsedOutput }) => {
+    const handlePermission = ({ sessionId, request }: { sessionId: string; request: ParsedOutput }) => {
       setSessions((prev) => {
         const s = prev.get(sessionId)
         if (!s) return prev
@@ -271,7 +277,7 @@ export default function Work(): JSX.Element {
       })
     }
 
-    const handleUsage = (_e: IpcRendererEvent, { sessionId, usage }: { sessionId: string; usage: string }) => {
+    const handleUsage = ({ sessionId, usage }: { sessionId: string; usage: string }) => {
       setSessions((prev) => {
         const s = prev.get(sessionId)
         if (!s) return prev
@@ -305,6 +311,16 @@ export default function Work(): JSX.Element {
     setSessions((prev) => { const u = new Map(prev); u.set(sessionId, { info, messages: initial, mode: 'normal', msgIdCounter: initial.length, processing: !!opts.initialPrompt, usageHistory: [] }); return u })
     setSelectedId(sessionId)
   }, [])
+
+  // ── Auto-start session from Home page quick prompt ─────────────────────
+  useEffect(() => {
+    if (pendingQuickPrompt.current) {
+      const p = pendingQuickPrompt.current
+      pendingQuickPrompt.current = null
+      void startSession({ cli: 'copilot', name: p.slice(0, 30), initialPrompt: p })
+      setWorkMode('session')
+    }
+  }, [startSession])
 
   const stopSession = useCallback(async (sessionId: string) => {
     await window.electronAPI.invoke('cli:stop-session', { sessionId })

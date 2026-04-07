@@ -2,6 +2,31 @@
 
 All notable changes to ClearPathAI will be documented in this file.
 
+## [1.6.0] - 2026-04-06
+
+### Added
+- **Starter Pack Agent Walkthrough** — New guided "Try This Agent" experience on the Agents page. Click any Starter Pack agent to preview capabilities, configure CLI/name, and create it in 2 clicks. Already-created agents show green "Created" badges
+- **Starter Pack Skill Walkthrough** — Matching guided flow on the Skills page. Preview what a skill does (input/output), choose CLI and scope, create instantly
+- **Agent-to-Skill Creation Flow** — After creating a Starter Pack agent, the walkthrough offers to batch-create all associated skills (e.g., Communication Coach → 4 skills). One-click creates all skills with a live progress indicator, then shows a summary of everything created
+- **"Recommended for Your Agents" Section** — Skills page cross-references installed agents against Starter Pack definitions to surface missing skills. Shows which agent each skill pairs with and a direct "Create" button
+- **Starter Pack Agents in Session Wizard** — When the Work page's Session Wizard has no agents available, it now loads Starter Pack agents with inline "Create" buttons instead of a dead-end message. Created agents are auto-selected
+- **StarterAgentWalkthrough Component** — New `src/renderer/src/components/StarterAgentWalkthrough.tsx` — 5-step modal (preview → configure → done → skills → all-set)
+- **StarterSkillWalkthrough Component** — New `src/renderer/src/components/StarterSkillWalkthrough.tsx` — 3-step modal (preview → configure → done)
+
+### Changed
+- **Built-in Agents Removed** — Removed hardcoded GitHub Copilot built-in agents (Explore, Task, Code Review, Plan) from AgentManager. These were not useful as user-facing agents and cluttered the list. Users now create their own agents via the Starter Pack walkthrough
+- **Agents Page Redesigned** — Replaced separate "GitHub Copilot Agents" and "Claude Code Agents" sections with a unified "Starter Pack" section at top and "Your Agents" section below showing all user-created agents across both CLIs
+- **Agent Editor Rebuilt** — Expanded modal (max-w-3xl, 92vh), structured editor with individual fields (Name, Description, Model, Tools with add/remove chips, System Prompt textarea). Raw markdown toggle for power users. Parses/serializes YAML frontmatter automatically
+- **Skills Editor Rebuilt** — Replaced read-only `<pre>` block in skill detail view with a full editable form: Name, Description, and a large monospace textarea for skill content. Saves via `skills:save` with `existingPath`
+- **Default Scope → Global** — Agent and skill creation (StarterAgentWalkthrough, StarterSkillWalkthrough, SkillWizard, Setup Wizard) now defaults to global scope instead of project scope. Most users want agents and skills available across all projects
+- **Setup Wizard Step 3 (Agent)** — Pre-fills Communication Coach agent from Starter Pack with full system prompt. Explains why a communication agent is the best first agent. Click-and-create with sensible defaults
+- **Setup Wizard Step 4 (Skill)** — Pre-fills Audience & Tone Rewrite skill from Starter Pack. Explains why it pairs with the Communication Coach. Saves with global scope
+- **Setup Wizard Step 5 (Memory)** — Redesigned with 5 practical category cards (Meeting, Conversation, Reference, Outcome, Idea), each with contextual placeholder text. Explains why memory matters with a clear value proposition
+
+### Fixed
+- **Agent Persistence** — Copilot agents saved to `~/.github/agents/` were not being discovered on app restart because `scanCopilotAgents()` only scanned project directories. Added global home directory scan matching what Claude agents already had
+- **Skill Scope in Setup Wizard** — Skills created during onboarding were saved with `scope: 'project'`, tying them to whatever directory the app launched from. Now saves as `scope: 'global'`
+
 ## [1.5.0] - 2026-04-06
 
 ### Added

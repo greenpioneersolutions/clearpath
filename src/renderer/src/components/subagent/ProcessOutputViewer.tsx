@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
-import type { IpcRendererEvent } from 'electron'
 import type { ParsedOutput } from '../../types/ipc'
 import OutputDisplay, { type OutputMessage } from '../OutputDisplay'
 
@@ -32,7 +31,7 @@ export default function ProcessOutputViewer({ subAgentId, isPopout }: Props): JS
   useEffect(() => {
     const off = window.electronAPI.on(
       'subagent:output',
-      (_e: IpcRendererEvent, data: { id: string; output: ParsedOutput }) => {
+      (data: { id: string; output: ParsedOutput }) => {
         if (data.id !== subAgentId) return
         const msg: OutputMessage = {
           id: String(counterRef.current++),

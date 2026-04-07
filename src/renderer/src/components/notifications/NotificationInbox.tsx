@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useFocusTrap } from '../../hooks/useFocusTrap'
 import { useNavigate } from 'react-router-dom'
-import type { IpcRendererEvent } from 'electron'
 import type { AppNotification, NotificationType } from '../../types/notification'
 import { SEVERITY_STYLES, TYPE_LABELS } from '../../types/notification'
 
@@ -59,7 +58,7 @@ export default function NotificationInbox({ isOpen, onClose }: Props): JSX.Eleme
 
   // Listen for new notifications
   useEffect(() => {
-    const off = window.electronAPI.on('notification:new', (_e: IpcRendererEvent, notif: AppNotification) => {
+    const off = window.electronAPI.on('notification:new', (notif: AppNotification) => {
       setNotifications((prev) => [notif, ...prev])
     })
     return off

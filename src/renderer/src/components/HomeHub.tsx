@@ -60,7 +60,7 @@ export default function HomeHub(): JSX.Element {
   useEffect(() => { void load() }, [load])
 
   const handleQuickStart = () => {
-    navigate('/work')
+    navigate('/work', { state: { quickPrompt: prompt.trim() } })
   }
 
   const timeAgo = (ms: number): string => {

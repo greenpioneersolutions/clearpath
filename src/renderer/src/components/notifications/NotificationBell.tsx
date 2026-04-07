@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react'
-import type { IpcRendererEvent } from 'electron'
 import type { AppNotification } from '../../types/notification'
 import NotificationInbox from './NotificationInbox'
 
@@ -14,7 +13,7 @@ export default function NotificationBell(): JSX.Element {
 
   // Listen for new notifications to update badge
   useEffect(() => {
-    const off = window.electronAPI.on('notification:new', (_e: IpcRendererEvent, _notif: AppNotification) => {
+    const off = window.electronAPI.on('notification:new', (_notif: AppNotification) => {
       setUnreadCount((c) => c + 1)
     })
     return off

@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import type { IpcRendererEvent } from 'electron'
 import type { ParsedOutput, SessionInfo, HistoricalSession } from '../types/ipc'
 import OutputDisplay, { type OutputMessage } from '../components/OutputDisplay'
 import CommandInput from '../components/CommandInput'
@@ -61,7 +60,6 @@ export default function Sessions(): JSX.Element {
   // ── IPC event listeners ───────────────────────────────────────────────────
   useEffect(() => {
     const handleOutput = (
-      _event: IpcRendererEvent,
       { sessionId, output }: { sessionId: string; output: ParsedOutput }
     ) => {
       console.log('[Sessions] cli:output', sessionId.slice(0, 8), output.type, JSON.stringify(output.content.slice(0, 80)))
@@ -83,7 +81,6 @@ export default function Sessions(): JSX.Element {
     }
 
     const handleError = (
-      _event: IpcRendererEvent,
       { sessionId, error }: { sessionId: string; error: string }
     ) => {
       console.log('[Sessions] cli:error', sessionId.slice(0, 8), JSON.stringify(error.slice(0, 200)))
@@ -105,7 +102,6 @@ export default function Sessions(): JSX.Element {
     }
 
     const handleExit = (
-      _event: IpcRendererEvent,
       { sessionId, code }: { sessionId: string; code: number }
     ) => {
       console.log('[Sessions] cli:exit', sessionId.slice(0, 8), 'code', code)
@@ -140,7 +136,6 @@ export default function Sessions(): JSX.Element {
     }
 
     const handlePermission = (
-      _event: IpcRendererEvent,
       { sessionId, request }: { sessionId: string; request: ParsedOutput }
     ) => {
       setSessions((prev) => {
@@ -161,7 +156,6 @@ export default function Sessions(): JSX.Element {
     }
 
     const handleTurnStart = (
-      _event: IpcRendererEvent,
       { sessionId }: { sessionId: string }
     ) => {
       console.log('[Sessions] cli:turn-start', sessionId.slice(0, 8))
@@ -175,7 +169,6 @@ export default function Sessions(): JSX.Element {
     }
 
     const handleTurnEnd = (
-      _event: IpcRendererEvent,
       { sessionId }: { sessionId: string }
     ) => {
       console.log('[Sessions] cli:turn-end', sessionId.slice(0, 8))

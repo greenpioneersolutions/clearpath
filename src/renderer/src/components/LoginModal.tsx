@@ -46,7 +46,7 @@ export function LoginModal({ cli, isOpen, onClose }: Props): JSX.Element | null 
 
     const cleanupOutput = window.electronAPI.on(
       'auth:login-output',
-      (_event, payload: LoginOutputEvent) => {
+      (payload: LoginOutputEvent) => {
         if (payload.cli !== cli) return
         setLines((prev) => [...prev, payload.line])
       }
@@ -54,7 +54,7 @@ export function LoginModal({ cli, isOpen, onClose }: Props): JSX.Element | null 
 
     const cleanupComplete = window.electronAPI.on(
       'auth:login-complete',
-      (_event, payload: LoginCompleteEvent) => {
+      (payload: LoginCompleteEvent) => {
         if (payload.cli !== cli) return
         setStatus(payload.success ? 'success' : 'failed')
         if (payload.success) {

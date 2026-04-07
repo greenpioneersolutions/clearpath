@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import type { IpcRendererEvent } from 'electron'
 import type { ParsedOutput, SessionInfo } from '../../types/ipc'
 
 interface PermissionRequest {
@@ -31,7 +30,7 @@ export default function PermissionRequestHandler(): JSX.Element {
   useEffect(() => {
     const offPermission = window.electronAPI.on(
       'cli:permission-request',
-      (_e: IpcRendererEvent, data: { sessionId: string; request: ParsedOutput }) => {
+      (data: { sessionId: string; request: ParsedOutput }) => {
         const session = sessions.find((s) => s.sessionId === data.sessionId)
         const req: PermissionRequest = {
           id: `req-${++requestCounter}`,

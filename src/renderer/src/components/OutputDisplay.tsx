@@ -223,8 +223,8 @@ function AIBubble({ content, onSaveAsNote, timestamp }: { content: string; onSav
           {timestamp && <span className="text-[9px] text-gray-600">{formatTime(timestamp)}</span>}
         </div>
         <div className="relative">
-          <div className="rounded-2xl rounded-tl-md px-4 py-3 shadow-sm" style={{ backgroundColor: 'var(--brand-dark-card)', border: '1px solid var(--brand-dark-border)' }}>
-            <div className="prose-chat text-sm leading-relaxed">
+          <div className="rounded-2xl rounded-tl-md px-4 py-3 shadow-sm" style={{ backgroundColor: 'var(--brand-dark-card)', border: '1px solid var(--brand-dark-border)', color: '#E5E7EB' }}>
+            <div className="prose-chat text-sm leading-relaxed" style={{ color: '#E5E7EB' }}>
               <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]}>{content}</ReactMarkdown>
             </div>
           </div>

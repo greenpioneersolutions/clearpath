@@ -17,7 +17,7 @@ export default function SkillWizard({ onSaved, onCancel, initialContent }: Props
   // Form state
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
-  const [scope, setScope] = useState<'project' | 'global'>('project')
+  const [scope, setScope] = useState<'project' | 'global'>('global')
   const [cli, setCli] = useState<'claude' | 'copilot' | 'both'>('claude')
   const [body, setBody] = useState(initialContent ?? '')
   const [autoInvoke, setAutoInvoke] = useState(false)
@@ -84,8 +84,8 @@ export default function SkillWizard({ onSaved, onCancel, initialContent }: Props
               <label className="block text-sm font-medium text-gray-700 mb-1">Scope</label>
               <select value={scope} onChange={(e) => setScope(e.target.value as 'project' | 'global')}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                <option value="project">This Project Only</option>
                 <option value="global">Global — All Projects</option>
+                <option value="project">This Project Only</option>
               </select>
             </div>
             <div>

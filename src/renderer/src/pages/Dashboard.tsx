@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import type { IpcRendererEvent } from 'electron'
 import { AuthStatusCard } from '../components/AuthStatusCard'
 import { LoginModal } from '../components/LoginModal'
 import type { AuthState, AuthStatus } from '../types/ipc'
@@ -24,7 +23,7 @@ export default function Dashboard(): JSX.Element {
   useEffect(() => {
     const cleanup = window.electronAPI.on(
       'auth:status-changed',
-      (_event: IpcRendererEvent, s: AuthState) => setState(s)
+      (s: AuthState) => setState(s)
     )
     return cleanup
   }, [])

@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import type { IpcRendererEvent } from 'electron'
 import type { ParsedOutput, SessionInfo } from '../../types/ipc'
 
 interface TokenBreakdown {
@@ -102,7 +101,7 @@ export default function ContextUsage({ activeSessions: initialSessions }: Props)
     const command = session?.cli === 'claude' ? '/cost' : '/context'
 
     // Listen for output from this session
-    const offOutput = window.electronAPI.on('cli:output', (_e: IpcRendererEvent, data: { sessionId: string; output: ParsedOutput }) => {
+    const offOutput = window.electronAPI.on('cli:output', (data: { sessionId: string; output: ParsedOutput }) => {
       if (data.sessionId !== selectedSessionId) return
       bufferRef.current.push(data.output.content)
       setRawOutput([...bufferRef.current])
@@ -127,7 +126,7 @@ export default function ContextUsage({ activeSessions: initialSessions }: Props)
       }
     })
 
-    const offTurnEnd = window.electronAPI.on('cli:turn-end', (_e: IpcRendererEvent, data: { sessionId: string }) => {
+    const offTurnEnd = window.electronAPI.on('cli:turn-end', (data: { sessionId: string }) => {
       if (data.sessionId !== selectedSessionId) return
       setFetching(false)
     })

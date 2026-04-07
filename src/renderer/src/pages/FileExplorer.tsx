@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from 'react'
-import type { IpcRendererEvent } from 'electron'
 
 interface FileEntry {
   name: string
@@ -41,7 +40,7 @@ export default function FileExplorer(): JSX.Element {
 
   // File change notifications
   useEffect(() => {
-    const off = window.electronAPI.on('files:changed', (_e: IpcRendererEvent, data: { eventType: string; filename: string }) => {
+    const off = window.electronAPI.on('files:changed', (data: { eventType: string; filename: string }) => {
       setChanges((prev) => [{ ...data, time: Date.now() }, ...prev.slice(0, 49)])
     })
     return off

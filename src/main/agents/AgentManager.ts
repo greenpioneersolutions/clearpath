@@ -18,38 +18,8 @@ import type {
   ActiveAgents,
 } from '../../renderer/src/types/ipc'
 
-// ── Built-in Copilot agents (no files on disk) ────────────────────────────────
-
-const COPILOT_BUILTIN: AgentDef[] = [
-  {
-    id: 'explore',
-    name: 'Explore',
-    description: 'Fast codebase analysis and file exploration',
-    source: 'builtin',
-    cli: 'copilot',
-  },
-  {
-    id: 'task',
-    name: 'Task',
-    description: 'Running builds, tests, and multi-step tasks',
-    source: 'builtin',
-    cli: 'copilot',
-  },
-  {
-    id: 'code-review',
-    name: 'Code Review',
-    description: 'High-signal review of code changes',
-    source: 'builtin',
-    cli: 'copilot',
-  },
-  {
-    id: 'plan',
-    name: 'Plan',
-    description: 'Implementation planning before coding',
-    source: 'builtin',
-    cli: 'copilot',
-  },
-]
+// Built-in CLI agents (explore, task, etc.) are no longer listed here.
+// Users create their own agents via the Starter Pack walkthrough instead.
 
 // ── Store schema ──────────────────────────────────────────────────────────────
 
@@ -206,7 +176,7 @@ export class AgentManager {
         encryptionKey: getStoreEncryptionKey(),
         defaults: {
           profiles: [],
-          enabledAgentIds: COPILOT_BUILTIN.map((a) => a.id),
+          enabledAgentIds: [],
           activeAgents: { copilot: null, claude: null },
         },
       })
@@ -221,7 +191,7 @@ export class AgentManager {
     const claudeAgents = this.scanClaudeAgents(workingDir)
 
     return {
-      copilot: [...COPILOT_BUILTIN, ...copilotCustom],
+      copilot: copilotCustom,
       claude: claudeAgents,
     }
   }
@@ -229,7 +199,11 @@ export class AgentManager {
   private scanCopilotAgents(workingDir?: string): AgentDef[] {
     const results: AgentDef[] = []
 
-    if (workingDir) {
+    // Global agents
+    results.push(...scanDirectory(join(homedir(), '.github', 'agents'), 'copilot', '.agent.md'))
+
+    // Project-level agents
+    if (workingDir && workingDir !== homedir()) {
       results.push(...scanDirectory(join(workingDir, '.github', 'agents'), 'copilot', '.agent.md'))
     }
 

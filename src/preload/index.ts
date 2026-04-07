@@ -188,19 +188,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke(channel, ...args)
   },
 
-  on: (channel: string, callback: (event: IpcRendererEvent, ...args: unknown[]) => void): (() => void) => {
+  on: (channel: string, callback: (...args: unknown[]) => void): (() => void) => {
     if (!ALLOWED_RECEIVE_CHANNELS.has(channel)) {
       console.warn(`[preload] Blocked listener for unknown channel: ${channel}`)
       return () => {}
     }
-    ipcRenderer.on(channel, callback)
+    // Wrap callback to avoid passing IpcRendererEvent across context bridge
+    // (Electron 39+ sandbox can't serialize the event object)
+    const wrapped = (_event: IpcRendererEvent, ...args: unknown[]) => callback(...args)
+    ipcRenderer.on(channel, wrapped)
     return () => {
-      ipcRenderer.removeListener(channel, callback)
+      ipcRenderer.removeListener(channel, wrapped)
     }
   },
 
-  off: (channel: string, callback: (event: IpcRendererEvent, ...args: unknown[]) => void): void => {
+  off: (channel: string, _callback: (...args: unknown[]) => void): void => {
     if (!ALLOWED_RECEIVE_CHANNELS.has(channel)) return
-    ipcRenderer.removeListener(channel, callback)
+    ipcRenderer.removeAllListeners(channel)
   },
 })
