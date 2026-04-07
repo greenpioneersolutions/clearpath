@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -40,6 +41,7 @@ const STEPS: { key: Step; label: string; icon: string }[] = [
 // ── Component ────────────────────────────────────────────────────────────────
 
 export default function SetupWizardFull(): JSX.Element {
+  const navigate = useNavigate()
   const [step, setStep] = useState<Step>('welcome')
   const [setupState, setSetupState] = useState<SetupState | null>(null)
   const [authState, setAuthState] = useState<AuthState | null>(null)
@@ -688,7 +690,7 @@ export default function SetupWizardFull(): JSX.Element {
             <div className="text-5xl">🎉</div>
             <h2 className="text-xl font-bold text-gray-900">You're All Set!</h2>
             <p className="text-sm text-gray-600">
-              Setup is complete. You have everything you need to start working with AI assistants.
+              Setup is complete. Let's put everything to work — your agent, skill, and memory are ready to use together in a session.
             </p>
 
             <div className="grid grid-cols-3 gap-3 text-center">
@@ -707,11 +709,17 @@ export default function SetupWizardFull(): JSX.Element {
               ))}
             </div>
 
-            <div className="flex items-center justify-center gap-3 pt-4">
-              <button onClick={() => setStep('welcome')}
-                className="px-4 py-2 text-xs text-gray-500 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
-                Restart Wizard
+            <div className="flex flex-col items-center gap-3 pt-4">
+              <button onClick={() => {
+                void updateStep({ triedWizard: true, completedAt: Date.now() })
+                navigate('/work?tab=wizard&wizardStep=context')
+              }}
+                className="px-8 py-3 bg-indigo-600 text-white font-semibold rounded-xl hover:bg-indigo-500 transition-colors text-sm">
+                Try It Now — Use Context in a Session
               </button>
+              <p className="text-xs text-gray-400 max-w-sm">
+                This takes you to the Session Wizard with "Use Context" open. Select your agent, memory, and skill, write a prompt, and see them work together.
+              </p>
             </div>
           </div>
         )}

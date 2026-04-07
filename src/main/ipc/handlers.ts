@@ -46,50 +46,30 @@ export function registerIpcHandlers(
 
     if (agentId) {
       let agentResolved = false
+      let agentSystemPrompt: string | null = null
 
-      // 1. File-based agent — look up the actual file path and verify it exists
+      // 1. File-based agent — read the system prompt from the file
       if (agentId.includes(':file:') && agentManager) {
         const allAgents = agentManager.listAgents()
         const match = [...allAgents.copilot, ...allAgents.claude].find((a) => a.id === agentId)
         if (match?.filePath && existsSync(match.filePath)) {
-          // Pass the full file path so the CLI can find it
-          resolved = { ...resolved, agent: match.filePath }
-          agentResolved = true
-        } else {
-          // File doesn't exist — try to recover by injecting the prompt as system context
-          // Read what we can from the file, or find the matching starter pack agent
+          try {
+            const content = readFileSync(match.filePath, 'utf8')
+            const bodyMatch = /^---[\s\S]*?---\s*\n([\s\S]*)$/.exec(content)
+            agentSystemPrompt = bodyMatch?.[1]?.trim() || null
+          } catch { /* file unreadable */ }
+        }
+
+        if (!agentSystemPrompt) {
+          // File missing or unreadable — fall back to starter pack match
           const slug = agentId.split(':file:').pop()!
           const starterMatch = STARTER_AGENTS.find(
             (a) => a.id === slug || a.name.toLowerCase().replace(/[^a-z0-9]+/g, '-') === slug
           )
-          if (match?.filePath) {
-            // File reference exists but file was deleted — try to read it anyway
-            try {
-              const content = readFileSync(match.filePath, 'utf8')
-              const bodyMatch = /^---[\s\S]*?---\s*\n([\s\S]*)$/.exec(content)
-              const prompt = bodyMatch?.[1]?.trim()
-              if (prompt) {
-                resolved = {
-                  ...resolved,
-                  agent: undefined,
-                  prompt: resolved.prompt ? `${prompt}\n\n${resolved.prompt}` : prompt,
-                }
-                agentResolved = true
-              }
-            } catch { /* file unreadable, fall through */ }
-          }
-          if (!agentResolved && starterMatch) {
-            // Recover from starter pack — inject system prompt and continue without error
-            resolved = {
-              ...resolved,
-              agent: undefined,
-              prompt: resolved.prompt
-                ? `${starterMatch.systemPrompt}\n\n${resolved.prompt}`
-                : starterMatch.systemPrompt,
-            }
-            agentResolved = true
-          }
+          if (starterMatch) agentSystemPrompt = starterMatch.systemPrompt
         }
+
+        if (agentSystemPrompt) agentResolved = true
       }
 
       // 2. Starter pack agent ID or name (not a file agent)
@@ -98,25 +78,23 @@ export function registerIpcHandlers(
           (a) => a.id === agentId || a.name === agentId
         )
         if (starterAgent) {
-          resolved = {
-            ...resolved,
-            agent: undefined,
-            prompt: resolved.prompt
-              ? `${starterAgent.systemPrompt}\n\n${resolved.prompt}`
-              : starterAgent.systemPrompt,
-          }
+          agentSystemPrompt = starterAgent.systemPrompt
           agentResolved = true
         }
       }
 
-      // 3. Explicitly requested agent name — pass as-is (let CLI resolve)
-      if (!agentResolved && agentWasExplicit) {
-        resolved = { ...resolved, agent: agentId }
-        agentResolved = true
-      }
-
-      // 4. Unresolved — don't pass a bad agent flag
-      if (!agentResolved) {
+      // Inject agent prompt ONLY if the user actually provided a prompt.
+      // If no user prompt, store the agent context for the first turn when the user types.
+      if (agentResolved && agentSystemPrompt) {
+        resolved = { ...resolved, agent: undefined }
+        if (resolved.prompt?.trim()) {
+          resolved = { ...resolved, prompt: `${agentSystemPrompt}\n\n${resolved.prompt}` }
+        } else {
+          // No user prompt — store as agentContext so it gets prepended on the first real input
+          resolved = { ...resolved, prompt: undefined, agentContext: agentSystemPrompt }
+        }
+      } else if (!agentResolved) {
+        // Unresolved — don't pass a bad --agent flag
         resolved = { ...resolved, agent: undefined }
       }
     }

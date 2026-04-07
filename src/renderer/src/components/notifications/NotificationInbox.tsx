@@ -188,11 +188,13 @@ export default function NotificationInbox({ isOpen, onClose }: Props): JSX.Eleme
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                           </svg>
                         )}
-                        <button onClick={(e) => { e.stopPropagation(); void handleDismiss(n.id) }}
+                        <span role="button" tabIndex={0}
+                          onClick={(e) => { e.stopPropagation(); void handleDismiss(n.id) }}
+                          onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); void handleDismiss(n.id) } }}
                           aria-label="Dismiss notification"
-                          className="text-gray-300 hover:text-red-400 flex-shrink-0 text-xs p-0.5">
+                          className="text-gray-300 hover:text-red-400 flex-shrink-0 text-xs p-0.5 cursor-pointer">
                           x
-                        </button>
+                        </span>
                       </div>
                     </button>
 

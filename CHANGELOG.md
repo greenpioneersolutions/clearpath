@@ -2,6 +2,24 @@
 
 All notable changes to ClearPathAI will be documented in this file.
 
+## [1.7.0] - 2026-04-07
+
+### Added
+- **Fleet Mode** — New "Parallel Sub-Agents (Fleet)" toggle in Session Wizard review step (Copilot only). Explains what fleet does in plain language: "Let the AI spawn helper agents that work in the background on parts of your task simultaneously." When enabled, injects fleet instructions so the AI uses `&prompt` for parallel work. Also available as a toolbar button in the in-session context bar
+- **Model Selector in New Session Modal** — Dropdown grouped by cost tier (Free/0.33x/1x/3x for Copilot, Claude models for Claude Code). Per-session override that doesn't change the default. Resets when switching CLIs
+- **Unified Context Bar** — Merged the separate QuickCompose toolbar and MemoryPicker row into one clean component. Single badge row (Agent green, Skill amber, Memories indigo, Fleet cyan, Delegate purple) with toolbar buttons below (Templates, Agent, Memories, Fleet, Delegate). Memory picker now built-in with checkbox selection and search
+- **Context Pre-Selection** — When launching a session from the wizard with agent/skill/memories, the context bar badges are pre-populated so you see what's active
+
+### Changed
+- **Agent Injection Reliability** — Agent system prompts are now read from the agent file and injected into the prompt text instead of passing `--agent` flag. The CLI's `--agent` expects names it can resolve internally, but ClearPath's file paths weren't always resolvable depending on CWD. Prompt injection is reliable regardless of working directory
+- **Session Error Resilience** — CLIManager no longer marks sessions as "stopped" on non-zero CLI exit codes. Sessions stay alive with status "running" so users can retry by typing another message. Shows a gentle notification instead of blocking the session
+- **Setup Wizard Finish** — Done step now navigates directly to Work > Session Wizard > Use Context instead of showing "Restart Wizard." Users go straight into using what they just created
+- **Blank Session Start** — Starting a session with an active agent but no prompt no longer accidentally sends the agent's system prompt as a user message. Agent context is deferred and prepended to the first real user input instead
+
+### Fixed
+- **Session Rehydration Shows Raw Prompts** — Navigating away from a session and back would show the full agent system prompt, skill XML, and memory content as the user's first message. Now logs only the user's actual typed message (`displayPrompt`) to the persistent message log. A "Session launched with context attached" status pill replaces the raw dump
+- **Button Nesting Warning** — Fixed `<button> inside <button>` React warning in NotificationInbox by changing inner dismiss element to `<span role="button">`
+
 ## [1.6.1] - 2026-04-06
 
 ### Added

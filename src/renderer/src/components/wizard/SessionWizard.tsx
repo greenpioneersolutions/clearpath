@@ -35,7 +35,7 @@ interface SkillItem {
 // ── Props ────────────────────────────────────────────────────────────────────
 
 interface Props {
-  onLaunchSession: (opts: { cli: 'copilot' | 'claude'; name: string; initialPrompt: string; displayPrompt?: string; agent?: string; model?: string; contextSummary?: { memories: string[]; agent?: string; skill?: string } }) => void
+  onLaunchSession: (opts: { cli: 'copilot' | 'claude'; name: string; initialPrompt: string; displayPrompt?: string; agent?: string; model?: string; fleetMode?: boolean; contextSummary?: { memories: string[]; agent?: string; skill?: string } }) => void
   defaultCli: 'copilot' | 'claude'
   /** Pre-select a wizard option by id (e.g. 'question', 'task') and skip to 'fill' step */
   initialOptionId?: string
@@ -88,6 +88,7 @@ export default function SessionWizard({ onLaunchSession, defaultCli, initialOpti
   const [contextTab, setContextTab] = useState<'memories' | 'agents' | 'skills'>('memories')
   const [showFullPrompt, setShowFullPrompt] = useState(false)
   const [sessionModel, setSessionModel] = useState('')
+  const [fleetMode, setFleetMode] = useState(false)
   const [contextPage, setContextPage] = useState(0)
   const CONTEXT_PAGE_SIZE = 10
 
@@ -258,6 +259,7 @@ export default function SessionWizard({ onLaunchSession, defaultCli, initialOpti
       displayPrompt: hasContext ? userMessage : undefined,
       agent: agentId,
       model: sessionModel || undefined,
+      fleetMode: fleetMode || undefined,
       contextSummary: hasContext ? { memories: memoryNames, agent: agentDisplayName, skill: skillName } : undefined,
     })
   }
@@ -844,6 +846,38 @@ export default function SessionWizard({ onLaunchSession, defaultCli, initialOpti
               </select>
             </div>
           </div>
+
+          {/* Fleet mode toggle — Copilot only */}
+          {cli === 'copilot' && (
+            <div className="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-xs font-medium text-gray-400">Parallel Sub-Agents (Fleet)</span>
+                  <p className="text-[10px] text-gray-600 mt-0.5 max-w-sm">
+                    Let the AI spawn helper agents that work in the background on parts of your task simultaneously.
+                    Great for large tasks like "review all files in this directory" or "research 3 topics at once."
+                  </p>
+                </div>
+                <button
+                  onClick={() => setFleetMode(!fleetMode)}
+                  className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors flex-shrink-0 ml-3 ${fleetMode ? 'bg-indigo-600' : 'bg-gray-700'}`}
+                  role="switch"
+                  aria-checked={fleetMode}
+                  aria-label="Toggle fleet mode"
+                >
+                  <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${fleetMode ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                </button>
+              </div>
+              {fleetMode && (
+                <div className="mt-2 bg-indigo-900/20 border border-indigo-800/30 rounded-lg px-3 py-2">
+                  <p className="text-[10px] text-indigo-400">
+                    Fleet mode enables /fleet coordination. The AI can dispatch sub-agents to work on separate tasks in parallel,
+                    then combine results. You'll see their status in the Sub-Agents panel. This uses additional API credits for each sub-agent.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* User's message */}
           <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">

@@ -339,13 +339,20 @@ export class CLIManager {
       turnCount: 0,
       processingTurn: false,
       turnOutputBytes: 0,
-      lastPrompt: options.prompt ?? '',
+      lastPrompt: options.displayPrompt?.trim() || options.prompt || '',
       messageLog: [],
     }
 
-    // Log the initial prompt if provided
+    // If context was injected (displayPrompt differs from prompt), log a status
+    // summary so rehydrated sessions show what context was used, not raw prompt text.
+    if (options.prompt?.trim() && options.displayPrompt?.trim() && options.displayPrompt !== options.prompt) {
+      session.messageLog.push({ type: 'status', content: 'Session launched with context attached', sender: 'system', timestamp: Date.now() })
+    }
+
+    // Log the user's actual message (displayPrompt) — not the full injected prompt
     if (options.prompt?.trim()) {
-      session.messageLog.push({ type: 'text', content: options.prompt, sender: 'user', timestamp: Date.now() })
+      const logContent = options.displayPrompt?.trim() || options.prompt
+      session.messageLog.push({ type: 'text', content: logContent, sender: 'user', timestamp: Date.now() })
     }
 
     this.sessions.set(sessionId, session)
@@ -359,6 +366,7 @@ export class CLIManager {
     this.persistSession(sessionId, session)
 
     // If an initial prompt was given, run the first turn immediately
+    // Send the FULL prompt (with agent context) to the CLI, not the display version
     if (options.prompt?.trim()) {
       this.runTurn(sessionId, options.prompt.trim())
     }
@@ -380,7 +388,16 @@ export class CLIManager {
       session.messageLog.push({ type: 'text', content: input, sender: 'user', timestamp: Date.now() })
     }
 
-    this.runTurn(sessionId, input)
+    // If there's a deferred agent context (session started without a prompt),
+    // prepend it to the first real user input so the AI gets the agent instructions.
+    let actualInput = input
+    if (session.originalOptions.agentContext && session.turnCount === 0) {
+      actualInput = `${session.originalOptions.agentContext}\n\n${input}`
+      // Clear it so it's not re-injected on subsequent turns
+      session.originalOptions = { ...session.originalOptions, agentContext: undefined }
+    }
+
+    this.runTurn(sessionId, actualInput)
   }
 
   sendSlashCommand(sessionId: string, command: string): void {
@@ -817,17 +834,22 @@ export class CLIManager {
       const wc = this.getWebContents()
       if (!wc || wc.isDestroyed()) return
 
-      // Non-zero exit on first turn = something is wrong (bad args, auth, etc.)
-      if (code !== 0 && session.turnCount === 1) {
-        session.info.status = 'stopped'
-        wc.send('cli:exit', { sessionId, code: code ?? -1 })
-        this.onNotify?.({
-          type: 'error', severity: 'warning',
-          title: `Session failed`,
-          message: `Could not start ${session.info.cli === 'copilot' ? 'Copilot' : 'Claude'} session. Check that the CLI is installed and authenticated.`,
-          source: 'cli-manager', sessionId,
-          action: { label: 'View Session', navigate: '/work' },
-        })
+      if (code !== 0) {
+        // Non-zero exit — send turn-end so the UI stops showing the processing
+        // indicator, but keep the session alive so the user can retry.
+        // The stderr handler already showed any error messages to the user.
+        wc.send('cli:turn-end', { sessionId })
+
+        // Only notify on first-turn failures (likely auth/install issues)
+        if (session.turnCount === 1) {
+          this.onNotify?.({
+            type: 'error', severity: 'warning',
+            title: `Session issue`,
+            message: `The ${session.info.cli === 'copilot' ? 'Copilot' : 'Claude'} process exited unexpectedly. You can try again from the session.`,
+            source: 'cli-manager', sessionId,
+            action: { label: 'View Session', navigate: '/work' },
+          })
+        }
       } else {
         // Turn completed normally — session stays open for next input
         wc.send('cli:turn-end', { sessionId })

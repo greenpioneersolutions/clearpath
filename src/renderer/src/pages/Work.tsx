@@ -24,7 +24,7 @@ import SessionSummary from '../components/shared/SessionSummary'
 import WelcomeBack from '../components/shared/WelcomeBack'
 import GitHubPanel from '../components/integrations/GitHubPanel'
 import SessionWizard from '../components/wizard/SessionWizard'
-import MemoryPicker from '../components/memory/MemoryPicker'
+// MemoryPicker is now integrated into QuickCompose
 import NotesManager from '../components/memory/NotesManager'
 
 // ── Panel definitions ────────────────────────────────────────────────────────
@@ -310,7 +310,7 @@ export default function Work(): JSX.Element {
 
   const startSession = useCallback(async (opts: { cli: 'copilot' | 'claude'; name?: string; workingDirectory?: string; initialPrompt?: string; displayPrompt?: string; agent?: string; model?: string; contextSummary?: { memories: string[]; agent?: string; skill?: string } }) => {
     const { sessionId } = (await window.electronAPI.invoke('cli:start-session', {
-      cli: opts.cli, mode: 'interactive', name: opts.name, workingDirectory: opts.workingDirectory, prompt: opts.initialPrompt, agent: opts.agent, model: opts.model,
+      cli: opts.cli, mode: 'interactive', name: opts.name, workingDirectory: opts.workingDirectory, prompt: opts.initialPrompt, displayPrompt: opts.displayPrompt, agent: opts.agent, model: opts.model,
     })) as { sessionId: string }
     const info: SessionInfo = { sessionId, name: opts.name, cli: opts.cli, status: 'running', startedAt: Date.now() }
 
@@ -334,6 +334,14 @@ export default function Work(): JSX.Element {
 
     setSessions((prev) => { const u = new Map(prev); u.set(sessionId, { info, messages: initial, mode: 'normal', msgIdCounter: initial.length, processing: !!opts.initialPrompt, usageHistory: [] }); return u })
     setSelectedId(sessionId)
+
+    // Pre-populate the context bar with what was selected in the wizard
+    if (opts.contextSummary) {
+      setQuickConfig({
+        agent: opts.contextSummary.agent || undefined,
+        skill: opts.contextSummary.skill || undefined,
+      })
+    }
   }, [])
 
   // ── Auto-start session from Home page quick prompt ─────────────────────
@@ -424,10 +432,13 @@ export default function Work(): JSX.Element {
     }
 
     // ── Normal send ───────────────────────────────────────────────────
+    // If fleet mode is active, instruct the AI to use parallel sub-agents
     // If memories are selected, prepend them as context silently
-    // Uses notes:get-full-content to include both note text AND attached file contents
     void (async () => {
       let actualInput = input
+      if (quickConfig.fleet) {
+        actualInput = `[Fleet mode: You may use &prompt to dispatch sub-agents for parallel work. Break this task into independent parts and delegate them to work simultaneously when appropriate.]\n\n${actualInput}`
+      }
       if (selectedNoteIds.size > 0) {
         const blocks: string[] = []
         for (const noteId of selectedNoteIds) {
@@ -688,21 +699,16 @@ export default function Work(): JSX.Element {
                       </div>
                     </div>
                   )}
-                  <QuickCompose
-                    config={quickConfig}
-                    onConfigChange={setQuickConfig}
-                    cli={selectedSession.info.cli}
-                    onTemplateSelect={handleTemplateSelect}
-                  />
-                  <div className="flex items-center gap-2 px-3 py-1 border-t border-gray-800/50 bg-gray-950 flex-shrink-0">
-                    <MemoryPicker
-                      selectedIds={selectedNoteIds}
-                      onToggle={(id) => setSelectedNoteIds((prev) => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next })}
-                      onClear={() => setSelectedNoteIds(new Set())}
+                  <div className="relative flex-shrink-0">
+                    <QuickCompose
+                      config={quickConfig}
+                      onConfigChange={setQuickConfig}
+                      cli={selectedSession.info.cli}
+                      onTemplateSelect={handleTemplateSelect}
+                      selectedNoteIds={selectedNoteIds}
+                      onToggleNote={(id) => setSelectedNoteIds((prev) => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next })}
+                      onClearNotes={() => setSelectedNoteIds(new Set())}
                     />
-                    {selectedNoteIds.size > 0 && (
-                      <span className="text-[10px] text-indigo-400">{selectedNoteIds.size} memor{selectedNoteIds.size === 1 ? 'y' : 'ies'} attached</span>
-                    )}
                   </div>
                   <CommandInput
                     cli={selectedSession.info.cli}
@@ -759,6 +765,10 @@ export default function Work(): JSX.Element {
             onLaunchSession={(opts) => {
               void (async () => {
                 await startSession({ cli: opts.cli, name: opts.name, initialPrompt: opts.initialPrompt, displayPrompt: opts.displayPrompt, agent: opts.agent, model: opts.model, contextSummary: opts.contextSummary })
+                // If fleet mode was enabled, set it in the context bar
+                if (opts.fleetMode) {
+                  setQuickConfig((prev) => ({ ...prev, fleet: true }))
+                }
                 setWorkMode('session')
               })()
             }}

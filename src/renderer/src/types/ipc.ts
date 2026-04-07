@@ -145,6 +145,14 @@ export interface SessionOptions {
 
   /** Catch-all for any flag not explicitly modelled above */
   flags?: Record<string, string | boolean>
+
+  /** Agent system prompt to prepend on the first real user input (set by handler when
+   *  user starts a session with an active agent but no initial prompt). */
+  agentContext?: string
+
+  /** The user's actual typed message (without injected agent/skill/memory context).
+   *  Used for message log display so rehydrated sessions show clean messages. */
+  displayPrompt?: string
 }
 
 export interface ParsedOutput {

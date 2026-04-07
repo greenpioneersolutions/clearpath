@@ -6,6 +6,19 @@ interface NewSessionOptions {
   name?: string
   workingDirectory?: string
   initialPrompt?: string
+  model?: string
+}
+
+const MODEL_TIERS: Record<string, { group: string; models: string[] }[]> = {
+  copilot: [
+    { group: 'Free', models: ['gpt-5-mini', 'gpt-4.1', 'gpt-4o'] },
+    { group: '0.33x', models: ['claude-haiku-4.5', 'gemini-3-flash'] },
+    { group: '1x', models: ['claude-sonnet-4.5', 'claude-sonnet-4.6', 'gpt-5', 'gemini-3-pro'] },
+    { group: '3x', models: ['claude-opus-4.5', 'claude-opus-4.6'] },
+  ],
+  claude: [
+    { group: 'Claude', models: ['sonnet', 'haiku', 'opus'] },
+  ],
 }
 
 interface Props {
@@ -17,6 +30,7 @@ interface Props {
 export default function NewSessionModal({ onStart, onClose, defaultCli }: Props): JSX.Element {
   const panelRef = useRef<HTMLDivElement>(null)
   const [cli, setCli] = useState<'copilot' | 'claude'>(defaultCli ?? 'copilot')
+  const [model, setModel] = useState('')
   const [name, setName] = useState('')
   const [workingDirectory, setWorkingDirectory] = useState('')
   const [initialPrompt, setInitialPrompt] = useState('')
@@ -29,6 +43,7 @@ export default function NewSessionModal({ onStart, onClose, defaultCli }: Props)
       name: name.trim() || undefined,
       workingDirectory: workingDirectory.trim() || undefined,
       initialPrompt: initialPrompt.trim() || undefined,
+      model: model || undefined,
     })
     onClose()
   }
@@ -61,7 +76,7 @@ export default function NewSessionModal({ onStart, onClose, defaultCli }: Props)
               {(['copilot', 'claude'] as const).map((c) => (
                 <button
                   key={c}
-                  onClick={() => setCli(c)}
+                  onClick={() => { setCli(c); setModel('') }}
                   className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
                     cli === c
                       ? 'bg-indigo-600 text-white'
@@ -72,6 +87,27 @@ export default function NewSessionModal({ onStart, onClose, defaultCli }: Props)
                 </button>
               ))}
             </div>
+          </div>
+
+          {/* Model selector */}
+          <div>
+            <label htmlFor="session-model" className="block text-xs font-medium text-gray-400 mb-1.5 uppercase tracking-wide">
+              Model{' '}
+              <span className="normal-case text-gray-500 font-normal">(this session only)</span>
+            </label>
+            <select
+              id="session-model"
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-sm text-gray-100 outline-none focus:border-indigo-500 transition-colors"
+            >
+              <option value="">Use default</option>
+              {(MODEL_TIERS[cli] ?? []).map((tier) => (
+                <optgroup key={tier.group} label={tier.group}>
+                  {tier.models.map((m) => <option key={m} value={m}>{m}</option>)}
+                </optgroup>
+              ))}
+            </select>
           </div>
 
           {/* Session name */}
