@@ -7,8 +7,6 @@
 
 import { vi } from 'vitest'
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const noop = (): any => undefined
 const noopObj = () => ({})
 
 const ipcMain = {
@@ -102,6 +100,23 @@ const contextBridge = {
 
 class IpcRendererEventMock {}
 
+// Default export is an object containing all named exports so that
+// `require('electron')` in CJS interop also provides named members
+// (e.g. `require('electron').app`).
+const electronModule = {
+  app,
+  BrowserWindow: BrowserWindowMock,
+  ipcMain,
+  ipcRenderer,
+  dialog,
+  shell,
+  safeStorage,
+  Notification: NotificationMock,
+  contextBridge,
+  IpcRendererEvent: IpcRendererEventMock,
+  noopObj,
+}
+
 export {
   app,
   BrowserWindowMock as BrowserWindow,
@@ -113,6 +128,6 @@ export {
   NotificationMock as Notification,
   contextBridge,
   IpcRendererEventMock as IpcRendererEvent,
-  noop as default,
+  electronModule as default,
   noopObj,
 }
