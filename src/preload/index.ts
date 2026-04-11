@@ -48,7 +48,7 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   // Settings
   'settings:get', 'settings:set', 'settings:update-flag', 'settings:reset-flag', 'settings:reset-all',
   'settings:set-model', 'settings:set-budget',
-  'settings:get-env-vars', 'settings:set-env-var',
+  'settings:get-env-vars', 'settings:set-env-var', 'settings:delete-env-var',
   'settings:list-profiles', 'settings:save-profile', 'settings:load-profile',
   'settings:delete-profile', 'settings:export-profile', 'settings:import-profile',
   'settings:list-plugins', 'settings:open-terminal',
@@ -118,6 +118,54 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   'integration:get-status', 'integration:github-connect', 'integration:github-disconnect',
   'integration:github-repos', 'integration:github-pulls', 'integration:github-pull-detail',
   'integration:github-issues', 'integration:github-search',
+
+  // Atlassian (Jira + Confluence)
+  'integration:atlassian-connect', 'integration:atlassian-disconnect',
+  'integration:jira-projects', 'integration:jira-search', 'integration:jira-issue',
+  'integration:jira-boards', 'integration:jira-sprints', 'integration:jira-sprint-issues',
+  'integration:confluence-spaces', 'integration:confluence-search',
+  'integration:confluence-page', 'integration:confluence-page-children',
+
+  // ServiceNow
+  'integration:servicenow-connect', 'integration:servicenow-disconnect',
+  'integration:servicenow-incidents', 'integration:servicenow-incident-detail',
+  'integration:servicenow-incident-create', 'integration:servicenow-incident-update',
+  'integration:servicenow-changes', 'integration:servicenow-change-detail',
+  'integration:servicenow-catalog-items', 'integration:servicenow-knowledge',
+  'integration:servicenow-cmdb-search', 'integration:servicenow-user-info',
+
+  // Backstage
+  'integration:backstage-connect', 'integration:backstage-disconnect',
+  'integration:backstage-entities', 'integration:backstage-entity-detail',
+  'integration:backstage-search', 'integration:backstage-techdocs',
+  'integration:backstage-templates', 'integration:backstage-kubernetes',
+
+  // Power BI
+  'integration:powerbi-connect', 'integration:powerbi-disconnect',
+  'integration:powerbi-workspaces', 'integration:powerbi-datasets',
+  'integration:powerbi-reports', 'integration:powerbi-dashboards',
+  'integration:powerbi-tiles', 'integration:powerbi-refresh-history',
+  'integration:powerbi-dataflows',
+
+  // Splunk
+  'integration:splunk-connect', 'integration:splunk-disconnect',
+  'integration:splunk-search', 'integration:splunk-search-job',
+  'integration:splunk-job-status', 'integration:splunk-job-results',
+  'integration:splunk-saved-searches', 'integration:splunk-indexes',
+  'integration:splunk-alerts', 'integration:splunk-dashboards',
+
+  // Datadog
+  'integration:datadog-connect', 'integration:datadog-disconnect',
+  'integration:datadog-monitors', 'integration:datadog-monitor-detail',
+  'integration:datadog-dashboards', 'integration:datadog-dashboard-detail',
+  'integration:datadog-metrics', 'integration:datadog-events',
+  'integration:datadog-incidents', 'integration:datadog-slos',
+  'integration:datadog-hosts', 'integration:datadog-logs-search',
+
+  // Custom Integrations
+  'integration:custom-list', 'integration:custom-get', 'integration:custom-save',
+  'integration:custom-delete', 'integration:custom-test', 'integration:custom-fetch',
+  'integration:custom-duplicate',
   'team:set-shared-folder', 'team:get-shared-folder', 'team:clear-shared-folder',
   'team:list-shared-configs', 'team:apply-shared-config', 'team:git-activity',
   'team:import-bundle', 'team:export-bundle', 'team:check-setup',
@@ -134,7 +182,7 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   'subagent:pop-out', 'subagent:fleet-status',
 
   // Local Models
-  'local-models:is-available', 'local-models:detect',
+  'local-models:is-available', 'local-models:detect', 'local-models:chat',
 
   // Auto-updater
   'updater:check', 'updater:install',
@@ -159,7 +207,7 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   'starter-pack:check-handoff', 'starter-pack:build-handoff-context',
   'starter-pack:get-agent-prompt',
 
-  // PR Scores (experimental)
+  // PR Scores channels (registered by bundled extension, kept in whitelist for renderer access)
   'pr-scores:get-config', 'pr-scores:set-config',
   'pr-scores:collect-prs', 'pr-scores:score-pr', 'pr-scores:score-all',
   'pr-scores:get-scores', 'pr-scores:get-score-detail',
@@ -167,6 +215,49 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   'pr-scores:compute-deltas', 'pr-scores:build-ai-context',
   'pr-scores:clear-scores', 'pr-scores:list-scored-repos',
   'pr-scores:export-csv',
+  'pr-scores:get-author-metrics', 'pr-scores:get-all-repo-metrics',
+  'pr-scores:generate-ai-summary', 'pr-scores:get-session-prs',
+  'pr-scores:record-session-activity',
+
+  // Context Sources (extensions + integrations as session context)
+  'context-sources:list', 'context-sources:fetch', 'context-sources:fetch-multi',
+
+  // Extensions
+  'extension:list', 'extension:get', 'extension:install', 'extension:uninstall',
+  'extension:toggle', 'extension:update-permissions', 'extension:get-channels',
+  'extension:check-requirements',
+  'extension:storage-get', 'extension:storage-set', 'extension:storage-delete',
+  'extension:storage-keys', 'extension:storage-quota',
+  'extension:notify', 'extension:record-error',
+
+  // Efficiency Coach extension channels (registered by bundled extension)
+  'efficiency-coach:get-config', 'efficiency-coach:set-config',
+  'efficiency-coach:record-turn', 'efficiency-coach:get-turn-metrics',
+  'efficiency-coach:analyze-session', 'efficiency-coach:analyze-all',
+  'efficiency-coach:get-session-efficiency', 'efficiency-coach:get-overall-score',
+  'efficiency-coach:get-recommendations', 'efficiency-coach:dismiss-recommendation',
+  'efficiency-coach:estimate-context',
+  'efficiency-coach:get-reports', 'efficiency-coach:get-report', 'efficiency-coach:delete-report',
+  'efficiency-coach:get-model-comparison', 'efficiency-coach:get-patterns',
+  'efficiency-coach:enable-efficiency-mode', 'efficiency-coach:disable-efficiency-mode',
+  'efficiency-coach:get-mode-state',
+  'efficiency-coach:get-trends', 'efficiency-coach:clear-data',
+
+  // Backstage Explorer extension
+  'backstage-explorer:get-index', 'backstage-explorer:refresh-index',
+  'backstage-explorer:get-index-status',
+  'backstage-explorer:browse-entities', 'backstage-explorer:get-entity-detail',
+  'backstage-explorer:get-relationships', 'backstage-explorer:get-team-view',
+  'backstage-explorer:search', 'backstage-explorer:get-overview',
+  'backstage-explorer:build-ai-context', 'backstage-explorer:ask-local-ai',
+  'backstage-explorer:get-bookmarks', 'backstage-explorer:set-bookmarks',
+  'backstage-explorer:get-recent', 'backstage-explorer:get-suggestions',
+  'backstage-explorer:get-session-entities', 'backstage-explorer:get-catalog-insights',
+  'backstage-explorer:get-entity-notes', 'backstage-explorer:generate-summary',
+  'backstage-explorer:get-config', 'backstage-explorer:set-config',
+  'backstage-explorer:ctx-catalog-overview', 'backstage-explorer:ctx-entity-detail',
+  'backstage-explorer:ctx-team-services', 'backstage-explorer:ctx-system-architecture',
+  'backstage-explorer:ctx-catalog-search',
 ])
 
 // Channels the main process pushes to the renderer via webContents.send()
@@ -178,6 +269,9 @@ const ALLOWED_RECEIVE_CHANNELS = new Set([
   'notification:new',
   'subagent:output', 'subagent:spawned', 'subagent:status-changed',
   'updater:status',
+  'integration:powerbi-device-code',
+  'integration:powerbi-auth-complete',
+  'extension:updated', 'extension:removed', 'extension:event',
 ])
 
 contextBridge.exposeInMainWorld('electronAPI', {

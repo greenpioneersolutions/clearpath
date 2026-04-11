@@ -1,5 +1,6 @@
 import type { SessionInfo } from '../../types/ipc'
 import type { OutputMessage } from '../OutputDisplay'
+import ExtensionSlot from '../extensions/ExtensionSlot'
 
 interface Props {
   session: SessionInfo
@@ -43,6 +44,8 @@ export default function SessionSummary({ session, messages, onContinue, onSaveAs
           <StatBox label="Tool Uses" value={String(toolUseCount)} />
           <StatBox label="Errors" value={String(errorCount)} highlight={errorCount > 0} />
         </div>
+
+        <ExtensionSlot slotName="session-summary:after-stats" className="pt-2" />
 
         {/* Actions */}
         <div className="space-y-2 pt-2">

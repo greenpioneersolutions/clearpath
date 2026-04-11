@@ -51,6 +51,7 @@ export interface FeatureFlags {
   enableExperimentalFeatures: boolean
   showPrScores: boolean
   prScoresAiReview: boolean
+  showEfficiencyCoach: boolean
 }
 
 const ALL_ON: FeatureFlags = {
@@ -93,6 +94,7 @@ const ALL_ON: FeatureFlags = {
   enableExperimentalFeatures: false,
   showPrScores: false,
   prScoresAiReview: false,
+  showEfficiencyCoach: true,
 }
 
 // ── Presets ──────────────────────────────────────────────────────────────────
@@ -178,6 +180,22 @@ const PRESETS: FlagPreset[] = [
       showEnvVars: false,
       showWebhooks: false,
       showPrScores: false,
+    },
+  },
+  {
+    id: 'efficiency',
+    name: 'Efficiency Mode',
+    description: 'Cost-conscious defaults — sub-agents, fleet, composer, scheduler off. Focus on single sessions with minimal context.',
+    flags: {
+      showComposer: false,
+      showSubAgents: false,
+      showScheduler: false,
+      showKnowledgeBase: false,
+      showVoice: false,
+      showTeamHub: false,
+      showWebhooks: false,
+      showPlugins: false,
+      showEfficiencyCoach: true,
     },
   },
 ]

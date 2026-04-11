@@ -10,6 +10,8 @@ import Configure from './pages/Configure'
 import Learn from './pages/Learn'
 import SubAgentPopout from './pages/SubAgentPopout'
 import PrScores from './pages/PrScores'
+import BackstageExplorer from './pages/BackstageExplorer'
+import ExtensionPage from './components/extensions/ExtensionPage'
 
 export default function App(): JSX.Element {
   return (
@@ -24,6 +26,8 @@ export default function App(): JSX.Element {
           <Route path="learn" element={<Learn />} />
           <Route path="insights" element={<Insights />} />
           <Route path="pr-scores" element={<PrScores />} />
+          <Route path="backstage-explorer" element={<BackstageExplorer />} />
+          <Route path="ext/:extensionId/*" element={<ExtensionPage />} />
           <Route path="configure" element={<Configure />} />
         </Route>
         <Route path="/subagent-popout/:id" element={<SubAgentPopout />} />

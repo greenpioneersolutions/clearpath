@@ -41,6 +41,7 @@ ClearPathAI wraps GitHub Copilot CLI (and Claude Code CLI for teams that have ac
 - **Policy guardrails** — Configurable policy presets (Cautious/Standard/Unrestricted) with violation logging
 - **Team collaboration** — Config bundle export/import, shared folder sync, agent marketplace
 - **PR Scores (Experimental)** — Score GitHub pull requests 0-100 with breakdown analysis, repo dashboards, and AI-powered code review
+- **Extension system** — Dynamic extensions loaded at runtime, sandboxed in iframes with MessageChannel SDK, per-extension encrypted storage, permission-gated access to integrations. Build and distribute your own extensions. **[Read the Extension Guide](docs/extensions.md)**
 - **Compliance & security** — Audit logging, encrypted credential storage, OS keychain integration, CSP headers, IPC whitelisting, rate limiting
 - **Knowledge base generation** — AI-generated codebase documentation with incremental updates
 - **Voice interface** — Speech-to-text input, voice commands, hands-free mode, audio notifications
@@ -131,9 +132,32 @@ Clear Path uses a streamlined 4-screen navigation:
 | **Work** | Session chat + contextual panel toolbar (Agents, Tools, Files, Git, Templates, Sub-Agents, Knowledge Base) |
 | **Insights** | Analytics (token-first + cost toggle), Compliance, and Usage tabs |
 | **PR Scores** | Experimental — GitHub PR scoring, repo dashboards, AI review (feature-flagged) |
-| **Configure** | Settings, Policies, Integrations, Memory, Skills, Workspaces, Team Hub, Scheduler, Branding |
+| **Configure** | Settings, Policies, Integrations, Extensions, Memory, Skills, Workspaces, Team Hub, Scheduler, Branding |
 
 Managers see 4 screens, not 18 pages. Power users access everything through contextual panels in the Work view.
+
+## Extensions
+
+ClearPathAI supports a dynamic extension system that lets you add custom features to the app after installation. Extensions run in sandboxed iframes with a permission-gated SDK — they can render custom UI, access integration data (GitHub, Jira, etc.), store data persistently, and add sidebar navigation entries, all without ever touching raw tokens or the host app's internals.
+
+**What extensions can do:**
+- Render React-based UI pages, panels, and dashboard widgets
+- Access GitHub repos, PRs, and issues through a secure proxy (token never leaves the main process)
+- Store up to 50 MB of encrypted, per-extension persistent data
+- Send notifications to the user
+- Make HTTP requests to declared domains
+- Register custom IPC handlers for backend logic
+
+**What extensions cannot do:**
+- Access raw API tokens or credentials
+- Make undeclared network requests
+- Read or modify the host app's DOM
+- Access other extensions' data
+- Crash the host app (errors are contained in the iframe)
+
+Extensions are managed in **Configure > Extensions** where users can install from zip files, enable/disable, and grant or revoke individual permissions.
+
+**[Read the full Extension Developer Guide](docs/extensions.md)** for architecture details, the manifest spec, SDK API reference, security model, and step-by-step tutorials for building your own extensions.
 
 ## Enterprise Ready
 

@@ -1,0 +1,160 @@
+{
+  "id": "com.clearpathai.backstage-explorer",
+  "name": "Backstage Explorer",
+  "version": "1.0.0",
+  "description": "AI-powered exploration of your Backstage software catalog — browse entities, map relationships, understand team ownership, and ask questions with full catalog context",
+  "author": "ClearPathAI",
+  "icon": "assets/icon.svg",
+  "main": "dist/main.cjs",
+  "renderer": "dist/renderer.js",
+  "permissions": [
+    "integration:backstage:read",
+    "storage",
+    "notifications:emit",
+    "sessions:read",
+    "sessions:lifecycle",
+    "local-models:access",
+    "context:estimate",
+    "notes:read",
+    "feature-flags:read",
+    "feature-flags:write",
+    "cost:read",
+    "navigation"
+  ],
+  "requires": [
+    { "integration": "backstage", "label": "Backstage", "message": "Connect your Backstage instance in Configure > Integrations." }
+  ],
+  "ipcNamespace": "backstage-explorer",
+  "ipcChannels": [
+    "backstage-explorer:get-index",
+    "backstage-explorer:refresh-index",
+    "backstage-explorer:get-index-status",
+    "backstage-explorer:browse-entities",
+    "backstage-explorer:get-entity-detail",
+    "backstage-explorer:get-relationships",
+    "backstage-explorer:get-team-view",
+    "backstage-explorer:search",
+    "backstage-explorer:get-overview",
+    "backstage-explorer:build-ai-context",
+    "backstage-explorer:ask-local-ai",
+    "backstage-explorer:get-bookmarks",
+    "backstage-explorer:set-bookmarks",
+    "backstage-explorer:get-recent",
+    "backstage-explorer:get-suggestions",
+    "backstage-explorer:get-session-entities",
+    "backstage-explorer:get-catalog-insights",
+    "backstage-explorer:get-entity-notes",
+    "backstage-explorer:generate-summary",
+    "backstage-explorer:get-config",
+    "backstage-explorer:set-config",
+    "backstage-explorer:ctx-catalog-overview",
+    "backstage-explorer:ctx-entity-detail",
+    "backstage-explorer:ctx-team-services",
+    "backstage-explorer:ctx-system-architecture",
+    "backstage-explorer:ctx-catalog-search"
+  ],
+  "contributes": {
+    "navigation": [
+      {
+        "id": "backstage-explorer-page",
+        "path": "/backstage-explorer",
+        "label": "Backstage",
+        "icon": "server-stack",
+        "position": "after:insights"
+      }
+    ],
+    "panels": [],
+    "tabs": [
+      {
+        "id": "catalog-insights",
+        "page": "insights",
+        "label": "Catalog Insights",
+        "component": "CatalogInsightsTab",
+        "position": "end"
+      }
+    ],
+    "sidebarWidgets": [
+      {
+        "id": "backstage-catalog-mini",
+        "label": "Catalog",
+        "component": "SidebarWidget",
+        "position": "status"
+      }
+    ],
+    "sessionHooks": [
+      {
+        "event": "turn:ended",
+        "handler": "backstage-explorer:on-turn-ended"
+      },
+      {
+        "event": "session:started",
+        "handler": "backstage-explorer:on-session-started"
+      }
+    ],
+    "featureFlags": [
+      "showBackstageExplorer",
+      "backstageLocalAi"
+    ],
+    "contextProviders": [
+      {
+        "id": "catalog-overview",
+        "label": "Catalog Overview",
+        "description": "Full software catalog summary — entity counts, teams, top services, lifecycle breakdown",
+        "icon": "server-stack",
+        "parameters": [],
+        "handler": "backstage-explorer:ctx-catalog-overview",
+        "examples": ["Summarize our tech landscape", "How many services do we have?", "What teams own the most services?"],
+        "maxTokenEstimate": 4000
+      },
+      {
+        "id": "entity-detail",
+        "label": "Entity Detail",
+        "description": "Deep detail on a specific service, API, or component with relationships and ownership",
+        "icon": "document-magnifying-glass",
+        "parameters": [
+          { "id": "entity", "label": "Entity name", "type": "text", "required": true, "placeholder": "e.g. payments-api" }
+        ],
+        "handler": "backstage-explorer:ctx-entity-detail",
+        "examples": ["What does this service do?", "Who owns it and what depends on it?", "Explain the architecture around this service"],
+        "maxTokenEstimate": 3000
+      },
+      {
+        "id": "team-services",
+        "label": "Team Services",
+        "description": "All services, APIs, and systems owned by a specific team",
+        "icon": "user-group",
+        "parameters": [
+          { "id": "team", "label": "Team name", "type": "text", "required": true, "placeholder": "e.g. platform, team-a" }
+        ],
+        "handler": "backstage-explorer:ctx-team-services",
+        "examples": ["What does this team own?", "How are their services connected?", "What's the health of this team's portfolio?"],
+        "maxTokenEstimate": 5000
+      },
+      {
+        "id": "system-architecture",
+        "label": "System Architecture",
+        "description": "All components, APIs, and dependencies within a system or domain",
+        "icon": "cube-transparent",
+        "parameters": [
+          { "id": "system", "label": "System name", "type": "text", "required": true, "placeholder": "e.g. payments, checkout" }
+        ],
+        "handler": "backstage-explorer:ctx-system-architecture",
+        "examples": ["How is this system structured?", "What APIs does it expose?", "What are its upstream and downstream dependencies?"],
+        "maxTokenEstimate": 5000
+      },
+      {
+        "id": "catalog-search",
+        "label": "Catalog Search",
+        "description": "Search the catalog for services, APIs, or components matching a query",
+        "icon": "magnifying-glass",
+        "parameters": [
+          { "id": "query", "label": "Search query", "type": "text", "required": true, "placeholder": "e.g. authentication, database, tier-1" }
+        ],
+        "handler": "backstage-explorer:ctx-catalog-search",
+        "examples": ["Find all services related to this topic", "What authentication services exist?", "Show me everything tagged with this label"],
+        "maxTokenEstimate": 4000
+      }
+    ]
+  },
+  "storageQuota": 20971520
+}

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useBranding } from '../contexts/BrandingContext'
+import ExtensionSlot from './extensions/ExtensionSlot'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -276,6 +277,8 @@ export default function HomeHub(): JSX.Element {
             </div>
           </div>
         )}
+
+        <ExtensionSlot slotName="home:widgets" className="mt-6" />
 
       </div>
     </div>
