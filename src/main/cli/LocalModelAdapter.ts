@@ -138,6 +138,22 @@ export class LocalModelAdapter implements ICLIAdapter {
     this.sendInput(proc, command)
   }
 
+  /**
+   * Public single-shot chat completion for use outside the session flow.
+   * Used by extensions (e.g., efficiency coach) for analysis tasks.
+   */
+  async chat(
+    model: string,
+    messages: ChatMessage[],
+    source?: 'ollama' | 'lmstudio',
+  ): Promise<string> {
+    const useSource = source ?? (model.includes('/') ? 'lmstudio' : 'ollama')
+    if (useSource === 'lmstudio') {
+      return this.chatLmStudio(model, messages)
+    }
+    return this.chatOllama(model, messages)
+  }
+
   // ── HTTP helpers ───────────────────────────────────────────────────────────
 
   private async streamChat(model: string, isLmStudio: boolean, messages: ChatMessage[]): Promise<string> {

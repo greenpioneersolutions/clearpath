@@ -5,12 +5,22 @@ import { readFileSync, writeFileSync, readdirSync, existsSync } from 'fs'
 import { homedir } from 'os'
 import { join } from 'path'
 import { randomUUID } from 'crypto'
-import { setCustomEnvVars } from '../utils/shellEnv'
-import { storeSecret, retrieveSecret, hasSecret, getSecretPreview } from '../utils/credentialStore'
+import { setCustomEnvVars, setEnvVarEntries } from '../utils/shellEnv'
+import { storeSecret, retrieveSecret, hasSecret, getSecretPreview, deleteSecret, listSecretKeys } from '../utils/credentialStore'
 import { getStoreEncryptionKey } from '../utils/storeEncryption'
 import { log } from '../utils/logger'
 
 // ── Settings schema ──────────────────────────────────────────────────────────
+
+interface EnvVarEntry {
+  key: string
+  isSensitive: boolean
+  scope: 'global' | 'copilot' | 'claude' | 'local'
+  description?: string
+  createdAt: number
+  updatedAt: number
+  isBuiltIn: boolean
+}
 
 interface AppSettings {
   flags: Record<string, unknown>
@@ -19,6 +29,7 @@ interface AppSettings {
   maxTurns: number | null
   verbose: boolean
   envVars: Record<string, string>
+  envVarEntries?: EnvVarEntry[]
 }
 
 interface ConfigProfile {
@@ -168,24 +179,76 @@ function discoverPlugins(cli: 'copilot' | 'claude'): PluginInfo[] {
 
 // ── Registration ─────────────────────────────────────────────────────────────
 
+// ── Built-in env var definitions (seed data for migration) ─────────────────
+
+const BUILTIN_ENV_VARS: Array<{ key: string; description: string; isSensitive: boolean; scope: 'global' | 'copilot' | 'claude' | 'local' }> = [
+  { key: 'GH_TOKEN', description: 'GitHub personal access token', isSensitive: true, scope: 'copilot' },
+  { key: 'GITHUB_TOKEN', description: 'GitHub token (alternative)', isSensitive: true, scope: 'copilot' },
+  { key: 'GITHUB_ASKPASS', description: 'Executable returning token for CI/CD auth', isSensitive: false, scope: 'copilot' },
+  { key: 'ANTHROPIC_API_KEY', description: 'Anthropic API key for Claude Code', isSensitive: true, scope: 'claude' },
+  { key: 'CLAUDE_CODE_MODEL', description: 'Default model for Claude Code', isSensitive: false, scope: 'claude' },
+  { key: 'COPILOT_CUSTOM_INSTRUCTIONS_DIRS', description: 'Additional directories for custom instructions', isSensitive: false, scope: 'copilot' },
+  { key: 'ENABLE_TOOL_SEARCH', description: 'Auto-defer tool definitions (e.g. auto:5)', isSensitive: false, scope: 'claude' },
+]
+
+const BUILTIN_ENV_KEYS = new Set(BUILTIN_ENV_VARS.map(v => v.key))
+
+/** Migrate from hardcoded 7 vars to dynamic envVarEntries if not yet done. */
+function migrateEnvVarEntries(settings: AppSettings): boolean {
+  if (settings.envVarEntries && settings.envVarEntries.length > 0) return false
+  const now = Date.now()
+  settings.envVarEntries = BUILTIN_ENV_VARS.map(v => ({
+    key: v.key,
+    isSensitive: v.isSensitive,
+    scope: v.scope,
+    description: v.description,
+    createdAt: now,
+    updatedAt: now,
+    isBuiltIn: true,
+  }))
+  return true
+}
+
+/** Rebuild the spawn env from current settings + credential store. */
+function rebuildSpawnEnv(settings: AppSettings): void {
+  const spawnVars = { ...settings.envVars }
+  const entries = settings.envVarEntries ?? []
+  for (const entry of entries) {
+    if (entry.isSensitive) {
+      const secret = retrieveSecret(`env-${entry.key}`)
+      if (secret) spawnVars[entry.key] = secret
+    }
+  }
+  // Also check the legacy 3 sensitive keys in case entries haven't been migrated yet
+  for (const sKey of ['GH_TOKEN', 'GITHUB_TOKEN', 'ANTHROPIC_API_KEY']) {
+    const secret = retrieveSecret(`env-${sKey}`)
+    if (secret && !spawnVars[sKey]) spawnVars[sKey] = secret
+  }
+  setCustomEnvVars(spawnVars)
+  setEnvVarEntries(entries.map(e => ({ key: e.key, scope: e.scope })))
+}
+
 export function registerSettingsHandlers(ipcMain: IpcMain): void {
   // Load stored env vars into spawn environment on startup
   const initialSettings = store.get('settings')
-  const startupVars = { ...initialSettings.envVars }
-  // Merge encrypted secrets into spawn env
+
+  // Migrate to dynamic envVarEntries if needed
+  if (migrateEnvVarEntries(initialSettings)) {
+    store.set('settings', initialSettings)
+    log.info('[settings] Migrated env vars to dynamic envVarEntries system')
+  }
+
+  // Migrate any plaintext sensitive vars to credential store
   for (const sKey of ['GH_TOKEN', 'GITHUB_TOKEN', 'ANTHROPIC_API_KEY']) {
-    const secret = retrieveSecret(`env-${sKey}`)
-    if (secret) startupVars[sKey] = secret
-    // Remove from plaintext store if migrating
     if (initialSettings.envVars[sKey]) {
       storeSecret(`env-${sKey}`, initialSettings.envVars[sKey])
       delete initialSettings.envVars[sKey]
       store.set('settings', initialSettings)
+      log.info('[settings] Migrated plaintext %s to credential store', sKey)
     }
   }
-  if (Object.keys(startupVars).length > 0) {
-    setCustomEnvVars(startupVars)
-  }
+
+  rebuildSpawnEnv(initialSettings)
 
   // ── Settings CRUD ──────────────────────────────────────────────────────────
 
@@ -235,52 +298,82 @@ export function registerSettingsHandlers(ipcMain: IpcMain): void {
     return settings
   })
 
-  // ── Env vars ───────────────────────────────────────────────────────────────
-
-  // Sensitive keys that should be encrypted and never returned in full to the renderer
-  const SENSITIVE_ENV_KEYS = new Set(['GH_TOKEN', 'GITHUB_TOKEN', 'ANTHROPIC_API_KEY'])
+  // ── Env vars (dynamic system) ───────────────────────────────────────────────
 
   ipcMain.handle('settings:get-env-vars', () => {
     const settings = store.get('settings')
-    const result: Record<string, { value: string; isSet: boolean; isSensitive: boolean }> = {}
-    const keys = [
-      'GH_TOKEN', 'GITHUB_TOKEN', 'GITHUB_ASKPASS',
-      'ANTHROPIC_API_KEY', 'CLAUDE_CODE_MODEL',
-      'COPILOT_CUSTOM_INSTRUCTIONS_DIRS', 'ENABLE_TOOL_SEARCH',
-    ]
-    for (const key of keys) {
-      const isSensitive = SENSITIVE_ENV_KEYS.has(key)
-      if (isSensitive) {
-        // Sensitive: return only preview from encrypted store
-        const hasStored = hasSecret(`env-${key}`)
-        const hasEnv = !!process.env[key]
-        result[key] = {
-          value: hasStored ? getSecretPreview(`env-${key}`) : (hasEnv ? '****' : ''),
+    const entries = settings.envVarEntries ?? []
+    const result: Array<{
+      key: string; value: string; isSet: boolean; isSensitive: boolean
+      scope: string; description: string; isBuiltIn: boolean
+    }> = []
+
+    for (const entry of entries) {
+      if (entry.isSensitive) {
+        const hasStored = hasSecret(`env-${entry.key}`)
+        const hasEnv = !!process.env[entry.key]
+        result.push({
+          key: entry.key,
+          value: hasStored ? getSecretPreview(`env-${entry.key}`) : (hasEnv ? '****' : ''),
           isSet: hasStored || hasEnv,
           isSensitive: true,
-        }
+          scope: entry.scope,
+          description: entry.description ?? '',
+          isBuiltIn: entry.isBuiltIn,
+        })
       } else {
-        // Non-sensitive: return full value
-        const val = settings.envVars[key] ?? process.env[key] ?? ''
-        result[key] = { value: val, isSet: !!val, isSensitive: false }
+        const val = settings.envVars[entry.key] ?? process.env[entry.key] ?? ''
+        result.push({
+          key: entry.key,
+          value: val,
+          isSet: !!val,
+          isSensitive: false,
+          scope: entry.scope,
+          description: entry.description ?? '',
+          isBuiltIn: entry.isBuiltIn,
+        })
       }
     }
     return result
   })
 
-  ipcMain.handle('settings:set-env-var', (_e, args: { key: string; value: string }) => {
-    const isSensitive = SENSITIVE_ENV_KEYS.has(args.key)
+  ipcMain.handle('settings:set-env-var', (_e, args: {
+    key: string; value: string
+    isSensitive?: boolean; scope?: string; description?: string
+  }) => {
     const settings = store.get('settings')
+    const entries = settings.envVarEntries ?? []
+    let entry = entries.find(e => e.key === args.key)
 
-    if (isSensitive) {
-      // Store sensitive values encrypted, not in plaintext settings
+    // Create entry if it doesn't exist (new custom var)
+    if (!entry) {
+      entry = {
+        key: args.key,
+        isSensitive: args.isSensitive ?? false,
+        scope: (args.scope as EnvVarEntry['scope']) ?? 'global',
+        description: args.description ?? '',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        isBuiltIn: false,
+      }
+      entries.push(entry)
+    } else {
+      entry.updatedAt = Date.now()
+      // Allow updating metadata for non-built-in vars
+      if (!entry.isBuiltIn) {
+        if (args.scope !== undefined) entry.scope = args.scope as EnvVarEntry['scope']
+        if (args.description !== undefined) entry.description = args.description
+        if (args.isSensitive !== undefined) entry.isSensitive = args.isSensitive
+      }
+    }
+
+    // Store the value
+    if (entry.isSensitive) {
       if (args.value) {
         storeSecret(`env-${args.key}`, args.value)
       } else {
-        const { deleteSecret: delSecret } = require('../utils/credentialStore')
-        delSecret(`env-${args.key}`)
+        deleteSecret(`env-${args.key}`)
       }
-      // Remove from plaintext store if it was there before (migration)
       delete settings.envVars[args.key]
     } else {
       if (args.value) {
@@ -290,15 +383,30 @@ export function registerSettingsHandlers(ipcMain: IpcMain): void {
       }
     }
 
+    settings.envVarEntries = entries
     store.set('settings', settings)
+    rebuildSpawnEnv(settings)
+    return { success: true }
+  })
 
-    // Rebuild env vars for spawning — sensitive vars come from credential store
-    const spawnVars = { ...settings.envVars }
-    for (const sKey of SENSITIVE_ENV_KEYS) {
-      const secret = retrieveSecret(`env-${sKey}`)
-      if (secret) spawnVars[sKey] = secret
+  ipcMain.handle('settings:delete-env-var', (_e, args: { key: string }) => {
+    const settings = store.get('settings')
+    const entries = settings.envVarEntries ?? []
+    const entry = entries.find(e => e.key === args.key)
+
+    if (!entry) return { success: false, error: 'Variable not found' }
+    if (entry.isBuiltIn) return { success: false, error: 'Cannot delete built-in variables' }
+
+    // Remove value from credential store or plaintext store
+    if (entry.isSensitive) {
+      deleteSecret(`env-${args.key}`)
     }
-    setCustomEnvVars(spawnVars)
+    delete settings.envVars[args.key]
+
+    // Remove entry
+    settings.envVarEntries = entries.filter(e => e.key !== args.key)
+    store.set('settings', settings)
+    rebuildSpawnEnv(settings)
     return { success: true }
   })
 

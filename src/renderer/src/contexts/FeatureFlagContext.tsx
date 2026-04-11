@@ -43,6 +43,8 @@ export interface FeatureFlags {
   enableExperimentalFeatures: boolean
   showPrScores: boolean
   prScoresAiReview: boolean
+  showEfficiencyCoach: boolean
+  showBackstageExplorer: boolean
 }
 
 interface FlagPreset {
@@ -73,6 +75,7 @@ const ALL_ON: FeatureFlags = {
   showUseContext: true, showAgentSelection: true, showCostTracking: true, showComplianceLogs: false,
   showDataManagement: true, showBudgetLimits: true, showPlugins: false, showEnvVars: false, showWebhooks: false,
   enableExperimentalFeatures: false, showPrScores: false, prScoresAiReview: false,
+  showEfficiencyCoach: true, showBackstageExplorer: true,
 }
 
 // ── Context ──────────────────────────────────────────────────────────────────

@@ -85,6 +85,12 @@ export function hasSecret(key: string): boolean {
   return !!stored
 }
 
+/** Return all stored secret keys (without decrypting any values). */
+export function listSecretKeys(): string[] {
+  const creds = store.get('credentials')
+  return Object.keys(creds)
+}
+
 /**
  * Return a masked preview of a secret (e.g., "ghp_****AB3F").
  * Never returns the full value.

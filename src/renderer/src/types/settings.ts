@@ -25,8 +25,20 @@ export interface AppSettings {
   maxBudgetUsd: number | null
   maxTurns: number | null
   verbose: boolean
-  /** Custom env vars injected into child processes */
+  /** Custom env vars injected into child processes (non-sensitive values) */
   envVars: Record<string, string>
+  /** Dynamic env var metadata (built-in + user-created). Sensitive values stored in credentialStore. */
+  envVarEntries?: EnvVarEntry[]
+}
+
+export interface EnvVarEntry {
+  key: string
+  isSensitive: boolean
+  scope: 'global' | 'copilot' | 'claude' | 'local'
+  description?: string
+  createdAt: number
+  updatedAt: number
+  isBuiltIn: boolean
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
