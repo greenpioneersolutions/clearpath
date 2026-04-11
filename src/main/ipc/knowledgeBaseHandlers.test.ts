@@ -149,6 +149,15 @@ describe('knowledgeBaseHandlers', () => {
       const result = handler(mockEvent, { path: '/etc/passwd' }) as { error: string }
       expect(result.error).toBe('Path not allowed')
     })
+
+    it('returns "File not found" for other read errors', () => {
+      assertPathMock.mockImplementation(() => undefined)
+      isSensitiveMock.mockReturnValue(false)
+      readFileSyncMock.mockImplementation(() => { throw new Error('ENOENT: file not found') })
+      const handler = getHandler('kb:read-file')
+      const result = handler(mockEvent, { path: '/workspace/missing.md' }) as { error: string }
+      expect(result.error).toBe('File not found')
+    })
   })
 
   describe('kb:search', () => {
@@ -203,6 +212,59 @@ describe('knowledgeBaseHandlers', () => {
       expect(result.results).toHaveLength(1)
       expect(mockCLIManager.spawnSubAgent).toHaveBeenCalled()
     })
+
+    it('records empty status when agent produces no text output', async () => {
+      mockCLIManager.spawnSubAgent.mockResolvedValue({ id: 'agent-2' })
+      mockCLIManager.listSubAgents.mockReturnValue([{ id: 'agent-2', status: 'completed' }])
+      mockCLIManager.getSubAgentOutput.mockReturnValue([]) // no output
+
+      const handler = getHandler('kb:generate')
+      const result = await handler(mockEvent, {
+        cwd: '/workspace', sectionIds: ['overview'], cli: 'copilot', depth: 'standard',
+      }) as { results: Array<{ sectionId: string; status: string }> }
+      expect(result.results[0].status).toBe('empty')
+    })
+
+    it('records failed status when spawnSubAgent throws', async () => {
+      mockCLIManager.spawnSubAgent.mockRejectedValue(new Error('spawn failed'))
+
+      const handler = getHandler('kb:generate')
+      const result = await handler(mockEvent, {
+        cwd: '/workspace', sectionIds: ['architecture'], cli: 'claude', depth: 'deep',
+      }) as { results: Array<{ sectionId: string; status: string }> }
+      expect(result.results[0].status).toBe('failed')
+    })
+
+    it('splits maxBudget across sections', async () => {
+      mockCLIManager.spawnSubAgent.mockResolvedValue({ id: 'agent-3' })
+      mockCLIManager.listSubAgents.mockReturnValue([{ id: 'agent-3', status: 'completed' }])
+      mockCLIManager.getSubAgentOutput.mockReturnValue([{ type: 'text', content: 'content' }])
+
+      const handler = getHandler('kb:generate')
+      await handler(mockEvent, {
+        cwd: '/workspace', sectionIds: ['overview', 'architecture'], cli: 'copilot',
+        depth: 'quick', maxBudget: 1.0,
+      })
+      // maxBudget is split: 1.0 / 2 = 0.5 per section
+      expect(mockCLIManager.spawnSubAgent).toHaveBeenCalledWith(expect.objectContaining({
+        maxBudget: 0.5,
+      }))
+    })
+
+    it('uses undefined maxBudget when not provided', async () => {
+      mockCLIManager.spawnSubAgent.mockResolvedValue({ id: 'agent-4' })
+      mockCLIManager.listSubAgents.mockReturnValue([{ id: 'agent-4', status: 'completed' }])
+      mockCLIManager.getSubAgentOutput.mockReturnValue([{ type: 'text', content: 'docs' }])
+
+      const handler = getHandler('kb:generate')
+      await handler(mockEvent, {
+        cwd: '/workspace', sectionIds: ['overview'], cli: 'copilot', depth: 'quick',
+        // maxBudget not provided
+      })
+      expect(mockCLIManager.spawnSubAgent).toHaveBeenCalledWith(expect.objectContaining({
+        maxBudget: undefined,
+      }))
+    })
   })
 
   describe('kb:update', () => {
@@ -211,6 +273,20 @@ describe('knowledgeBaseHandlers', () => {
       const handler = getHandler('kb:update')
       const result = await handler(mockEvent, { cwd: '/workspace', cli: 'copilot' }) as { error: string }
       expect(result.error).toContain('No knowledge base found')
+    })
+
+    it('spawns update agent when KB exists', async () => {
+      existsSyncMock.mockReturnValue(true)
+      mockCLIManager.spawnSubAgent.mockResolvedValue({ id: 'update-agent' })
+      const handler = getHandler('kb:update')
+      const result = await handler(mockEvent, { cwd: '/workspace', cli: 'claude' }) as { agentId: string; status: string }
+      expect(result.agentId).toBe('update-agent')
+      expect(result.status).toBe('started')
+      expect(mockCLIManager.spawnSubAgent).toHaveBeenCalledWith(expect.objectContaining({
+        name: 'KB: Update',
+        cli: 'claude',
+        permissionMode: 'acceptEdits',
+      }))
     })
   })
 
@@ -222,6 +298,30 @@ describe('knowledgeBaseHandlers', () => {
         cwd: '/workspace', question: 'What does this do?', cli: 'claude',
       }) as { agentId: string }
       expect(result.agentId).toBe('qa-1')
+    })
+
+    it('includes KB context when KB directory exists', async () => {
+      existsSyncMock.mockReturnValue(true)
+      mockCLIManager.spawnSubAgent.mockResolvedValue({ id: 'qa-2' })
+      const handler = getHandler('kb:ask')
+      await handler(mockEvent, {
+        cwd: '/workspace', question: 'What is the architecture?', cli: 'copilot',
+      })
+      expect(mockCLIManager.spawnSubAgent).toHaveBeenCalledWith(expect.objectContaining({
+        prompt: expect.stringContaining('Use the knowledge base documentation'),
+      }))
+    })
+
+    it('omits KB context when KB directory does not exist', async () => {
+      existsSyncMock.mockReturnValue(false)
+      mockCLIManager.spawnSubAgent.mockResolvedValue({ id: 'qa-3' })
+      const handler = getHandler('kb:ask')
+      await handler(mockEvent, {
+        cwd: '/workspace', question: 'How does auth work?', cli: 'copilot',
+      })
+      const call = mockCLIManager.spawnSubAgent.mock.calls[0][0]
+      expect(call.prompt).not.toContain('Use the knowledge base documentation')
+      expect(call.prompt).toContain('How does auth work?')
     })
   })
 
@@ -260,6 +360,26 @@ describe('knowledgeBaseHandlers', () => {
       const handler = getHandler('kb:export-file')
       const result = await handler(mockEvent, { cwd: '/workspace' }) as { canceled: boolean }
       expect(result.canceled).toBe(true)
+    })
+
+    it('returns error when no KB files exist', async () => {
+      existsSyncMock.mockReturnValue(false)
+      const handler = getHandler('kb:export-file')
+      const result = await handler(mockEvent, { cwd: '/workspace' }) as { error: string }
+      expect(result.error).toContain('No knowledge base files')
+    })
+
+    it('writes merged file and returns path when user picks a location', async () => {
+      existsSyncMock.mockReturnValue(true)
+      readdirSyncMock.mockReturnValue(['01-overview.md'])
+      readFileSyncMock.mockReturnValue('Overview content')
+      statSyncMock.mockReturnValue({ mtimeMs: 1000 })
+      showSaveDialogMock.mockResolvedValue({ canceled: false, filePath: '/tmp/kb.md' })
+
+      const handler = getHandler('kb:export-file')
+      const result = await handler(mockEvent, { cwd: '/workspace' }) as { path: string }
+      expect(result.path).toBe('/tmp/kb.md')
+      expect(writeFileSyncMock).toHaveBeenCalledWith('/tmp/kb.md', expect.stringContaining('Overview content'), 'utf8')
     })
   })
 })

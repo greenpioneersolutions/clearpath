@@ -115,6 +115,26 @@ describe('fileExplorerHandlers', () => {
       expect(names).not.toContain('node_modules')
       expect(names).not.toContain('__pycache__')
     })
+
+    it('skips inaccessible files when statSync throws', () => {
+      readdirSyncMock.mockReturnValue(['good.ts', 'bad.bin'])
+      statSyncMock.mockImplementation((path: string) => {
+        if (path.endsWith('bad.bin')) throw new Error('EACCES: permission denied')
+        return { isDirectory: () => false, size: 200, mtimeMs: 1000 }
+      })
+      const handler = getHandler('files:list')
+      const result = handler(mockEvent, { cwd: '/workspace/project' }) as Array<{ name: string }>
+      const names = result.map((f) => f.name)
+      expect(names).toContain('good.ts')
+      expect(names).not.toContain('bad.bin')
+    })
+
+    it('returns empty when readdirSync throws (unreadable dir)', () => {
+      readdirSyncMock.mockImplementation(() => { throw new Error('ENOTDIR') })
+      const handler = getHandler('files:list')
+      const result = handler(mockEvent, { cwd: '/workspace/bad' })
+      expect(result).toEqual([])
+    })
   })
 
   describe('files:is-protected', () => {
@@ -172,6 +192,87 @@ describe('fileExplorerHandlers', () => {
       const handler = getHandler('files:watch')
       const result = handler(mockEvent, { cwd: '/workspace/.ssh' }) as { error: string }
       expect(result.error).toContain('sensitive')
+    })
+
+    it('returns error when fs.watch throws', () => {
+      watchMock.mockImplementation(() => { throw new Error('ENOENT') })
+      const handler = getHandler('files:watch')
+      const result = handler(mockEvent, { cwd: '/workspace/bad-dir' }) as { error: string }
+      expect(result.error).toBe('Failed to watch directory')
+    })
+
+    it('sends files:changed event when watcher fires', () => {
+      let watchCallback: ((eventType: string, filename: string | null) => void) | undefined
+      watchMock.mockImplementation((_path: string, _opts: unknown, cb: (e: string, f: string | null) => void) => {
+        watchCallback = cb
+        return { close: watchCloseMock }
+      })
+
+      const handler = getHandler('files:watch')
+      handler(mockEvent, { cwd: '/workspace/myproject' })
+
+      // Simulate a file change event
+      expect(watchCallback).toBeDefined()
+      watchCallback!('change', 'src/index.ts')
+      expect(mockWebContents.send).toHaveBeenCalledWith('files:changed', {
+        cwd: '/workspace/myproject',
+        eventType: 'change',
+        filename: 'src/index.ts',
+      })
+    })
+
+    it('does not send event when filename is null', () => {
+      let watchCallback: ((eventType: string, filename: string | null) => void) | undefined
+      watchMock.mockImplementation((_path: string, _opts: unknown, cb: (e: string, f: string | null) => void) => {
+        watchCallback = cb
+        return { close: watchCloseMock }
+      })
+
+      const handler = getHandler('files:watch')
+      handler(mockEvent, { cwd: '/workspace/myproject2' })
+
+      mockWebContents.send.mockClear()
+      watchCallback!(  'rename', null)
+      expect(mockWebContents.send).not.toHaveBeenCalled()
+    })
+
+    it('does not send event when filename contains node_modules', () => {
+      let watchCallback: ((eventType: string, filename: string | null) => void) | undefined
+      watchMock.mockImplementation((_path: string, _opts: unknown, cb: (e: string, f: string | null) => void) => {
+        watchCallback = cb
+        return { close: watchCloseMock }
+      })
+
+      const handler = getHandler('files:watch')
+      handler(mockEvent, { cwd: '/workspace/proj3' })
+
+      mockWebContents.send.mockClear()
+      watchCallback!('change', 'node_modules/some-pkg/index.js')
+      expect(mockWebContents.send).not.toHaveBeenCalled()
+    })
+
+    it('does not send event when webContents is null', async () => {
+      let watchCallback: ((eventType: string, filename: string | null) => void) | undefined
+      watchMock.mockImplementation((_path: string, _opts: unknown, cb: (e: string, f: string | null) => void) => {
+        watchCallback = cb
+        return { close: watchCloseMock }
+      })
+
+      vi.resetModules()
+      // Re-register with null webContents using dynamic import
+      const mod = await import('./fileExplorerHandlers')
+      mod.registerFileExplorerHandlers(ipcMain, () => null)
+
+      // Use the latest registered handler
+      const calls = (ipcMain.handle as ReturnType<typeof vi.fn>).mock.calls.filter(
+        (c: unknown[]) => c[0] === 'files:watch',
+      )
+      const handler = calls[calls.length - 1][1] as HandlerFn
+      handler(mockEvent, { cwd: '/workspace/proj-null-wc' })
+
+      // Should not throw even when webContents is null
+      expect(() => watchCallback!('change', 'src/app.ts')).not.toThrow()
+      expect(mockWebContents.send).not.toHaveBeenCalledWith('files:changed', expect.objectContaining({ cwd: '/workspace/proj-null-wc' }))
     })
   })
 
