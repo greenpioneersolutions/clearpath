@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "wallaby": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "/Users/jaredkremer/.vscode/extensions/wallabyjs.wallaby-vscode-1.0.493/wallaby379335/mcp/index.js"
+      ],
+      "env": {}
+    }
+  }
+}
