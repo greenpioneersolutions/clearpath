@@ -1,0 +1,82 @@
+{
+  "id": "com.clearpathai.efficiency-coach",
+  "name": "AI Efficiency Coach",
+  "version": "1.0.0",
+  "description": "Optimize AI usage with efficiency scoring, context analysis, and actionable recommendations as the industry shifts to request-based pricing.",
+  "author": "ClearPathAI",
+  "icon": "assets/icon.svg",
+  "minAppVersion": "1.7.0",
+  "main": "dist/main.cjs",
+  "renderer": "dist/renderer.js",
+  "permissions": [
+    "storage",
+    "notifications:emit",
+    "navigation",
+    "sessions:read",
+    "sessions:lifecycle",
+    "cost:read",
+    "feature-flags:read",
+    "feature-flags:write",
+    "local-models:access",
+    "context:estimate",
+    "notes:read",
+    "skills:read"
+  ],
+  "ipcNamespace": "efficiency-coach",
+  "ipcChannels": [
+    "efficiency-coach:get-config",
+    "efficiency-coach:set-config",
+    "efficiency-coach:record-turn",
+    "efficiency-coach:get-turn-metrics",
+    "efficiency-coach:analyze-session",
+    "efficiency-coach:analyze-all",
+    "efficiency-coach:get-session-efficiency",
+    "efficiency-coach:get-overall-score",
+    "efficiency-coach:get-recommendations",
+    "efficiency-coach:dismiss-recommendation",
+    "efficiency-coach:estimate-context",
+    "efficiency-coach:get-reports",
+    "efficiency-coach:get-report",
+    "efficiency-coach:delete-report",
+    "efficiency-coach:get-model-comparison",
+    "efficiency-coach:get-patterns",
+    "efficiency-coach:enable-efficiency-mode",
+    "efficiency-coach:disable-efficiency-mode",
+    "efficiency-coach:get-mode-state",
+    "efficiency-coach:get-trends",
+    "efficiency-coach:clear-data"
+  ],
+  "contributes": {
+    "navigation": [
+      {
+        "id": "efficiency-dashboard",
+        "path": "/efficiency-coach",
+        "label": "Efficiency Coach",
+        "icon": "bolt",
+        "position": "after:insights",
+        "featureGate": ["showEfficiencyCoach"]
+      }
+    ],
+    "panels": [],
+    "tabs": [
+      { "id": "efficiency-tab", "page": "insights", "label": "Efficiency", "component": "EfficiencyDashboard", "position": "end" }
+    ],
+    "featureFlags": ["showEfficiencyCoach"],
+    "sessionHooks": [
+      { "event": "turn:ended", "handler": "efficiency-coach:record-turn" }
+    ],
+    "contextProviders": [
+      {
+        "id": "efficiency-report",
+        "label": "Efficiency Report",
+        "description": "Your latest AI usage efficiency analysis — scores, patterns, and recommendations",
+        "icon": "bolt",
+        "parameters": [],
+        "handler": "efficiency-coach:analyze-all",
+        "examples": ["How can I improve my AI usage?", "What patterns are hurting my efficiency?", "Am I using the right models?"],
+        "maxTokenEstimate": 3000
+      }
+    ]
+  },
+  "storageQuota": 52428800
+}

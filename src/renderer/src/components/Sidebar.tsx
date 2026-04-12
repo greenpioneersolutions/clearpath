@@ -3,6 +3,8 @@ import { useState, useEffect } from 'react'
 import NotificationBell from './notifications/NotificationBell'
 import { useFeatureFlags, type FeatureFlags } from '../contexts/FeatureFlagContext'
 import { useBranding } from '../contexts/BrandingContext'
+import { useExtensions } from '../hooks/useExtensions'
+import ExtensionSlot from './extensions/ExtensionSlot'
 
 interface Workspace {
   id: string
@@ -40,16 +42,6 @@ const NAV_ITEMS: Array<{ to: string; label: string; flagKey?: keyof FeatureFlags
       </svg>
     ),
   },
-  {
-    to: '/pr-scores',
-    label: 'PR Scores',
-    requiredFlags: ['enableExperimentalFeatures', 'showPrScores'],
-    icon: (
-      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
-      </svg>
-    ),
-  },
 ]
 
 const CONFIGURE_ITEM = {
@@ -66,6 +58,7 @@ const CONFIGURE_ITEM = {
 export default function Sidebar(): JSX.Element {
   const { flags } = useFeatureFlags()
   const { brand } = useBranding()
+  const { enabledExtensions } = useExtensions()
   const [collapsed, setCollapsed] = useState(false)
   const [policyName, setPolicyName] = useState('Standard')
   const [copilotOk, setCopilotOk] = useState(false)
@@ -244,6 +237,8 @@ export default function Sidebar(): JSX.Element {
         </div>
       )}
 
+      {!collapsed && <ExtensionSlot slotName="sidebar:status" className="px-3 pb-1" />}
+
       {/* ── Divider ──────────────────────────────────────────────────────── */}
       <div className="mx-3 border-t" style={{ borderColor: `${brand.colorSidebarText}22` }} />
 
@@ -284,6 +279,36 @@ export default function Sidebar(): JSX.Element {
             )}
           </div>
         ))}
+
+        {/* ── Extension-contributed nav items ────────────────────────────── */}
+        {enabledExtensions
+          .flatMap((ext) =>
+            (ext.manifest.contributes?.navigation ?? []).map((nav) => ({
+              ...nav,
+              extId: ext.manifest.id,
+              extName: ext.manifest.name,
+              hasRenderer: !!ext.manifest.renderer,
+            })),
+          )
+          .filter((nav) => {
+            if (!nav.featureGate) return true
+            return nav.featureGate.every((f) => flags[f as keyof FeatureFlags])
+          })
+          .map((nav) => (
+            <NavLink
+              key={`ext-${nav.extId}-${nav.id}`}
+              to={nav.path.startsWith('/ext/') ? nav.path : (nav.hasRenderer ? `/ext/${nav.extId}${nav.path}` : nav.path)}
+              className={linkClass}
+              style={({ isActive }) => linkStyle(isActive)}
+              title={`${nav.label} (${nav.extName})`}
+            >
+              {/* Extension icon: puzzle piece fallback */}
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 4a2 2 0 114 0v1a1 1 0 001 1h3a1 1 0 011 1v3a1 1 0 01-1 1h-1a2 2 0 100 4h1a1 1 0 011 1v3a1 1 0 01-1 1h-3a1 1 0 01-1-1v-1a2 2 0 10-4 0v1a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 00-1-1H4a2 2 0 110-4h1a1 1 0 001-1V7a1 1 0 011-1h3a1 1 0 001-1V4z" />
+              </svg>
+              {!collapsed && <span>{nav.label}</span>}
+            </NavLink>
+          ))}
       </nav>
 
       {/* ── Configure (pinned to bottom) ─────────────────────────────────── */}

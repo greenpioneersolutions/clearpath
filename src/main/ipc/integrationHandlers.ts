@@ -94,8 +94,20 @@ export function registerIntegrationHandlers(ipcMain: IpcMain): void {
 
   ipcMain.handle('integration:get-status', () => {
     const gh = store.get('github')
+    const atlassian = store.get('atlassian' as keyof IntegrationStoreSchema) as Record<string, unknown> | null
+    const servicenow = store.get('servicenow' as keyof IntegrationStoreSchema) as Record<string, unknown> | null
+    const backstage = store.get('backstage' as keyof IntegrationStoreSchema) as Record<string, unknown> | null
+    const powerbi = store.get('powerbi' as keyof IntegrationStoreSchema) as Record<string, unknown> | null
+    const splunk = store.get('splunk' as keyof IntegrationStoreSchema) as Record<string, unknown> | null
+    const datadog = store.get('datadog' as keyof IntegrationStoreSchema) as Record<string, unknown> | null
     return {
       github: gh ? { connected: gh.connected, username: gh.username, connectedAt: gh.connectedAt } : null,
+      atlassian: atlassian ?? null,
+      servicenow: servicenow ?? null,
+      backstage: backstage ?? null,
+      powerbi: powerbi ?? null,
+      splunk: splunk ?? null,
+      datadog: datadog ?? null,
     }
   })
 
