@@ -18,3 +18,7 @@ Manages authentication state for both GitHub Copilot CLI and Claude Code CLI. Ch
 
 ## Business Context
 Powers the "Authenticate with Copilot / Claude" UI flows in the app. Enables users to see install/auth status and triggers browser-based login flows for both CLIs.
+
+## Test Change
+
+This is a test change for PR scores only
