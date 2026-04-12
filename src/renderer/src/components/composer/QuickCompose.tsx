@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import type { PromptTemplate } from '../../types/template'
+import type { ContextProviderDeclaration, SelectedContextSource } from '../../types/contextSources'
 
 export interface QuickComposeConfig {
   agent?: string
@@ -22,6 +23,10 @@ interface Props {
   selectedNoteIds: Set<string>
   onToggleNote: (id: string) => void
   onClearNotes: () => void
+  selectedContextSources?: SelectedContextSource[]
+  onToggleContextSource?: (source: SelectedContextSource) => void
+  onRemoveContextSource?: (providerId: string) => void
+  onClearContextSources?: () => void
 }
 
 const CAT_COLORS: Record<string, string> = {
@@ -30,11 +35,13 @@ const CAT_COLORS: Record<string, string> = {
   idea: 'bg-pink-900/30 text-pink-400', custom: 'bg-gray-800 text-gray-400',
 }
 
-export default function QuickCompose({ config, onConfigChange, cli, onTemplateSelect, selectedNoteIds, onToggleNote, onClearNotes }: Props): JSX.Element {
-  const [openPicker, setOpenPicker] = useState<'template' | 'agent' | 'memory' | null>(null)
+export default function QuickCompose({ config, onConfigChange, cli, onTemplateSelect, selectedNoteIds, onToggleNote, onClearNotes, selectedContextSources, onToggleContextSource, onRemoveContextSource, onClearContextSources }: Props): JSX.Element {
+  const [openPicker, setOpenPicker] = useState<'template' | 'agent' | 'memory' | 'context' | null>(null)
   const [templates, setTemplates] = useState<PromptTemplate[]>([])
   const [agents, setAgents] = useState<Array<{ id: string; name: string }>>([])
   const [notes, setNotes] = useState<NoteItem[]>([])
+  const [contextProviders, setContextProviders] = useState<ContextProviderDeclaration[]>([])
+  const [contextParams, setContextParams] = useState<Record<string, Record<string, string>>>({})
   const [search, setSearch] = useState('')
   const pickerRef = useRef<HTMLDivElement>(null)
 
@@ -69,6 +76,15 @@ export default function QuickCompose({ config, onConfigChange, cli, onTemplateSe
 
   useEffect(() => { if (openPicker === 'memory') void loadNotes() }, [openPicker, loadNotes])
 
+  // Load context providers
+  useEffect(() => {
+    if (openPicker === 'context') {
+      void (window.electronAPI.invoke('context-sources:list') as Promise<ContextProviderDeclaration[]>)
+        .then(setContextProviders)
+        .catch(() => setContextProviders([]))
+    }
+  }, [openPicker])
+
   const toggle = (picker: typeof openPicker) => {
     setOpenPicker(openPicker === picker ? null : picker)
     setSearch('')
@@ -80,7 +96,7 @@ export default function QuickCompose({ config, onConfigChange, cli, onTemplateSe
     onConfigChange(next)
   }
 
-  const hasAnything = config.agent || config.skill || config.delegate || config.fleet || selectedNoteIds.size > 0
+  const hasAnything = config.agent || config.skill || config.delegate || config.fleet || selectedNoteIds.size > 0 || (selectedContextSources && selectedContextSources.length > 0)
 
   return (
     <div className="border-t border-gray-800 bg-gray-900/80" ref={pickerRef}>
@@ -107,6 +123,15 @@ export default function QuickCompose({ config, onConfigChange, cli, onTemplateSe
           {config.delegate && (
             <Badge icon="delegate" label={config.delegate} color="bg-purple-900/40 text-purple-300 border-purple-700/50" onRemove={() => removeBadge('delegate')} />
           )}
+          {selectedContextSources && selectedContextSources.length > 0 && selectedContextSources.map((cs) => (
+            <Badge
+              key={cs.providerId}
+              icon="context"
+              label={cs.paramSummary ? `${cs.label} (${cs.paramSummary})` : cs.label}
+              color="bg-teal-900/40 text-teal-300 border-teal-700/50"
+              onRemove={() => onRemoveContextSource?.(cs.providerId)}
+            />
+          ))}
         </div>
       )}
 
@@ -132,6 +157,13 @@ export default function QuickCompose({ config, onConfigChange, cli, onTemplateSe
           active={openPicker === 'memory'}
           highlighted={selectedNoteIds.size > 0}
           onClick={() => toggle('memory')}
+        />
+        <ToolbarButton
+          icon={<ContextSourceIcon />}
+          label="Context Sources"
+          active={openPicker === 'context'}
+          highlighted={!!selectedContextSources && selectedContextSources.length > 0}
+          onClick={() => toggle('context')}
         />
         {cli === 'copilot' && (
           <ToolbarButton
@@ -222,6 +254,138 @@ export default function QuickCompose({ config, onConfigChange, cli, onTemplateSe
           </div>
         </PickerDropdown>
       )}
+
+      {openPicker === 'context' && (
+        <PickerDropdown>
+          <div className="px-3 py-2 border-b border-gray-800 flex items-center justify-between">
+            <span className="text-xs font-medium text-gray-300">Context Sources</span>
+            {selectedContextSources && selectedContextSources.length > 0 && (
+              <button onClick={onClearContextSources} className="text-[10px] text-gray-500 hover:text-gray-300">Clear all</button>
+            )}
+          </div>
+          <div className="max-h-72 overflow-y-auto">
+            {contextProviders.length === 0 ? (
+              <p className="text-xs text-gray-500 text-center py-4">No context sources available</p>
+            ) : (
+              <>
+                {/* Group by source type */}
+                {['extension', 'integration'].map((sourceType) => {
+                  const group = contextProviders.filter((p) => p.source === sourceType)
+                  if (group.length === 0) return null
+                  return (
+                    <div key={sourceType}>
+                      <div className="px-3 py-1.5 text-[10px] font-semibold text-gray-500 uppercase tracking-wider bg-gray-900/50">
+                        {sourceType === 'extension' ? 'Extensions' : 'Integrations'}
+                      </div>
+                      {group.map((provider) => {
+                        const isSelected = selectedContextSources?.some((s) => s.providerId === provider.id)
+                        const isConnected = provider.connected
+                        const params = contextParams[provider.id] ?? {}
+
+                        return (
+                          <div key={provider.id} className={`border-b border-gray-800/30 ${!isConnected ? 'opacity-40' : ''}`}>
+                            <button
+                              onClick={() => {
+                                if (!isConnected) return
+                                if (provider.parameters.length === 0) {
+                                  // No params needed — toggle immediately
+                                  if (isSelected) {
+                                    onRemoveContextSource?.(provider.id)
+                                  } else {
+                                    onToggleContextSource?.({
+                                      providerId: provider.id,
+                                      label: provider.label,
+                                      icon: provider.icon,
+                                      params: {},
+                                      paramSummary: '',
+                                    })
+                                  }
+                                } else {
+                                  // Has params — toggle param form visibility
+                                  setContextParams((prev) => ({
+                                    ...prev,
+                                    [provider.id]: prev[provider.id] ?? {},
+                                  }))
+                                }
+                              }}
+                              disabled={!isConnected}
+                              className={`w-full text-left px-3 py-2 transition-colors ${isSelected ? 'bg-teal-900/20' : 'hover:bg-gray-800/50'}`}
+                            >
+                              <div className="flex items-center gap-2">
+                                <div className={`w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 ${isSelected ? 'bg-teal-600 border-teal-600' : 'border-gray-600'}`}>
+                                  {isSelected && <svg className="w-2 h-2 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-xs text-gray-200">{provider.label}</span>
+                                    <span className="text-[9px] text-gray-500">{provider.sourceName}</span>
+                                  </div>
+                                  <p className="text-[10px] text-gray-500 truncate">{provider.description}</p>
+                                </div>
+                                {!isConnected && <span className="text-[9px] text-gray-600">Not connected</span>}
+                              </div>
+                            </button>
+
+                            {/* Parameter form — shown when provider is expanded and has params */}
+                            {isConnected && provider.parameters.length > 0 && contextParams[provider.id] !== undefined && (
+                              <div className="px-3 pb-2 space-y-1.5">
+                                {provider.parameters.map((param) => (
+                                  <input
+                                    key={param.id}
+                                    type="text"
+                                    value={params[param.id] ?? ''}
+                                    onChange={(e) => {
+                                      setContextParams((prev) => ({
+                                        ...prev,
+                                        [provider.id]: { ...(prev[provider.id] ?? {}), [param.id]: e.target.value },
+                                      }))
+                                    }}
+                                    placeholder={param.placeholder ?? param.label}
+                                    className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-gray-200 outline-none focus:ring-1 focus:ring-teal-500"
+                                  />
+                                ))}
+                                <button
+                                  onClick={() => {
+                                    const p = contextParams[provider.id] ?? {}
+                                    const missing = provider.parameters.filter((pp) => pp.required && !p[pp.id]?.trim())
+                                    if (missing.length > 0) return
+                                    const summary = provider.parameters.map((pp) => p[pp.id] ?? '').filter(Boolean).join('/')
+                                    if (isSelected) {
+                                      onRemoveContextSource?.(provider.id)
+                                    }
+                                    onToggleContextSource?.({
+                                      providerId: provider.id,
+                                      label: provider.label,
+                                      icon: provider.icon,
+                                      params: p,
+                                      paramSummary: summary,
+                                    })
+                                    setOpenPicker(null)
+                                  }}
+                                  className="w-full bg-teal-700 hover:bg-teal-600 text-white text-xs py-1 rounded transition-colors"
+                                >
+                                  {isSelected ? 'Update' : 'Add'} Context Source
+                                </button>
+                                {provider.examples.length > 0 && (
+                                  <div className="text-[9px] text-gray-600">
+                                    Try: {provider.examples.slice(0, 2).map((ex, i) => (
+                                      <span key={i}>&quot;{ex}&quot;{i < 1 && provider.examples.length > 1 ? ', ' : ''}</span>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )
+                })}
+              </>
+            )}
+          </div>
+        </PickerDropdown>
+      )}
     </div>
   )
 }
@@ -263,6 +427,7 @@ function Badge({ icon, label, color, onRemove }: { icon: string; label: string; 
       {icon === 'memory' && <MemoryIcon small />}
       {icon === 'fleet' && <FleetIcon small />}
       {icon === 'delegate' && <DelegateIcon small />}
+      {icon === 'context' && <ContextSourceIcon small />}
       {label}
       <button onClick={onRemove} className="hover:opacity-70 ml-0.5">&times;</button>
     </span>
@@ -292,4 +457,8 @@ function FleetIcon({ small }: { small?: boolean }): JSX.Element {
 function DelegateIcon({ small }: { small?: boolean }): JSX.Element {
   const sz = small ? 'w-2.5 h-2.5' : 'w-3.5 h-3.5'
   return <svg className={sz} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/></svg>
+}
+function ContextSourceIcon({ small }: { small?: boolean }): JSX.Element {
+  const sz = small ? 'w-2.5 h-2.5' : 'w-3.5 h-3.5'
+  return <svg className={sz} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"/></svg>
 }

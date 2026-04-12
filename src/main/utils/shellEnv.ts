@@ -53,11 +53,56 @@ export function getSpawnEnv(): NodeJS.ProcessEnv {
 
 // ── Scoped env per adapter (principle of least privilege) ──────────────────
 
-/** Env vars allowed per CLI adapter — only pass secrets each adapter actually needs. */
-const ADAPTER_ENV_ALLOWLIST: Record<string, string[]> = {
+/** Built-in fallback allowlist (used before dynamic entries are loaded). */
+const BUILTIN_ADAPTER_ALLOWLIST: Record<string, string[]> = {
   copilot: ['GH_TOKEN', 'GITHUB_TOKEN', 'GITHUB_ASKPASS', 'COPILOT_CUSTOM_INSTRUCTIONS_DIRS'],
   claude: ['ANTHROPIC_API_KEY', 'CLAUDE_CODE_MODEL', 'ENABLE_TOOL_SEARCH'],
-  local: [], // Local models don't need any secrets
+  local: [],
+}
+
+/** Dynamic env var entries with scope info. When set, overrides the static allowlist. */
+interface EnvVarEntryMeta {
+  key: string
+  scope: 'global' | 'copilot' | 'claude' | 'local'
+}
+let _envVarEntries: EnvVarEntryMeta[] | null = null
+
+/**
+ * Called by settings handlers to provide dynamic scope metadata for env vars.
+ * Once set, getScopedSpawnEnv uses these entries instead of the built-in allowlist.
+ */
+export function setEnvVarEntries(entries: EnvVarEntryMeta[]): void {
+  _envVarEntries = entries
+}
+
+/** Determine if a custom env var key is allowed for a given CLI adapter. */
+function isKeyAllowedForAdapter(key: string, cli: 'copilot' | 'claude' | 'local'): boolean {
+  if (_envVarEntries) {
+    const entry = _envVarEntries.find(e => e.key === key)
+    if (!entry) return false
+    return entry.scope === 'global' || entry.scope === cli
+  }
+  // Fallback to built-in allowlist
+  return (BUILTIN_ADAPTER_ALLOWLIST[cli] ?? []).includes(key)
+}
+
+/** Return the set of all keys NOT allowed for a given adapter. */
+function getDisallowedKeys(cli: 'copilot' | 'claude' | 'local'): Set<string> {
+  const disallowed = new Set<string>()
+  if (_envVarEntries) {
+    for (const entry of _envVarEntries) {
+      if (entry.scope !== 'global' && entry.scope !== cli) {
+        disallowed.add(entry.key)
+      }
+    }
+  } else {
+    for (const [adapter, keys] of Object.entries(BUILTIN_ADAPTER_ALLOWLIST)) {
+      if (adapter !== cli) {
+        for (const key of keys) disallowed.add(key)
+      }
+    }
+  }
+  return disallowed
 }
 
 /**
@@ -67,25 +112,20 @@ const ADAPTER_ENV_ALLOWLIST: Record<string, string[]> = {
  */
 export function getScopedSpawnEnv(cli: 'copilot' | 'claude' | 'local'): NodeJS.ProcessEnv {
   const base = _env ?? { ...process.env }
-  const allowedKeys = new Set(ADAPTER_ENV_ALLOWLIST[cli] ?? [])
   const result: Record<string, string | undefined> = { ...base }
 
   // Only merge custom env vars that this adapter is allowed to see
   for (const [k, v] of Object.entries(_customEnv)) {
-    if (v && allowedKeys.has(k)) {
+    if (v && isKeyAllowedForAdapter(k, cli)) {
       result[k] = v
     }
   }
 
   // Scrub secrets that don't belong to this adapter from the base env
-  for (const [adapter, keys] of Object.entries(ADAPTER_ENV_ALLOWLIST)) {
-    if (adapter === cli) continue
-    for (const key of keys) {
-      // Only remove if it was added by our custom env, not if it was in the system env
-      // (system env vars are the user's responsibility)
-      if (_customEnv[key] && !allowedKeys.has(key)) {
-        delete result[key]
-      }
+  const disallowed = getDisallowedKeys(cli)
+  for (const key of disallowed) {
+    if (_customEnv[key]) {
+      delete result[key]
     }
   }
 

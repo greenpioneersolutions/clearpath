@@ -60,6 +60,11 @@ export interface PrScoresConfig {
   excludeLabels: string[]
   includeCodeAnalysis: boolean
   enableAiReview: boolean
+  favorites?: string[]
+  repoWeightOverrides?: Record<string, Partial<ScoringWeights>>
+  teamMapping?: Record<string, string>
+  aiReviewModel?: string
+  autoRefreshOnTurnEnd?: boolean
 }
 
 export interface ScoreDelta {
@@ -100,6 +105,59 @@ export interface GitHubPR {
   changedFiles: number
   labels: string[]
   reviewers: string[]
+}
+
+export interface ScoringWeights {
+  cycleTime: number
+  pickupTime: number
+  reviewerCount: number
+  ciPassRate: number
+  changeRequestRatio: number
+  idleTime: number
+  linesChanged: number
+  revertRate: number
+  fileRisk: number
+  testHygiene: number
+  securityPatterns: number
+}
+
+export const DEFAULT_SCORING_WEIGHTS: ScoringWeights = {
+  cycleTime: 0.20, pickupTime: 0.15, reviewerCount: 0.10,
+  ciPassRate: 0.15, changeRequestRatio: 0.10, idleTime: 0.10,
+  linesChanged: 0.10, revertRate: 0.10, fileRisk: 0.05,
+  testHygiene: 0.03, securityPatterns: 0.02,
+}
+
+export const SCORING_WEIGHT_DESCRIPTIONS: Record<keyof ScoringWeights, string> = {
+  cycleTime: 'Time from PR creation to merge. Faster merges score higher.',
+  pickupTime: 'Time until the first review. Quick pickups score higher.',
+  reviewerCount: 'Number of unique reviewers. More reviewers (up to 3) score higher.',
+  ciPassRate: 'Percentage of CI checks that passed.',
+  changeRequestRatio: 'Proportion of reviews requesting changes. Fewer change requests score higher.',
+  idleTime: 'Time the PR sat idle with no activity.',
+  linesChanged: 'Total lines added + deleted. Smaller PRs score higher.',
+  revertRate: 'Proportion of commits that are reverts.',
+  fileRisk: 'Risk score based on files touched (auth, env, migrations, etc.).',
+  testHygiene: 'Ratio of test file changes to source file changes.',
+  securityPatterns: 'Count of security-sensitive patterns detected.',
+}
+
+export interface PrFilters {
+  author: string | null
+  labels: string[]
+  state: 'all' | 'open' | 'closed' | 'merged'
+  dateFrom: string | null
+  dateTo: string | null
+  search: string
+}
+
+export const DEFAULT_PR_FILTERS: PrFilters = {
+  author: null,
+  labels: [],
+  state: 'all',
+  dateFrom: null,
+  dateTo: null,
+  search: '',
 }
 
 export const DEFAULT_PR_SCORES_CONFIG: PrScoresConfig = {

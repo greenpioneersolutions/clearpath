@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import ExtensionSlot from '../extensions/ExtensionSlot'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -397,6 +398,8 @@ export default function SessionWizard({ onLaunchSession, defaultCli, initialOpti
               <p className="text-xs text-gray-500 mt-0.5">Select memories, an agent, or a skill to use in your session. Everything is optional.</p>
             </div>
           </div>
+
+          <ExtensionSlot slotName="wizard:context" className="mb-4" />
 
           {/* Search */}
           <div className="relative">

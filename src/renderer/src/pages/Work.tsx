@@ -23,13 +23,15 @@ import SkillWizard from '../components/skills/SkillWizard'
 import SessionSummary from '../components/shared/SessionSummary'
 import WelcomeBack from '../components/shared/WelcomeBack'
 import GitHubPanel from '../components/integrations/GitHubPanel'
+import BackstageContextPanel from '../components/backstage/BackstageContextPanel'
 import SessionWizard from '../components/wizard/SessionWizard'
 // MemoryPicker is now integrated into QuickCompose
 import NotesManager from '../components/memory/NotesManager'
+import ExtensionSlot from '../components/extensions/ExtensionSlot'
 
 // ── Panel definitions ────────────────────────────────────────────────────────
 
-type PanelId = 'agents' | 'tools' | 'work-items' | 'templates' | 'skills' | 'subagents'
+type PanelId = 'agents' | 'tools' | 'work-items' | 'templates' | 'skills' | 'subagents' | 'backstage'
 
 type FlagKey = import('../contexts/FeatureFlagContext').FeatureFlags
 
@@ -40,6 +42,7 @@ const PANELS: Array<{ id: PanelId; icon: JSX.Element; label: string; flagKey?: k
   { id: 'templates', label: 'Templates', icon: <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>, flagKey: 'showTemplates' },
   { id: 'skills', label: 'Skills', icon: <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11 4a2 2 0 114 0v1a1 1 0 001 1h3a1 1 0 011 1v3a1 1 0 01-1 1h-1a2 2 0 100 4h1a1 1 0 011 1v3a1 1 0 01-1 1h-3a1 1 0 01-1-1v-1a2 2 0 10-4 0v1a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 00-1-1H4a2 2 0 110-4h1a1 1 0 001-1V7a1 1 0 011-1h3a1 1 0 001-1V4z" /></svg>, flagKey: 'showSkillsManagement' },
   { id: 'subagents', label: 'Sub-Agents', icon: <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>, flagKey: 'showSubAgents' },
+  { id: 'backstage', label: 'Backstage', icon: <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" /></svg>, flagKey: 'showBackstageExplorer' },
 ]
 
 // ── Session state ────────────────────────────────────────────────────────────
@@ -85,6 +88,7 @@ export default function Work(): JSX.Element {
   const [showSessionManager, setShowSessionManager] = useState(false)
   const [viewingStoppedSession, setViewingStoppedSession] = useState(false) // true = show conversation for a stopped session instead of welcome screen
   const [selectedNoteIds, setSelectedNoteIds] = useState<Set<string>>(new Set())
+  const [selectedContextSources, setSelectedContextSources] = useState<import('../types/contextSources').SelectedContextSource[]>([])
   const [showSaveNoteModal, setShowSaveNoteModal] = useState<string | null>(null) // content to save
   const [wizardOptionId, setWizardOptionId] = useState<string | undefined>(undefined)
   const [wizardStep, setWizardStep] = useState<string | undefined>(undefined)
@@ -453,19 +457,43 @@ export default function Work(): JSX.Element {
         }
         setSelectedNoteIds(new Set()) // Clear after sending
       }
+      // Context source injection — fetch live data from extensions/integrations
+      if (selectedContextSources.length > 0) {
+        try {
+          const results = await window.electronAPI.invoke('context-sources:fetch-multi',
+            selectedContextSources.map((s) => ({ providerId: s.providerId, params: s.params })),
+          ) as Array<{ success: boolean; providerId: string; context: string }>
+          const contextBlocks: string[] = []
+          for (const r of results) {
+            if (r.success && r.context) {
+              const source = selectedContextSources.find((s) => s.providerId === r.providerId)
+              contextBlocks.push(`--- Context: ${source?.label ?? r.providerId} ---\n${r.context}`)
+            }
+          }
+          if (contextBlocks.length > 0) {
+            actualInput = `[Reference context from connected sources]\n\n${contextBlocks.join('\n\n')}\n\n---\n\n${actualInput}`
+          }
+        } catch {
+          // Context fetch failed — send without it
+        }
+      }
       window.electronAPI.invoke('cli:send-input', { sessionId: selectedId, input: actualInput })
     })()
 
-    // Show only the user's original message in the chat (not the prepended memory block)
+    // Show only the user's original message in the chat (not the prepended context)
     setSessions((prev) => {
       const s = prev.get(selectedId); if (!s) return prev
       const u = new Map(prev)
       const noteCount = selectedNoteIds.size
-      const displayContent = noteCount > 0 ? `📎 ${noteCount} memor${noteCount === 1 ? 'y' : 'ies'} attached\n\n${input}` : input
+      const ctxCount = selectedContextSources.length
+      const attachments: string[] = []
+      if (noteCount > 0) attachments.push(`${noteCount} memor${noteCount === 1 ? 'y' : 'ies'}`)
+      if (ctxCount > 0) attachments.push(`${ctxCount} source${ctxCount === 1 ? '' : 's'}`)
+      const displayContent = attachments.length > 0 ? `\ud83d\udcce ${attachments.join(', ')} attached\n\n${input}` : input
       u.set(selectedId, { ...s, messages: [...s.messages, { id: String(s.msgIdCounter), output: { type: 'text', content: displayContent }, sender: 'user', timestamp: Date.now() }], msgIdCounter: s.msgIdCounter + 1, processing: true })
       return u
     })
-  }, [selectedId, sessions, selectedNoteIds])
+  }, [selectedId, sessions, selectedNoteIds, selectedContextSources])
 
   const handleSlashCommand = useCallback((command: string) => {
     if (!selectedId) return
@@ -699,6 +727,7 @@ export default function Work(): JSX.Element {
                       </div>
                     </div>
                   )}
+                  <ExtensionSlot slotName="work:above-input" className="flex-shrink-0" />
                   <div className="relative flex-shrink-0">
                     <QuickCompose
                       config={quickConfig}
@@ -708,6 +737,16 @@ export default function Work(): JSX.Element {
                       selectedNoteIds={selectedNoteIds}
                       onToggleNote={(id) => setSelectedNoteIds((prev) => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next })}
                       onClearNotes={() => setSelectedNoteIds(new Set())}
+                      selectedContextSources={selectedContextSources}
+                      onToggleContextSource={(source) => {
+                        setSelectedContextSources((prev) => {
+                          const exists = prev.find((s) => s.providerId === source.providerId)
+                          if (exists) return prev.filter((s) => s.providerId !== source.providerId)
+                          return [...prev, source]
+                        })
+                      }}
+                      onRemoveContextSource={(providerId) => setSelectedContextSources((prev) => prev.filter((s) => s.providerId !== providerId))}
+                      onClearContextSources={() => setSelectedContextSources([])}
                     />
                   </div>
                   <CommandInput
@@ -866,6 +905,13 @@ export default function Work(): JSX.Element {
               />
             )}
             {activePanel === 'subagents' && <SubAgents />}
+            {activePanel === 'backstage' && (
+              <BackstageContextPanel onInjectContext={(text) => {
+                if (selectedId) {
+                  handleSend(`Here is Backstage catalog context for reference:\n\n${text}\n\nPlease review and summarize the key details.`)
+                }
+              }} />
+            )}
           </div>
         </div>
       </div>

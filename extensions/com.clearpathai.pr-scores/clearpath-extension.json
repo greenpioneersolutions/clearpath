@@ -1,0 +1,92 @@
+{
+  "id": "com.clearpathai.pr-scores",
+  "name": "PR Scores",
+  "version": "2.0.0",
+  "description": "Score, analyze, and track pull request quality metrics with automated scoring, author analytics, AI review summaries, and session-aware PR insights powered by pull-request-score",
+  "author": "ClearPathAI",
+  "icon": "assets/icon.svg",
+  "minAppVersion": "1.7.0",
+  "main": "dist/main.cjs",
+  "permissions": [
+    "integration:github:read",
+    "storage",
+    "notifications:emit",
+    "sessions:lifecycle",
+    "cost:read",
+    "local-models:access",
+    "context:estimate",
+    "feature-flags:read",
+    "notes:read"
+  ],
+  "requires": [
+    {
+      "integration": "github",
+      "label": "GitHub",
+      "message": "Connect your GitHub account in Configure > Integrations to use PR Scores."
+    }
+  ],
+  "ipcNamespace": "pr-scores",
+  "ipcChannels": [
+    "pr-scores:get-config",
+    "pr-scores:set-config",
+    "pr-scores:collect-prs",
+    "pr-scores:score-pr",
+    "pr-scores:score-all",
+    "pr-scores:get-scores",
+    "pr-scores:get-score-detail",
+    "pr-scores:calculate-metrics",
+    "pr-scores:get-repo-metrics",
+    "pr-scores:compute-deltas",
+    "pr-scores:build-ai-context",
+    "pr-scores:clear-scores",
+    "pr-scores:list-scored-repos",
+    "pr-scores:export-csv",
+    "pr-scores:get-author-metrics",
+    "pr-scores:get-all-repo-metrics",
+    "pr-scores:generate-ai-summary",
+    "pr-scores:record-session-activity",
+    "pr-scores:get-session-prs"
+  ],
+  "contributes": {
+    "navigation": [
+      {
+        "id": "pr-scores-page",
+        "path": "/pr-scores",
+        "label": "PR Scores",
+        "icon": "chart-bar-square",
+        "position": "after:insights"
+      }
+    ],
+    "featureFlags": [
+      "showPrScores",
+      "prScoresAiReview"
+    ],
+    "panels": [
+      { "id": "sidebar-health", "slot": "sidebar:status", "label": "PR Health", "component": "SidebarHealthIndicator" },
+      { "id": "home-scores", "slot": "home:widgets", "label": "Recent Scores", "component": "HomeScoreWidget" },
+      { "id": "session-prs", "slot": "session-summary:after-stats", "label": "PRs Affected", "component": "SessionPrSummary" }
+    ],
+    "tabs": [
+      { "id": "pr-health-tab", "page": "insights", "label": "PR Health", "component": "PrHealthInsightsTab", "position": "end" }
+    ],
+    "sessionHooks": [
+      { "event": "turn:ended", "handler": "pr-scores:record-session-activity" }
+    ],
+    "contextProviders": [
+      {
+        "id": "pr-scores-context",
+        "label": "PR Scores & Metrics",
+        "description": "Pull request scoring data, repo metrics, and author analytics from PR Scores",
+        "icon": "chart-bar",
+        "parameters": [
+          { "id": "owner", "label": "Owner", "type": "text", "required": true, "placeholder": "e.g. acme" },
+          { "id": "repo", "label": "Repository", "type": "text", "required": true, "placeholder": "e.g. widgets" }
+        ],
+        "handler": "pr-scores:build-ai-context",
+        "examples": ["How are our PR metrics trending?", "Which PRs need attention?", "Who are our top contributors?"],
+        "maxTokenEstimate": 4000
+      }
+    ]
+  },
+  "storageQuota": 20971520
+}

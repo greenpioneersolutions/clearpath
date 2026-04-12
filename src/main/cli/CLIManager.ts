@@ -72,6 +72,7 @@ export class CLIManager {
   private onNotify: NotifyCallback | null = null
   private onCostRecord: CostRecordCallback | null = null
   private onAudit: AuditCallback | null = null
+  private onExtensionEvent: ((event: string, data: unknown) => Promise<void>) | null = null
 
   constructor(getWebContents: () => WebContents | null) {
     this.getWebContents = getWebContents
@@ -233,6 +234,11 @@ export class CLIManager {
     this.onAudit = cb
   }
 
+  /** Register a callback for broadcasting extension lifecycle events. */
+  setExtensionEventCallback(cb: (event: string, data: unknown) => Promise<void>): void {
+    this.onExtensionEvent = cb
+  }
+
   /** Log a prompt to the audit trail (hashed, not plaintext). */
   private auditPrompt(sessionId: string, cli: string, input: string): void {
     if (!this.onAudit) return
@@ -365,6 +371,13 @@ export class CLIManager {
     // Persist session creation immediately
     this.persistSession(sessionId, session)
 
+    // Broadcast session:started to extensions
+    void this.onExtensionEvent?.('session:started', {
+      sessionId,
+      cli: session.info.cli,
+      name: session.info.name,
+    })
+
     // If an initial prompt was given, run the first turn immediately
     // Send the FULL prompt (with agent context) to the CLI, not the display version
     if (options.prompt?.trim()) {
@@ -420,6 +433,12 @@ export class CLIManager {
 
     // Persist final state with endedAt timestamp
     this.persistSession(sessionId, session)
+
+    // Broadcast session:stopped to extensions
+    void this.onExtensionEvent?.('session:stopped', {
+      sessionId,
+      exitCode: 0,
+    })
   }
 
   listSessions(): SessionInfo[] {
@@ -474,6 +493,7 @@ export class CLIManager {
     session.processingTurn = true
     session.turnOutputBytes = 0
     session.lastPrompt = input
+    ;(session as ActiveSession & { turnStartedAt: number }).turnStartedAt = Date.now()
 
     log.info(`[CLIManager] spawned pid=${proc.pid ?? 'unknown'} for session ${sessionId.slice(0, 8)}`)
     log.debug(`[CLIManager] turn #${session.turnCount} started — waiting for CLI response...`)
@@ -483,6 +503,9 @@ export class CLIManager {
     if (wc0 && !wc0.isDestroyed()) {
       wc0.send('cli:turn-start', { sessionId })
     }
+
+    // Broadcast turn:started to extensions
+    void this.onExtensionEvent?.('turn:started', { sessionId })
 
     this.attachListeners(sessionId, session, proc)
   }
@@ -856,6 +879,24 @@ export class CLIManager {
         // Record cost for this completed turn
         this.estimateCostFromOutput(sessionId, session, session.turnOutputBytes, session.lastPrompt)
       }
+
+      // Broadcast turn:ended to extensions with timing and token data
+      const turnStartedAt = (session as ActiveSession & { turnStartedAt?: number }).turnStartedAt
+      const durationMs = turnStartedAt ? Date.now() - turnStartedAt : 0
+      const inputTokens = Math.ceil(session.lastPrompt.length / 4)
+      const outputTokens = Math.ceil(session.turnOutputBytes / 4)
+      void this.onExtensionEvent?.('turn:ended', {
+        sessionId,
+        turnIndex: session.turnCount - 1,
+        durationMs,
+        inputTokens,
+        outputTokens,
+        hadError: code !== 0,
+        model: session.originalOptions.model ?? 'default',
+        cli: session.info.cli,
+        promptLength: session.lastPrompt.length,
+        responseLength: session.turnOutputBytes,
+      })
 
       // Persist session data (message log + metadata) to disk after every turn
       this.persistSession(sessionId, session)
