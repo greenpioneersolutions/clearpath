@@ -7,7 +7,8 @@ export default defineConfig({
       externalizeDeps: true,
       rollupOptions: {
         input: {
-          index: 'src/main/index.ts'
+          index: 'src/main/index.ts',
+          'sidecar-worker': 'src/main/extensions/sidecar-worker.ts',
         }
       }
     }
