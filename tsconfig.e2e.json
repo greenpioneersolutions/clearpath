@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ESNext"],
+    "strict": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "outDir": "out/e2e",
+    "baseUrl": ".",
+    "types": ["@wdio/globals/types", "node", "mocha"],
+    "skipLibCheck": true
+  },
+  "include": ["e2e/**/*.ts", "wdio.conf.ts"],
+  "exclude": ["node_modules", "out", "src"]
+}
