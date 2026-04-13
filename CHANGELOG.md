@@ -2,6 +2,19 @@
 
 All notable changes to ClearPathAI will be documented in this file.
 
+## [1.8.1] - 2026-04-13
+
+### Fixed
+- **Critical: axios SSRF & header injection** — Updated axios 1.14.0 → 1.15.0 to fix NO_PROXY hostname normalization bypass (SSRF) and unrestricted cloud metadata exfiltration via header injection chain (2 critical CVEs)
+- **High: serialize-javascript RCE** — Updated serialize-javascript 6.0.2 → 7.0.5 to fix remote code execution via RegExp.flags/Date.prototype.toISOString and CPU exhaustion denial of service (1 high + 1 medium CVE)
+
+### Changed
+- **wait-on** — Updated 7.2.0 → 9.0.5 (ships patched axios natively)
+- **npm overrides** — Added overrides for axios (>=1.15.0) and serialize-javascript (>=7.0.5) to ensure transitive dependencies (jira.js, mocha) resolve patched versions
+
+### Added
+- **CI workflow** — New GitHub Actions workflow (`.github/workflows/ci.yml`) runs unit tests and build verification on pushes to `dev`, `release/**`, and `hotfix/**` branches, and on pull requests to `main` and `dev`
+
 ## [1.8.0] - 2026-04-12
 
 ### Added
