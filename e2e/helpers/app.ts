@@ -102,3 +102,240 @@ export async function mainContentIsRendered(): Promise<boolean> {
     return false
   }
 }
+
+// ── Configure Page Helpers ──────────────────────────────────────────────────
+
+/**
+ * Navigate to the Configure page and select a specific tab.
+ * Tab keys: setup, accessibility, settings, policies, integrations,
+ * extensions, memory, agents, skills, wizard, workspaces, team,
+ * scheduler, branding.
+ */
+export async function navigateToConfigureTab(tabKey: string): Promise<void> {
+  await navigateSidebarTo('Configure')
+
+  const tabButton = await $(`#tab-${tabKey}`)
+  await tabButton.waitForExist({ timeout: ELEMENT_TIMEOUT })
+  await tabButton.waitForClickable({ timeout: ELEMENT_TIMEOUT })
+  await tabButton.click()
+
+  // Wait for tab content to render
+  await browser.pause(500)
+}
+
+/**
+ * Check if a Configure tab is currently selected (has aria-selected="true").
+ */
+export async function isConfigureTabSelected(tabKey: string): Promise<boolean> {
+  try {
+    const tabButton = await $(`#tab-${tabKey}`)
+    const selected = await tabButton.getAttribute('aria-selected')
+    return selected === 'true'
+  } catch {
+    return false
+  }
+}
+
+// ── Work Page Helpers ───────────────────────────────────────────────────────
+
+/**
+ * Wait for the Work page to be ready (chat area rendered).
+ */
+export async function waitForWorkPage(): Promise<void> {
+  await browser.waitUntil(
+    async () => {
+      const root = await $('#root')
+      const html = await root.getHTML()
+      return html.length > 200
+    },
+    { timeout: ELEMENT_TIMEOUT, interval: 300 }
+  )
+}
+
+// ── Generic Helpers ─────────────────────────────────────────────────────────
+
+/**
+ * Get all visible text content from elements matching a selector.
+ */
+export async function getTextContents(selector: string): Promise<string[]> {
+  const elements = await $$(selector)
+  const texts: string[] = []
+  for (const el of elements) {
+    try {
+      const text = await el.getText()
+      if (text.trim()) texts.push(text.trim())
+    } catch {
+      // Element may have gone stale during iteration
+    }
+  }
+  return texts
+}
+
+/**
+ * Check if any element matching a selector contains the given text.
+ */
+export async function elementWithTextExists(selector: string, text: string): Promise<boolean> {
+  const texts = await getTextContents(selector)
+  return texts.some((t) => t.includes(text))
+}
+
+/**
+ * Wait for text to appear anywhere in the page body.
+ */
+export async function waitForText(text: string, timeout = ELEMENT_TIMEOUT): Promise<void> {
+  await browser.waitUntil(
+    async () => {
+      try {
+        const body = await $('body')
+        const html = await body.getHTML()
+        return html.includes(text)
+      } catch {
+        return false
+      }
+    },
+    { timeout, timeoutMsg: `Text "${text}" did not appear within ${timeout}ms`, interval: 300 }
+  )
+}
+
+/**
+ * Check if any button with specific text exists and is visible.
+ */
+export async function buttonExists(text: string): Promise<boolean> {
+  try {
+    const xpath = `//button[contains(., '${text}')]`
+    const btn = await $(xpath)
+    return btn.isExisting()
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Click a button identified by its visible text.
+ */
+export async function clickButton(text: string): Promise<void> {
+  const xpath = `//button[contains(., '${text}')]`
+  const btn = await $(xpath)
+  await btn.waitForClickable({ timeout: ELEMENT_TIMEOUT })
+  await btn.click()
+  await browser.pause(300)
+}
+
+/**
+ * Count how many elements match a given CSS selector.
+ */
+export async function countElements(selector: string): Promise<number> {
+  const elements = await $$(selector)
+  return elements.length
+}
+
+/**
+ * Get the page HTML inside #root for content assertions.
+ */
+export async function getRootHTML(): Promise<string> {
+  const root = await $('#root')
+  return root.getHTML()
+}
+
+// ── Interaction Helpers ─────────────────────────────────────────────────────
+
+/**
+ * Navigate to a hash route within the Electron app.
+ * In Electron the renderer loads from file://, so browser.url('http://...')
+ * doesn't work. This sets window.location.hash directly.
+ */
+export async function navigateToHash(hash: string): Promise<void> {
+  await browser.execute((h) => {
+    window.location.hash = h
+  }, hash)
+  await browser.pause(500)
+}
+
+/**
+ * Read the aria-checked state of a toggle switch by its element id.
+ * Returns true if aria-checked="true", false otherwise.
+ */
+export async function getToggleState(id: string): Promise<boolean> {
+  const el = await $(`#${id}`)
+  const checked = await el.getAttribute('aria-checked')
+  return checked === 'true'
+}
+
+/**
+ * Click a toggle switch by its element id and wait for state propagation.
+ */
+export async function clickToggle(id: string): Promise<void> {
+  const el = await $(`#${id}`)
+  await el.waitForClickable({ timeout: ELEMENT_TIMEOUT })
+  await el.click()
+  await browser.pause(300)
+}
+
+/**
+ * Read an input element's current value via browser.execute.
+ * WebdriverIO's getValue() can be unreliable with React controlled inputs.
+ */
+export async function getInputValue(selector: string): Promise<string> {
+  return browser.execute((sel) => {
+    const el = document.querySelector(sel) as HTMLInputElement | null
+    return el?.value ?? ''
+  }, selector)
+}
+
+/**
+ * Set an input element's value and dispatch an 'input' event so React
+ * picks up the change. Standard WebdriverIO setValue() doesn't always
+ * trigger React's synthetic event system in Electron.
+ */
+export async function setInputValue(selector: string, value: string): Promise<void> {
+  await browser.execute(
+    (sel, val) => {
+      const el = document.querySelector(sel) as HTMLInputElement | null
+      if (!el) return
+      // Use the native setter to bypass React's controlled input tracking
+      const nativeSetter = Object.getOwnPropertyDescriptor(
+        window.HTMLInputElement.prototype, 'value',
+      )?.set ?? Object.getOwnPropertyDescriptor(
+        window.HTMLTextAreaElement.prototype, 'value',
+      )?.set
+      if (nativeSetter) {
+        nativeSetter.call(el, val)
+      } else {
+        el.value = val
+      }
+      el.dispatchEvent(new Event('input', { bubbles: true }))
+      el.dispatchEvent(new Event('change', { bubbles: true }))
+    },
+    selector,
+    value,
+  )
+  await browser.pause(200)
+}
+
+/**
+ * Call an IPC channel directly from the renderer via window.electronAPI.invoke.
+ * Returns the raw IPC response. Useful for verifying persistence and state.
+ */
+export async function invokeIPC(channel: string, args?: unknown): Promise<unknown> {
+  return browser.execute(
+    (ch, a) => {
+      const api = (window as unknown as { electronAPI: { invoke: (c: string, a?: unknown) => Promise<unknown> } }).electronAPI
+      return api.invoke(ch, a)
+    },
+    channel,
+    args,
+  )
+}
+
+/**
+ * Wait for a CSS selector to exist in the DOM.
+ */
+export async function waitForSelector(selector: string, timeout = ELEMENT_TIMEOUT): Promise<void> {
+  await browser.waitUntil(
+    async () => {
+      const el = await $(selector)
+      return el.isExisting()
+    },
+    { timeout, timeoutMsg: `Selector "${selector}" did not appear within ${timeout}ms`, interval: 300 },
+  )
+}

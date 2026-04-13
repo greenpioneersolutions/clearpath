@@ -63,25 +63,37 @@ interface FlagContextValue {
   loading: boolean
 }
 
-// ── Default (all on) ─────────────────────────────────────────────────────────
+// ── Defaults (conservative — plugins off, core nav on) ──────────────────────
 
-const ALL_ON: FeatureFlags = {
+const DEFAULTS: FeatureFlags = {
   showHomeHub: true,
+
+  // Core navigation — always on
   showDashboard: true, showWork: true, showInsights: true, showConfigure: true, showLearn: true,
-  showSetupWizard: true, showSettings: true, showPolicies: true, showIntegrations: true,
-  showMemory: true, showSkillsManagement: true, showSessionWizard: true, showWorkspaces: true,
-  showTeamHub: true, showScheduler: false,
-  showComposer: false, showSubAgents: false, showTemplates: true, showKnowledgeBase: false, showVoice: false,
-  showUseContext: true, showAgentSelection: true, showCostTracking: true, showComplianceLogs: false,
-  showDataManagement: true, showBudgetLimits: true, showPlugins: false, showEnvVars: false, showWebhooks: false,
+
+  // Configure sub-sections — essential settings on, plugins off
+  showSetupWizard: true, showSettings: true, showPolicies: false, showIntegrations: false,
+  showMemory: false, showSkillsManagement: false, showSessionWizard: false, showWorkspaces: false,
+  showTeamHub: false, showScheduler: false,
+
+  // Work page features — all off by default
+  showComposer: false, showSubAgents: false, showTemplates: false, showKnowledgeBase: false, showVoice: false,
+
+  // Session features — all off by default
+  showUseContext: false, showAgentSelection: false, showCostTracking: false, showComplianceLogs: false,
+
+  // Settings features — all off by default
+  showDataManagement: false, showBudgetLimits: false, showPlugins: false, showEnvVars: false, showWebhooks: false,
+
+  // Experimental features — all off by default
   enableExperimentalFeatures: false, showPrScores: false, prScoresAiReview: false,
-  showEfficiencyCoach: true, showBackstageExplorer: true,
+  showEfficiencyCoach: false, showBackstageExplorer: false,
 }
 
 // ── Context ──────────────────────────────────────────────────────────────────
 
 const FlagContext = createContext<FlagContextValue>({
-  flags: ALL_ON,
+  flags: DEFAULTS,
   activePresetId: 'all-on',
   presets: [],
   setFlag: () => {},
@@ -102,7 +114,7 @@ export function useFlag(key: keyof FeatureFlags): boolean {
 // ── Provider ─────────────────────────────────────────────────────────────────
 
 export function FeatureFlagProvider({ children }: { children: ReactNode }): JSX.Element {
-  const [flags, setFlags] = useState<FeatureFlags>(ALL_ON)
+  const [flags, setFlags] = useState<FeatureFlags>(DEFAULTS)
   const [activePresetId, setActivePresetId] = useState<string | null>('all-on')
   const [presets, setPresets] = useState<FlagPreset[]>([])
   const [loading, setLoading] = useState(true)

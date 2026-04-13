@@ -54,47 +54,53 @@ export interface FeatureFlags {
   showEfficiencyCoach: boolean
 }
 
-const ALL_ON: FeatureFlags = {
+const DEFAULTS: FeatureFlags = {
   showHomeHub: true,
 
+  // Core navigation — always on by default
   showDashboard: true,
   showWork: true,
   showInsights: true,
   showConfigure: true,
   showLearn: true,
 
+  // Configure sub-sections — essential settings on, plugins off
   showSetupWizard: true,
   showSettings: true,
-  showPolicies: true,
-  showIntegrations: true,
-  showMemory: true,
-  showSkillsManagement: true,
-  showSessionWizard: true,
-  showWorkspaces: true,
-  showTeamHub: true,
+  showPolicies: false,
+  showIntegrations: false,
+  showMemory: false,
+  showSkillsManagement: false,
+  showSessionWizard: false,
+  showWorkspaces: false,
+  showTeamHub: false,
   showScheduler: false,
 
+  // Work page features — all off by default
   showComposer: false,
   showSubAgents: false,
-  showTemplates: true,
+  showTemplates: false,
   showKnowledgeBase: false,
   showVoice: false,
 
-  showUseContext: true,
-  showAgentSelection: true,
-  showCostTracking: true,
+  // Session features — all off by default
+  showUseContext: false,
+  showAgentSelection: false,
+  showCostTracking: false,
   showComplianceLogs: false,
 
-  showDataManagement: true,
-  showBudgetLimits: true,
+  // Settings features — all off by default
+  showDataManagement: false,
+  showBudgetLimits: false,
   showPlugins: false,
   showEnvVars: false,
   showWebhooks: false,
 
+  // Experimental features — all off by default
   enableExperimentalFeatures: false,
   showPrScores: false,
   prScoresAiReview: false,
-  showEfficiencyCoach: true,
+  showEfficiencyCoach: false,
 }
 
 // ── Presets ──────────────────────────────────────────────────────────────────
@@ -110,8 +116,35 @@ const PRESETS: FlagPreset[] = [
   {
     id: 'all-on',
     name: 'Everything On',
-    description: 'All features enabled (default)',
-    flags: {},
+    description: 'All features enabled — unlocks every section, tool, and experimental feature.',
+    flags: {
+      showPolicies: true,
+      showIntegrations: true,
+      showMemory: true,
+      showSkillsManagement: true,
+      showSessionWizard: true,
+      showWorkspaces: true,
+      showTeamHub: true,
+      showScheduler: true,
+      showComposer: true,
+      showSubAgents: true,
+      showTemplates: true,
+      showKnowledgeBase: true,
+      showVoice: true,
+      showUseContext: true,
+      showAgentSelection: true,
+      showCostTracking: true,
+      showComplianceLogs: true,
+      showDataManagement: true,
+      showBudgetLimits: true,
+      showPlugins: true,
+      showEnvVars: true,
+      showWebhooks: true,
+      enableExperimentalFeatures: true,
+      showPrScores: true,
+      prScoresAiReview: true,
+      showEfficiencyCoach: true,
+    },
   },
   {
     id: 'essentials',
@@ -218,7 +251,7 @@ const store = new Store<FlagStoreSchema>({
 
 function resolveFlags(): FeatureFlags {
   const overrides = store.get('flags')
-  return { ...ALL_ON, ...overrides }
+  return { ...DEFAULTS, ...overrides }
 }
 
 // ── Registration ─────────────────────────────────────────────────────────────

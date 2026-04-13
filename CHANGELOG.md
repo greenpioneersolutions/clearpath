@@ -2,6 +2,26 @@
 
 All notable changes to ClearPathAI will be documented in this file.
 
+## [1.8.0] - 2026-04-12
+
+### Added
+- **Extension System** — Full extension framework with manifest validation, permission model, sandboxed storage, IPC namespace enforcement, and lifecycle management (install, enable, disable, uninstall). Bundled extensions auto-enabled with granted permissions; user-installed extensions start disabled for security
+- **Integration Hub** — GitHub, Atlassian (Jira/Confluence), ServiceNow, Backstage, Datadog, PowerBI, and Splunk integrations with secure credential storage (OS keychain via credentialStore), token migration from legacy plaintext, and per-integration connection UI
+- **Extension Sidecar Architecture** — Extensions run in isolated child processes via ExtensionSidecarManager. Bad extensions cannot crash the main process, infinite loops are killed via timeout, and auto-disable triggers after 3 errors
+- **PR Scores Extension** — Bundled extension for pull request quality scoring, author analytics, AI review summaries, and session-aware PR insights. Contributes navigation, Insights tab, sidebar widget, and context provider
+- **Efficiency Coach Extension** — Bundled extension for AI usage efficiency analysis and recommendations
+- **Context Provider Registry** — Extensions and built-in integrations can declare context providers that inject data into AI sessions (GitHub PRs, Jira sprints, ServiceNow incidents, etc.)
+- **Extension SDK** — `@clearpath/extension-sdk` v0.2.0 for building ClearPathAI extensions with typed APIs for storage, IPC, notifications, and theme
+- **WebdriverIO E2E Tests** — Comprehensive end-to-end test suite with 11 spec files covering smoke tests, full navigation, Configure page (all 14 tabs), Extensions management, Integrations forms, Work page interactions (chat input, slash command autocomplete, mode switching), Home page quick prompt, Insights tab switching, White Label branding, and accessibility/keyboard navigation
+- **Unit Test Coverage** — 137 new unit tests for ExtensionValidator, ExtensionStore, ExtensionRegistry, ExtensionMainLoader, extensionHandlers IPC, useExtensions hook, and ExtensionManager component
+
+### Changed
+- **Feature Flags Default to Off** — All plugin features (Integrations, Policies, Memory, Skills, Workspaces, Team Hub, Templates, Agents, Cost Tracking, Efficiency Coach, Backstage Explorer, etc.) now default to off. Core navigation (Home, Work, Insights, Configure, Learn) and essential settings remain on. Users progressively enable features via the Learning Center or Feature Flags panel. The "Everything On" preset still exists for power users
+- **Extension SDK Version** — Bumped `@clearpath/extension-sdk` from 0.1.0 to 0.2.0
+
+### Fixed
+- **E2E App Cleanup** — Electron app processes now close properly after each e2e spec via `window.close()` in `after` hook, with `pkill` safety net in `onComplete`. Previously, running e2e tests would leave dozens of orphaned Electron windows
+
 ## [1.7.0] - 2026-04-07
 
 ### Added
