@@ -17,6 +17,7 @@ export default function BudgetLimits({
 }: Props): JSX.Element {
   return (
     <div className="space-y-5">
+      <h1>Budget & Limits</h1>
       <div>
         <h3 className="text-sm font-semibold text-gray-900">Budget & Limits</h3>
         <p className="text-xs text-gray-500 mt-0.5">
