@@ -266,7 +266,10 @@ module.exports = { activate, deactivate }
     port.postMessage({ type: 'ext:ready' })
 
     // ── Component Router ────────────────────────────────────────────────
-    var root = document.getElementById('root')
+    // IMPORTANT: The host srcdoc uses <div id="ext-root">, NOT "root".
+    var root = document.getElementById('ext-root')
+      || document.getElementById('root')
+      || document.body
     var componentName = window.__clearpath_component
 
     if (componentName === 'HomeWidget') {

@@ -132,6 +132,7 @@ function request(method, params) {
 | Extension UI | `src/renderer/src/components/extensions/` |
 | Extension skill | `.claude/skills/extension-sdk/` |
 | Migration skill | `.claude/skills/extension-migration/` |
+| Packaging script | `extension-sdk/scripts/package-extension.js` |
 
 ## Bundled Extensions Reference
 
@@ -141,6 +142,29 @@ function request(method, params) {
 | `com.clearpathai.pr-scores` | GitHub PR quality metrics | GitHub integration, scoring engine, analytics |
 | `com.clearpathai.backstage-explorer` | Backstage catalog explorer | Backstage integration, catalog search, entity detail |
 | `com.clearpathai.efficiency-coach` | AI usage efficiency | Session analysis, recommendations, efficiency mode |
+
+## Packaging & Distribution
+
+Extensions are distributed as `.zip` files for user installation:
+
+```bash
+# Package a single extension into a zip
+node extension-sdk/scripts/package-extension.js extensions/com.company.my-ext
+
+# Package with custom output directory
+node extension-sdk/scripts/package-extension.js extensions/com.company.my-ext --output dist-extensions/
+
+# Package all bundled extensions
+npm run package:extensions
+```
+
+The packaging script:
+- Validates the manifest exists and is valid JSON
+- Creates `<id>-v<version>.zip` with files at the zip root
+- Excludes `node_modules/`, `.git/`, `package-lock.json`
+- Reports file count and total size
+
+Users install via Configure > Extensions > Install (accepts `.zip` files). The install handler extracts to a temp directory, validates the manifest, copies to the user extensions directory, then cleans up.
 
 ## Common Mistakes to Avoid
 
@@ -152,6 +176,7 @@ function request(method, params) {
 6. **Path traversal** — `main` and `renderer` paths cannot contain `..`.
 7. **Missing response envelope** — Always return `{ success, data?, error? }` from handlers.
 8. **Exceeding storage quota** — Default 5 MB, max 50 MB. Check with `sdk.storage.quota()`.
+9. **Wrong root element ID** — The host srcdoc creates `<div id="ext-root">`, not `<div id="root">`. Always use: `document.getElementById('ext-root') || document.getElementById('root') || document.body`
 
 # Persistent Agent Memory
 

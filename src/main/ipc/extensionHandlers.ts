@@ -1,6 +1,7 @@
 import type { IpcMain } from 'electron'
 import { dialog, app } from 'electron'
-import { existsSync, mkdirSync, rmSync, readdirSync, cpSync } from 'fs'
+import { existsSync, mkdirSync, rmSync, readdirSync, cpSync, statSync } from 'fs'
+import AdmZip from 'adm-zip'
 import { join } from 'path'
 import { createHash } from 'crypto'
 import { readFileSync } from 'fs'
@@ -66,18 +67,48 @@ export function registerExtensionHandlers(
       // For now, support direct directory installation (zip extraction is a follow-up).
       // In production, we'd use a zip library (e.g., adm-zip) to extract first.
       // Check if the source is a directory (for dev/testing) or a zip file.
-      const isDirectory = existsSync(sourcePath) && require('fs').statSync(sourcePath).isDirectory()
+      const isDirectory = existsSync(sourcePath) && statSync(sourcePath).isDirectory()
 
       let extractedDir: string
+      let tmpDir: string | undefined
       if (isDirectory) {
         extractedDir = sourcePath
       } else {
-        // Zip extraction — requires adm-zip or similar
-        // For Phase A, we'll support directory installation and add zip support later
-        return { success: false, error: 'Zip installation not yet implemented. Install from a directory.' }
+        // Extract zip to temporary directory
+        tmpDir = join(app.getPath('temp'), `clearpath-ext-${Date.now()}`)
+        try {
+          const zip = new AdmZip(sourcePath)
+          zip.extractAllTo(tmpDir, true)
+
+          // The zip may contain files at root or in a single subdirectory
+          // Check if clearpath-extension.json is at root or one level deep
+          let manifestDir = tmpDir
+          if (!existsSync(join(tmpDir, 'clearpath-extension.json'))) {
+            // Check one level deep (zip may have been created with a wrapper directory)
+            const entries = readdirSync(tmpDir)
+            const subDir = entries.find(e =>
+              existsSync(join(tmpDir!, e, 'clearpath-extension.json'))
+            )
+            if (subDir) {
+              manifestDir = join(tmpDir, subDir)
+            } else {
+              throw new Error('Invalid extension package: clearpath-extension.json not found')
+            }
+          }
+          extractedDir = manifestDir
+        } catch (zipErr) {
+          // Clean up temp dir on failure
+          try { rmSync(tmpDir, { recursive: true, force: true }) } catch { /* ignore */ }
+          throw zipErr
+        }
       }
 
       const ext = registry.install(extractedDir)
+
+      // Clean up temp extraction directory (only for zip installs)
+      if (tmpDir) {
+        try { rmSync(tmpDir, { recursive: true, force: true }) } catch { /* ignore */ }
+      }
 
       notificationManager.emit({
         type: 'agent-status' as import('../notifications/NotificationManager').NotificationType,

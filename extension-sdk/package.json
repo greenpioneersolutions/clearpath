@@ -11,12 +11,17 @@
       "require": "./dist/index.js"
     }
   },
+  "bin": {
+    "clearpath-package-extension": "scripts/package-extension.js"
+  },
   "files": [
-    "dist/"
+    "dist/",
+    "scripts/"
   ],
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
+    "package-extension": "node scripts/package-extension.js",
     "prepublishOnly": "npm run build"
   },
   "keywords": [

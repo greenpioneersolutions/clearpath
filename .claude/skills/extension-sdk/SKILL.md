@@ -51,6 +51,7 @@ Two patterns are supported:
 - Bootstrap via `window.__clearpath_port` and `window.__clearpath_extension_id`
 - Use MessagePort `ext:request`/`ext:response` protocol directly
 - Route components via `window.__clearpath_component`
+- **Root element is `ext-root`** -- use `document.getElementById('ext-root')` with fallback chain: `|| document.getElementById('root') || document.body`
 
 **React (with SDK package)**:
 - Import `createExtension`, `useSDK`, `ClearPathProvider` from `@clearpath/extension-sdk`
@@ -106,6 +107,25 @@ Two patterns are supported:
 | [references/security-model.md](references/security-model.md) | 6 security layers, CSP, domain allowlist | Understanding security constraints |
 | [references/communication-protocol.md](references/communication-protocol.md) | MessagePort protocol, message types, timeouts | Debugging communication issues |
 | [references/storage-system.md](references/storage-system.md) | Storage API, quotas, encryption | Using persistent storage |
+
+## Packaging & Installation
+
+Extensions are distributed as `.zip` files. The SDK includes a packaging script:
+
+```bash
+# Package a single extension
+node extension-sdk/scripts/package-extension.js extensions/com.company.my-ext
+
+# Package with custom output directory
+node extension-sdk/scripts/package-extension.js extensions/com.company.my-ext --output dist-extensions/
+
+# Package all bundled extensions (root convenience script)
+npm run package:extensions
+```
+
+The script validates the manifest, zips all files (excluding `node_modules/`, `.git/`, `package-lock.json`), and outputs `<id>-v<version>.zip`.
+
+Users install extensions via Configure > Extensions > Install, which accepts `.zip` files.
 
 ## Examples
 

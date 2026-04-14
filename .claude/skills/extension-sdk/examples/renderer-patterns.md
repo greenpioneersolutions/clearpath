@@ -14,6 +14,11 @@ The simplest approach. A self-contained JavaScript file with no external depende
 
 ### Template
 
+> **Critical**: The host srcdoc uses `<div id="ext-root">`. Always use `document.getElementById('ext-root')` with fallbacks:
+> ```javascript
+> const root = document.getElementById('ext-root') || document.getElementById('root') || document.body
+> ```
+
 ```javascript
 ;(function () {
   'use strict'
@@ -95,8 +100,10 @@ The simplest approach. A self-contained JavaScript file with no external depende
     }
 
     // ── Component Router ────────────────────────────────────────────────
-    var root = document.getElementById('root')
-      || document.getElementById('ext-root')
+    // IMPORTANT: The host srcdoc uses <div id="ext-root">, NOT "root".
+    // Always use ext-root first with fallbacks.
+    var root = document.getElementById('ext-root')
+      || document.getElementById('root')
       || document.body
 
     var componentName = window.__clearpath_component
@@ -370,4 +377,4 @@ The host sets `window.__clearpath_component` to tell the renderer which componen
 2. **Do not use `fetch()` or `XMLHttpRequest`** -- `connect-src 'none'` blocks network requests. Use `sdk.http.fetch()` instead.
 3. **The iframe has no access to the host's React** -- you must bundle React yourself in the IIFE output.
 4. **`window.__clearpath_component`** tells you which UI to render. Always check it and route accordingly.
-5. **The root element** is `<div id="ext-root">` in the srcdoc. The IIFE pattern may also find `document.getElementById('root')`.
+5. **The root element** is `<div id="ext-root">` in the srcdoc -- always use `document.getElementById('ext-root')` first, with `|| document.getElementById('root') || document.body` as fallbacks.

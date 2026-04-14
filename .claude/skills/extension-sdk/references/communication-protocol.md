@@ -47,11 +47,16 @@ window.addEventListener('message', function onInit(event) {
 })
 ```
 
-3. Once the extension code boots, it signals readiness:
+3. Once the extension code boots, it finds the root element and signals readiness:
 
 ```javascript
+// The srcdoc creates <div id="ext-root"> — always use ext-root first with fallbacks
+var root = document.getElementById('ext-root') || document.getElementById('root') || document.body
+
 port.postMessage({ type: 'ext:ready' })
 ```
+
+> **Note**: The iframe srcdoc uses `<div id="ext-root">` as the root element, not `<div id="root">`. Always query `ext-root` first.
 
 ## Message Types
 
