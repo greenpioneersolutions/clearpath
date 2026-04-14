@@ -88,6 +88,7 @@ vi.mock('../utils/credentialStore', () => ({
 
 vi.mock('../utils/shellEnv', () => ({
   setCustomEnvVars: setCustomEnvVarsMock,
+  setEnvVarEntries: vi.fn(),
   getSpawnEnv: vi.fn().mockReturnValue({}),
   getScopedSpawnEnv: vi.fn().mockReturnValue({}),
   initShellEnv: vi.fn().mockResolvedValue(undefined),
@@ -436,61 +437,77 @@ describe('settingsHandlers', () => {
   // ── settings:get-env-vars ─────────────────────────────────────────────────
 
   describe('settings:get-env-vars', () => {
+    const BUILT_IN_ENTRIES = [
+      { key: 'GH_TOKEN', isSensitive: true, scope: 'copilot' as const, isBuiltIn: true, createdAt: 0, updatedAt: 0 },
+      { key: 'GITHUB_TOKEN', isSensitive: true, scope: 'copilot' as const, isBuiltIn: true, createdAt: 0, updatedAt: 0 },
+      { key: 'GITHUB_ASKPASS', isSensitive: false, scope: 'copilot' as const, isBuiltIn: true, createdAt: 0, updatedAt: 0 },
+      { key: 'COPILOT_CUSTOM_INSTRUCTIONS_DIRS', isSensitive: false, scope: 'copilot' as const, isBuiltIn: true, createdAt: 0, updatedAt: 0 },
+      { key: 'ANTHROPIC_API_KEY', isSensitive: true, scope: 'claude' as const, isBuiltIn: true, createdAt: 0, updatedAt: 0 },
+      { key: 'CLAUDE_CODE_MODEL', isSensitive: false, scope: 'claude' as const, isBuiltIn: true, createdAt: 0, updatedAt: 0 },
+      { key: 'ENABLE_TOOL_SEARCH', isSensitive: false, scope: 'claude' as const, isBuiltIn: true, createdAt: 0, updatedAt: 0 },
+    ]
+
+    type EnvVarResult = Array<{ key: string; value: string; isSet: boolean; isSensitive: boolean; scope: string; description: string; isBuiltIn: boolean }>
+
     it('returns all known env var keys with their status', () => {
-      const settings = { ...DEFAULT_SETTINGS, envVars: { CLAUDE_CODE_MODEL: 'opus' } }
+      const settings = { ...DEFAULT_SETTINGS, envVars: { CLAUDE_CODE_MODEL: 'opus' }, envVarEntries: BUILT_IN_ENTRIES }
       mockGet.mockReturnValue(settings)
       hasSecretMock.mockReturnValue(false)
 
       const handler = getHandler(ipcMain, 'settings:get-env-vars')
-      const result = handler() as Record<string, unknown>
+      const result = handler() as EnvVarResult
 
-      expect(result).toHaveProperty('GH_TOKEN')
-      expect(result).toHaveProperty('GITHUB_TOKEN')
-      expect(result).toHaveProperty('ANTHROPIC_API_KEY')
-      expect(result).toHaveProperty('CLAUDE_CODE_MODEL')
-      expect(result).toHaveProperty('COPILOT_CUSTOM_INSTRUCTIONS_DIRS')
-      expect(result).toHaveProperty('ENABLE_TOOL_SEARCH')
-      expect(result).toHaveProperty('GITHUB_ASKPASS')
+      expect(result.find(r => r.key === 'GH_TOKEN')).toBeDefined()
+      expect(result.find(r => r.key === 'GITHUB_TOKEN')).toBeDefined()
+      expect(result.find(r => r.key === 'ANTHROPIC_API_KEY')).toBeDefined()
+      expect(result.find(r => r.key === 'CLAUDE_CODE_MODEL')).toBeDefined()
+      expect(result.find(r => r.key === 'COPILOT_CUSTOM_INSTRUCTIONS_DIRS')).toBeDefined()
+      expect(result.find(r => r.key === 'ENABLE_TOOL_SEARCH')).toBeDefined()
+      expect(result.find(r => r.key === 'GITHUB_ASKPASS')).toBeDefined()
     })
 
     it('marks sensitive keys as sensitive and masks values', () => {
-      mockGet.mockReturnValue({ ...DEFAULT_SETTINGS })
+      mockGet.mockReturnValue({ ...DEFAULT_SETTINGS, envVarEntries: BUILT_IN_ENTRIES })
       hasSecretMock.mockReturnValue(true)
       getSecretPreviewMock.mockReturnValue('sk_****AB3F')
 
       const handler = getHandler(ipcMain, 'settings:get-env-vars')
-      const result = handler() as Record<string, { value: string; isSet: boolean; isSensitive: boolean }>
+      const result = handler() as EnvVarResult
 
-      expect(result['GH_TOKEN'].isSensitive).toBe(true)
-      expect(result['GH_TOKEN'].isSet).toBe(true)
-      expect(result['GH_TOKEN'].value).toBe('sk_****AB3F')
+      const ghToken = result.find(r => r.key === 'GH_TOKEN')
+      expect(ghToken).toBeDefined()
+      expect(ghToken!.isSensitive).toBe(true)
+      expect(ghToken!.isSet).toBe(true)
+      expect(ghToken!.value).toBe('sk_****AB3F')
     })
 
     it('returns full value for non-sensitive keys', () => {
-      mockGet.mockReturnValue({ ...DEFAULT_SETTINGS, envVars: { CLAUDE_CODE_MODEL: 'opus' } })
+      mockGet.mockReturnValue({ ...DEFAULT_SETTINGS, envVars: { CLAUDE_CODE_MODEL: 'opus' }, envVarEntries: BUILT_IN_ENTRIES })
       hasSecretMock.mockReturnValue(false)
 
       const handler = getHandler(ipcMain, 'settings:get-env-vars')
-      const result = handler() as Record<string, { value: string; isSet: boolean; isSensitive: boolean }>
+      const result = handler() as EnvVarResult
 
-      expect(result['CLAUDE_CODE_MODEL']).toEqual({
-        value: 'opus',
-        isSet: true,
-        isSensitive: false,
-      })
+      const claudeModel = result.find(r => r.key === 'CLAUDE_CODE_MODEL')
+      expect(claudeModel).toBeDefined()
+      expect(claudeModel!.value).toBe('opus')
+      expect(claudeModel!.isSet).toBe(true)
+      expect(claudeModel!.isSensitive).toBe(false)
     })
 
     it('falls back to process.env for non-sensitive unset keys', () => {
       const original = process.env.ENABLE_TOOL_SEARCH
       process.env.ENABLE_TOOL_SEARCH = 'auto:5'
-      mockGet.mockReturnValue({ ...DEFAULT_SETTINGS })
+      mockGet.mockReturnValue({ ...DEFAULT_SETTINGS, envVarEntries: BUILT_IN_ENTRIES })
       hasSecretMock.mockReturnValue(false)
 
       const handler = getHandler(ipcMain, 'settings:get-env-vars')
-      const result = handler() as Record<string, { value: string; isSet: boolean; isSensitive: boolean }>
+      const result = handler() as EnvVarResult
 
-      expect(result['ENABLE_TOOL_SEARCH'].value).toBe('auto:5')
-      expect(result['ENABLE_TOOL_SEARCH'].isSet).toBe(true)
+      const enableToolSearch = result.find(r => r.key === 'ENABLE_TOOL_SEARCH')
+      expect(enableToolSearch).toBeDefined()
+      expect(enableToolSearch!.value).toBe('auto:5')
+      expect(enableToolSearch!.isSet).toBe(true)
 
       // Restore
       if (original === undefined) delete process.env.ENABLE_TOOL_SEARCH
@@ -501,8 +518,15 @@ describe('settingsHandlers', () => {
   // ── settings:set-env-var ──────────────────────────────────────────────────
 
   describe('settings:set-env-var', () => {
+    const SENSITIVE_ENTRY = [
+      { key: 'GH_TOKEN', isSensitive: true, scope: 'copilot' as const, isBuiltIn: true, createdAt: 0, updatedAt: 0 },
+    ]
+    const NON_SENSITIVE_ENTRY = [
+      { key: 'CLAUDE_CODE_MODEL', isSensitive: false, scope: 'claude' as const, isBuiltIn: true, createdAt: 0, updatedAt: 0 },
+    ]
+
     it('stores sensitive env var in credential store (not plaintext)', () => {
-      mockGet.mockReturnValue({ ...DEFAULT_SETTINGS, envVars: {} })
+      mockGet.mockReturnValue({ ...DEFAULT_SETTINGS, envVars: {}, envVarEntries: SENSITIVE_ENTRY })
       retrieveSecretMock.mockReturnValue('')
 
       const handler = getHandler(ipcMain, 'settings:set-env-var')
@@ -518,20 +542,21 @@ describe('settingsHandlers', () => {
     })
 
     it('stores non-sensitive env var in plaintext settings', () => {
-      mockGet.mockReturnValue({ ...DEFAULT_SETTINGS, envVars: {} })
+      mockGet.mockReturnValue({ ...DEFAULT_SETTINGS, envVars: {}, envVarEntries: NON_SENSITIVE_ENTRY })
       retrieveSecretMock.mockReturnValue('')
 
       const handler = getHandler(ipcMain, 'settings:set-env-var')
       handler(mockEvent, { key: 'CLAUDE_CODE_MODEL', value: 'opus' })
 
-      const savedSettings = mockSet.mock.calls.find((c: unknown[]) => c[0] === 'settings')
+      const settingsCalls = mockSet.mock.calls.filter((c: unknown[]) => c[0] === 'settings')
+      const savedSettings = settingsCalls[settingsCalls.length - 1]
       expect(savedSettings![1]).toEqual(expect.objectContaining({
         envVars: { CLAUDE_CODE_MODEL: 'opus' },
       }))
     })
 
     it('deletes non-sensitive env var when value is empty', () => {
-      mockGet.mockReturnValue({ ...DEFAULT_SETTINGS, envVars: { CLAUDE_CODE_MODEL: 'opus' } })
+      mockGet.mockReturnValue({ ...DEFAULT_SETTINGS, envVars: { CLAUDE_CODE_MODEL: 'opus' }, envVarEntries: NON_SENSITIVE_ENTRY })
       retrieveSecretMock.mockReturnValue('')
 
       const handler = getHandler(ipcMain, 'settings:set-env-var')
@@ -542,14 +567,18 @@ describe('settingsHandlers', () => {
     })
 
     it('rebuilds spawn environment after updating', () => {
-      mockGet.mockReturnValue({ ...DEFAULT_SETTINGS, envVars: { MY_VAR: 'val' } })
+      mockGet.mockReturnValue({ ...DEFAULT_SETTINGS, envVars: { MY_VAR: 'val' }, envVarEntries: [
+        ...SENSITIVE_ENTRY,
+        { key: 'CLAUDE_CODE_MODEL', isSensitive: false, scope: 'claude' as const, isBuiltIn: true, createdAt: 0, updatedAt: 0 },
+      ] })
       retrieveSecretMock.mockReturnValue('secret-val')
 
       const handler = getHandler(ipcMain, 'settings:set-env-var')
       handler(mockEvent, { key: 'CLAUDE_CODE_MODEL', value: 'opus' })
 
       expect(setCustomEnvVarsMock).toHaveBeenCalled()
-      const spawnVars = setCustomEnvVarsMock.mock.calls[0][0]
+      const calls = setCustomEnvVarsMock.mock.calls
+      const spawnVars = calls[calls.length - 1][0]
       // Should include both regular and secret vars
       expect(spawnVars).toHaveProperty('GH_TOKEN', 'secret-val')
     })

@@ -205,6 +205,7 @@ function GitHubCard({ status, onReload }: { status: IntegrationStatus['github'];
         <input type="password" value={token} onChange={(e) => setToken(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') void handleConnect() }}
           placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+          aria-label="GitHub personal access token"
           className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent" autoFocus />
         <button onClick={() => void handleConnect()} disabled={connecting}
           className="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-500 disabled:opacity-50 transition-colors"

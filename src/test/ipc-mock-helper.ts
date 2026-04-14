@@ -39,7 +39,7 @@ const DEFAULT_IPC_RESPONSES: Record<string, unknown> = {
   'settings:list-profiles': [],
   'settings:export': { success: true },
   'settings:import': { success: true },
-  'settings:get-env-vars': {},
+  'settings:get-env-vars': [],
   'settings:set-env-var': null,
 
   // Auth
