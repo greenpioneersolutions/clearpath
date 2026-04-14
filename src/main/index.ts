@@ -578,6 +578,20 @@ app.whenReady().then(async () => {
     })
   }, 5000)
 
+  // Restart the app (used by extension manager after changes that require restart)
+  ipcMain.handle('app:restart', async () => {
+    // Close all windows first so the renderer cleans up properly
+    const windows = BrowserWindow.getAllWindows()
+    for (const win of windows) {
+      win.removeAllListeners('close')
+      win.close()
+    }
+    // Small delay to let windows finish closing
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    app.relaunch()
+    app.exit(0)
+  })
+
   // IPC handlers for manual update control
   ipcMain.handle('updater:check', () => {
     return autoUpdater.checkForUpdates().then((r) => ({

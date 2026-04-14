@@ -110,7 +110,7 @@ interface UseExtensionsResult {
   refresh: () => Promise<void>
   toggle: (extensionId: string, enabled: boolean) => Promise<void>
   uninstall: (extensionId: string) => Promise<void>
-  install: () => Promise<void>
+  install: () => Promise<InstalledExtension | null>
   updatePermissions: (extensionId: string, granted: string[], denied: string[]) => Promise<void>
   checkRequirements: (extensionId: string) => Promise<RequirementCheckResult>
 }
@@ -167,15 +167,17 @@ export function useExtensions(): UseExtensionsResult {
     await refresh()
   }, [refresh])
 
-  const install = useCallback(async () => {
+  const install = useCallback(async (): Promise<InstalledExtension | null> => {
     const result = await window.electronAPI.invoke('extension:install') as {
       success: boolean
+      data?: InstalledExtension
       error?: string
     }
     if (!result.success && result.error !== 'Installation cancelled') {
       throw new Error(result.error)
     }
     await refresh()
+    return result.data ?? null
   }, [refresh])
 
   const updatePermissions = useCallback(

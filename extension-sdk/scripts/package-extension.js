@@ -18,7 +18,7 @@ Arguments:
   extension-dir   Path to the extension directory containing ${MANIFEST_FILE}
 
 Options:
-  --output, -o    Output directory for the zip file (default: current working directory)
+  --output, -o    Output directory for the extension package (default: current working directory)
   --help, -h      Show this help message
 
 Examples:
@@ -108,19 +108,19 @@ if (!fs.existsSync(outputDir)) {
 }
 
 // ---------- build zip ----------
-const zipName = `${manifest.id}-v${manifest.version}.zip`
-const zipPath = path.join(outputDir, zipName)
+const outputName = `${manifest.id}-v${manifest.version}.clear.ext`
+const outputPath = path.join(outputDir, outputName)
 
 console.log(`\nPackaging extension:`)
 console.log(`  Name:      ${manifest.name || manifest.id}`)
 console.log(`  ID:        ${manifest.id}`)
 console.log(`  Version:   ${manifest.version}`)
 console.log(`  Source:    ${extensionDir}`)
-console.log(`  Output:    ${zipPath}`)
+console.log(`  Output:    ${outputPath}`)
 console.log(`  Excluding: ${EXCLUDE_PATTERNS.join(', ')}`)
 console.log()
 
-const output = fs.createWriteStream(zipPath)
+const output = fs.createWriteStream(outputPath)
 const archive = archiver('zip', { zlib: { level: 9 } })
 
 let fileCount = 0
@@ -129,7 +129,7 @@ output.on('close', () => {
   console.log(`\nDone!`)
   console.log(`  Files:  ${fileCount}`)
   console.log(`  Size:   ${formatBytes(archive.pointer())}`)
-  console.log(`  Output: ${zipPath}`)
+  console.log(`  Output: ${outputPath}`)
   process.exit(0)
 })
 
@@ -151,7 +151,7 @@ archive.on('error', (err) => {
 
 archive.pipe(output)
 
-// Add files from the extension directory at the root of the zip,
+// Add files from the extension directory at the root of the package,
 // excluding development artifacts.
 archive.directory(extensionDir, false, (entry) => {
   for (const pattern of EXCLUDE_PATTERNS) {

@@ -1267,14 +1267,13 @@ View extension activity in **Insights > Compliance**.
 
 1. Build your extension with your bundler (esbuild, Vite, Rollup)
 2. Ensure `dist/` contains the compiled output referenced by `main` and/or `renderer` in the manifest
-3. Zip the extension directory:
+3. Package the extension using the SDK packaging script:
 
 ```bash
-cd my-extension
-zip -r ../my-extension.zip . -x "node_modules/*" -x "src/*" -x ".git/*"
+npx clearpath-package-extension my-extension --output ../
 ```
 
-The zip should contain:
+This produces a `.clear.ext` file (a zip archive with a custom extension). The package should contain:
 ```
 clearpath-extension.json     (at the root of the zip)
 dist/
@@ -1284,7 +1283,7 @@ assets/
   icon.svg                   (if applicable)
 ```
 
-### What to Include in the Zip
+### What to Include in the Package
 
 | Include | Exclude |
 |---------|---------|
@@ -1310,7 +1309,7 @@ assets/
 
 1. Open **Configure > Extensions**
 2. Click **Install Extension**
-3. Select a `.zip` file or directory
+3. Select a `.clear.ext` file or directory
 4. Review the requested permissions
 5. Grant/deny each permission
 6. Enable the extension
@@ -2097,11 +2096,11 @@ bookmark-manager/
 ### Step 9: Package for Distribution
 
 ```bash
-# Remove dev files, create a clean zip
-zip -r bookmark-manager.zip clearpath-extension.json dist/ -x "node_modules/*" "src/*"
+# Package the extension into a .clear.ext file
+npx clearpath-package-extension . --output ../
 ```
 
-Share the `.zip` file. Users install it the same way — select the zip in Configure > Extensions.
+Share the `.clear.ext` file. Users install it the same way — select the file in Configure > Extensions.
 
 ### What You've Built
 

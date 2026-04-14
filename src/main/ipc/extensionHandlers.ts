@@ -45,17 +45,17 @@ export function registerExtensionHandlers(
     }
   })
 
-  // ── Install from zip (opens file dialog, extracts, validates) ─────────────
+  // ── Install from file (opens file dialog, extracts, validates) ─────────────
 
-  ipcMain.handle('extension:install', async (_e, args?: { zipPath?: string }) => {
+  ipcMain.handle('extension:install', async (_e, args?: { filePath?: string; zipPath?: string }) => {
     try {
-      let sourcePath = args?.zipPath
+      let sourcePath = args?.filePath ?? args?.zipPath
 
       if (!sourcePath) {
-        // Open file dialog for zip selection
+        // Open file dialog for extension package selection
         const result = await dialog.showOpenDialog({
           title: 'Install Extension',
-          filters: [{ name: 'Extension Package', extensions: ['zip'] }],
+          filters: [{ name: 'ClearPath Extension', extensions: ['clear.ext', 'zip'] }],
           properties: ['openFile'],
         })
         if (result.canceled || result.filePaths.length === 0) {
@@ -105,6 +105,19 @@ export function registerExtensionHandlers(
 
       const ext = registry.install(extractedDir)
 
+      // Auto-enable newly installed extensions
+      registry.setEnabled(ext.manifest.id, true)
+      const updatedExt = registry.get(ext.manifest.id)!
+
+      // Load main process entry if present
+      if (updatedExt.manifest.main && !loader.isLoaded(updatedExt.manifest.id)) {
+        try {
+          await loader.load(updatedExt)
+        } catch (loadErr) {
+          log.warn('[ext-handlers] Main process load failed for "%s": %s', updatedExt.manifest.id, loadErr)
+        }
+      }
+
       // Clean up temp extraction directory (only for zip installs)
       if (tmpDir) {
         try { rmSync(tmpDir, { recursive: true, force: true }) } catch { /* ignore */ }
@@ -114,10 +127,10 @@ export function registerExtensionHandlers(
         type: 'agent-status' as import('../notifications/NotificationManager').NotificationType,
         severity: 'info' as import('../notifications/NotificationManager').NotificationSeverity,
         title: 'Extension Installed',
-        message: `"${ext.manifest.name}" has been installed. Enable it and grant permissions in Configure > Extensions.`,
+        message: `"${updatedExt.manifest.name}" has been installed and enabled. Review permissions in Configure > Extensions.`,
       })
 
-      return { success: true, data: ext }
+      return { success: true, data: updatedExt }
     } catch (err) {
       log.error('[ext-handlers] Install failed: %s', err)
       return { success: false, error: String(err) }

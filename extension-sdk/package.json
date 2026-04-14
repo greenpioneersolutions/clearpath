@@ -16,7 +16,10 @@
   },
   "files": [
     "dist/",
-    "scripts/"
+    "scripts/",
+    "example/",
+    "agents/",
+    "skills/"
   ],
   "scripts": {
     "build": "tsc",

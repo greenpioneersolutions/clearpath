@@ -7,6 +7,7 @@ import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron'
 const ALLOWED_INVOKE_CHANNELS = new Set([
   // App
   'app:get-cwd',
+  'app:restart',
 
   // Auth
   'auth:get-status', 'auth:refresh', 'auth:login-start', 'auth:login-cancel',

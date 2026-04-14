@@ -13,14 +13,39 @@ const PERMISSION_LABELS: Record<string, string> = {
   'compliance:log': 'Write entries to the audit log',
 }
 
-export default function ExtensionManager(): JSX.Element {
+interface ExtensionManagerProps {
+  /** Called whenever the pending-restart state changes, so the parent can guard navigation. */
+  onPendingRestartChange?: (pending: boolean) => void
+}
+
+export default function ExtensionManager({ onPendingRestartChange }: ExtensionManagerProps): JSX.Element {
   const { extensions, loading, error, refresh, toggle, uninstall, install, updatePermissions, checkRequirements } =
     useExtensions()
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [requirementResults, setRequirementResults] = useState<Record<string, RequirementCheckResult>>({})
+  const [pendingRestart, setPendingRestart] = useState(false)
+  const [installedExt, setInstalledExt] = useState<InstalledExtension | null>(null)
+  const [showPermissionModal, setShowPermissionModal] = useState(false)
+  const [selectedPerms, setSelectedPerms] = useState<Set<string>>(new Set())
 
   const selectedExt = extensions.find((e) => e.manifest.id === selectedId)
+
+  // Notify parent when pending-restart state changes
+  useEffect(() => {
+    onPendingRestartChange?.(pendingRestart)
+  }, [pendingRestart, onPendingRestartChange])
+
+  // Guard against Electron window close while changes are pending
+  useEffect(() => {
+    if (!pendingRestart) return
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault()
+      e.returnValue = ''
+    }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [pendingRestart])
 
   // Check requirements for all extensions that have them
   useEffect(() => {
@@ -36,10 +61,19 @@ export default function ExtensionManager(): JSX.Element {
     if (extensions.length > 0) checkAll()
   }, [extensions, checkRequirements])
 
+  function handleRestart() {
+    window.electronAPI.invoke('app:restart')
+  }
+
+  function dismissRestart() {
+    setPendingRestart(false)
+  }
+
   async function handleToggle(ext: InstalledExtension) {
     try {
       setActionError(null)
       await toggle(ext.manifest.id, !ext.enabled)
+      setPendingRestart(true)
     } catch (err) {
       setActionError(String(err))
     }
@@ -53,6 +87,7 @@ export default function ExtensionManager(): JSX.Element {
       setActionError(null)
       setSelectedId(null)
       await uninstall(ext.manifest.id)
+      setPendingRestart(true)
     } catch (err) {
       setActionError(String(err))
     }
@@ -61,10 +96,63 @@ export default function ExtensionManager(): JSX.Element {
   async function handleInstall() {
     try {
       setActionError(null)
-      await install()
+      const ext = await install()
+      if (ext) {
+        setInstalledExt(ext)
+        setSelectedPerms(new Set(ext.manifest.permissions)) // All selected by default
+        setShowPermissionModal(true)
+      }
+      setPendingRestart(true)
     } catch (err) {
       setActionError(String(err))
     }
+  }
+
+  async function handleGrantAllPerms() {
+    if (!installedExt) return
+    try {
+      await updatePermissions(installedExt.manifest.id, installedExt.manifest.permissions, [])
+      setShowPermissionModal(false)
+      setInstalledExt(null)
+    } catch (err) {
+      setActionError(String(err))
+    }
+  }
+
+  async function handleGrantSelectedPerms() {
+    if (!installedExt) return
+    try {
+      const granted = [...selectedPerms]
+      const denied = installedExt.manifest.permissions.filter(p => !selectedPerms.has(p))
+      await updatePermissions(installedExt.manifest.id, granted, denied)
+      setShowPermissionModal(false)
+      setInstalledExt(null)
+    } catch (err) {
+      setActionError(String(err))
+    }
+  }
+
+  async function handleUninstallNewExt() {
+    if (!installedExt) return
+    try {
+      await uninstall(installedExt.manifest.id)
+      setShowPermissionModal(false)
+      setInstalledExt(null)
+    } catch (err) {
+      setActionError(String(err))
+    }
+  }
+
+  function togglePermSelection(perm: string) {
+    setSelectedPerms(prev => {
+      const next = new Set(prev)
+      if (next.has(perm)) {
+        next.delete(perm)
+      } else {
+        next.add(perm)
+      }
+      return next
+    })
   }
 
   async function handleGrantAll(ext: InstalledExtension) {
@@ -75,6 +163,7 @@ export default function ExtensionManager(): JSX.Element {
       )
       if (ungrantedPerms.length > 0) {
         await updatePermissions(ext.manifest.id, ungrantedPerms, [])
+        setPendingRestart(true)
       }
     } catch (err) {
       setActionError(String(err))
@@ -85,6 +174,7 @@ export default function ExtensionManager(): JSX.Element {
     try {
       setActionError(null)
       await updatePermissions(ext.manifest.id, [], [perm])
+      setPendingRestart(true)
     } catch (err) {
       setActionError(String(err))
     }
@@ -94,6 +184,7 @@ export default function ExtensionManager(): JSX.Element {
     try {
       setActionError(null)
       await updatePermissions(ext.manifest.id, [perm], [])
+      setPendingRestart(true)
     } catch (err) {
       setActionError(String(err))
     }
@@ -105,6 +196,108 @@ export default function ExtensionManager(): JSX.Element {
 
   return (
     <div className="p-6 space-y-6">
+      {/* Pending restart banner */}
+      {pendingRestart && (
+        <div className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
+          <div className="flex items-center gap-2">
+            <svg className="w-5 h-5 text-amber-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M12 2a10 10 0 100 20 10 10 0 000-20z" />
+            </svg>
+            <span className="text-sm text-amber-800 font-medium">
+              Changes require a restart to take full effect.
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={dismissRestart}
+              className="px-3 py-1.5 text-sm text-amber-700 hover:text-amber-900 hover:bg-amber-100 rounded transition-colors"
+            >
+              Dismiss
+            </button>
+            <button
+              onClick={handleRestart}
+              className="px-3 py-1.5 text-sm bg-amber-500 hover:bg-amber-600 text-white rounded font-medium transition-colors"
+            >
+              Restart now
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Post-install permission review modal */}
+      {showPermissionModal && installedExt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-gray-800 border border-gray-700 rounded-lg shadow-xl max-w-lg w-full mx-4 p-6">
+            <h3 className="text-lg font-semibold text-white mb-1">
+              Extension Installed
+            </h3>
+            <p className="text-sm text-gray-300 mb-4">
+              <span className="font-medium text-white">{installedExt.manifest.name}</span>
+              {' v'}{installedExt.manifest.version} by {installedExt.manifest.author}
+            </p>
+            {installedExt.manifest.description && (
+              <p className="text-sm text-gray-400 mb-4">{installedExt.manifest.description}</p>
+            )}
+
+            {/* Permissions list */}
+            {installedExt.manifest.permissions.length > 0 ? (
+              <div className="mb-4">
+                <h4 className="text-sm font-medium text-gray-300 mb-2">
+                  Requested Permissions ({installedExt.manifest.permissions.length})
+                </h4>
+                <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                  {installedExt.manifest.permissions.map((perm) => (
+                    <label
+                      key={perm}
+                      className="flex items-center gap-3 text-sm bg-gray-700/50 rounded px-3 py-2 cursor-pointer hover:bg-gray-700"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedPerms.has(perm)}
+                        onChange={() => togglePermSelection(perm)}
+                        className="rounded border-gray-500 text-indigo-500 focus:ring-indigo-500"
+                      />
+                      <span className="text-gray-300">
+                        {PERMISSION_LABELS[perm] ?? perm}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+                <p className="text-xs text-amber-400 mt-2">
+                  Not granting all requested permissions may result in reduced functionality.
+                </p>
+              </div>
+            ) : (
+              <p className="text-sm text-gray-400 mb-4">This extension does not require any permissions.</p>
+            )}
+
+            {/* Actions */}
+            <div className="flex items-center justify-end gap-3 pt-2 border-t border-gray-700">
+              <button
+                onClick={handleUninstallNewExt}
+                className="px-4 py-2 text-sm bg-red-900/50 hover:bg-red-800 text-red-300 rounded"
+              >
+                Uninstall
+              </button>
+              {installedExt.manifest.permissions.length > 0 && selectedPerms.size < installedExt.manifest.permissions.length && (
+                <button
+                  onClick={handleGrantSelectedPerms}
+                  className="px-4 py-2 text-sm bg-gray-600 hover:bg-gray-500 text-gray-200 rounded"
+                >
+                  Grant Selected ({selectedPerms.size}/{installedExt.manifest.permissions.length})
+                </button>
+              )}
+              <button
+                onClick={handleGrantAllPerms}
+                className="px-4 py-2 text-sm bg-indigo-600 hover:bg-indigo-500 text-white rounded font-medium"
+              >
+                {installedExt.manifest.permissions.length > 0 ? 'Grant All' : 'Done'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -114,12 +307,14 @@ export default function ExtensionManager(): JSX.Element {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => refresh()}
-            className="px-3 py-1.5 text-sm bg-gray-700 hover:bg-gray-600 text-gray-200 rounded"
-          >
-            Refresh
-          </button>
+          {pendingRestart && (
+            <button
+              onClick={handleRestart}
+              className="px-3 py-1.5 text-sm bg-amber-500 hover:bg-amber-600 text-white rounded font-medium"
+            >
+              Restart App
+            </button>
+          )}
           <button
             onClick={handleInstall}
             className="px-3 py-1.5 text-sm bg-indigo-600 hover:bg-indigo-500 text-white rounded"

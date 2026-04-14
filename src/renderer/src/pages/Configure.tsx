@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import Settings from './Settings'
 import Policies from './Policies'
@@ -41,20 +41,94 @@ export default function Configure(): JSX.Element {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
 
+  // Track whether the ExtensionManager has pending changes that need a restart
+  const [extensionPendingRestart, setExtensionPendingRestart] = useState(false)
+  const [showRestartModal, setShowRestartModal] = useState(false)
+  const pendingTabRef = useRef<Tab | null>(null)
+
   useEffect(() => {
     const urlTab = searchParams.get('tab') as Tab | null
     if (urlTab && TABS.some(t => t.key === urlTab)) setTab(urlTab)
   }, [searchParams])
 
+  const handlePendingRestartChange = useCallback((pending: boolean) => {
+    setExtensionPendingRestart(pending)
+  }, [])
+
+  function handleRestart() {
+    window.electronAPI.invoke('app:restart')
+  }
+
+  /** Attempt to switch tabs. If extension changes are pending and we're leaving the
+   *  extensions tab, show a confirmation modal instead of switching immediately. */
+  function handleTabChange(newTab: Tab) {
+    if (extensionPendingRestart && tab === 'extensions' && newTab !== 'extensions') {
+      pendingTabRef.current = newTab
+      setShowRestartModal(true)
+      return
+    }
+    setTab(newTab)
+  }
+
+  /** User chose to continue without restarting — navigate to the pending tab. */
+  function handleContinueWithoutRestart() {
+    setShowRestartModal(false)
+    if (pendingTabRef.current) {
+      setTab(pendingTabRef.current)
+      pendingTabRef.current = null
+    }
+  }
+
+  /** User chose to stay on the extensions tab. */
+  function handleStayOnExtensions() {
+    setShowRestartModal(false)
+    pendingTabRef.current = null
+  }
+
   return (
     <div className="flex h-full">
+      {/* Restart confirmation modal */}
+      {showRestartModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-gray-800 border border-gray-700 rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
+            <h3 className="text-lg font-semibold text-white mb-2">
+              Extension changes pending
+            </h3>
+            <p className="text-sm text-gray-300 mb-6">
+              You have extension changes that require a restart to take full effect.
+              Would you like to restart now, or continue without restarting?
+            </p>
+            <div className="flex items-center justify-end gap-3">
+              <button
+                onClick={handleStayOnExtensions}
+                className="px-4 py-2 text-sm bg-gray-700 hover:bg-gray-600 text-gray-200 rounded"
+              >
+                Stay here
+              </button>
+              <button
+                onClick={handleContinueWithoutRestart}
+                className="px-4 py-2 text-sm bg-gray-600 hover:bg-gray-500 text-gray-200 rounded"
+              >
+                Continue without restart
+              </button>
+              <button
+                onClick={handleRestart}
+                className="px-4 py-2 text-sm bg-amber-500 hover:bg-amber-600 text-white rounded font-medium"
+              >
+                Restart now
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Left: vertical tab list */}
       <div className="w-44 flex-shrink-0 bg-gray-50 border-r border-gray-200 py-4 flex flex-col">
         <div className="flex-1" role="tablist" aria-label="Configure sections">
           {TABS.map((t) => (
             <button
               key={t.key}
-              onClick={() => setTab(t.key)}
+              onClick={() => handleTabChange(t.key)}
               role="tab"
               aria-selected={tab === t.key}
               id={`tab-${t.key}`}
@@ -85,7 +159,9 @@ export default function Configure(): JSX.Element {
         {tab === 'settings' && <Settings />}
         {tab === 'policies' && <Policies />}
         {tab === 'integrations' && <IntegrationsTab />}
-        {tab === 'extensions' && <ExtensionManager />}
+        {tab === 'extensions' && (
+          <ExtensionManager onPendingRestartChange={handlePendingRestartChange} />
+        )}
         {tab === 'memory' && <Memory />}
         {tab === 'agents' && <Agents />}
         {tab === 'skills' && <SkillsManagement />}
