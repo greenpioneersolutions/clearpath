@@ -14,12 +14,12 @@ beforeEach(() => {
   mockInvoke.mockReset()
   mockInvoke.mockImplementation((channel: string) => {
     if (channel === 'settings:get-env-vars') {
-      return Promise.resolve({
-        GH_TOKEN: { value: 'gh_****1234', isSet: true, isSensitive: true },
-        GITHUB_TOKEN: { value: '', isSet: false, isSensitive: true },
-        GITHUB_ASKPASS: { value: '/usr/bin/askpass', isSet: true, isSensitive: false },
-        COPILOT_CUSTOM_INSTRUCTIONS_DIRS: { value: '', isSet: false, isSensitive: false },
-      })
+      return Promise.resolve([
+        { key: 'GH_TOKEN', value: 'gh_****1234', isSet: true, isSensitive: true, scope: 'copilot', description: '', isBuiltIn: true },
+        { key: 'GITHUB_TOKEN', value: '', isSet: false, isSensitive: true, scope: 'copilot', description: '', isBuiltIn: true },
+        { key: 'GITHUB_ASKPASS', value: '/usr/bin/askpass', isSet: true, isSensitive: false, scope: 'copilot', description: '', isBuiltIn: true },
+        { key: 'COPILOT_CUSTOM_INSTRUCTIONS_DIRS', value: '', isSet: false, isSensitive: false, scope: 'copilot', description: '', isBuiltIn: true },
+      ])
     }
     if (channel === 'settings:set-env-var') return Promise.resolve()
     return Promise.resolve()
@@ -43,11 +43,11 @@ describe('EnvVarsEditor', () => {
   it('renders relevant env vars for claude', async () => {
     mockInvoke.mockImplementation((channel: string) => {
       if (channel === 'settings:get-env-vars') {
-        return Promise.resolve({
-          ANTHROPIC_API_KEY: { value: '', isSet: false, isSensitive: true },
-          CLAUDE_CODE_MODEL: { value: 'opus', isSet: true, isSensitive: false },
-          ENABLE_TOOL_SEARCH: { value: '', isSet: false, isSensitive: false },
-        })
+        return Promise.resolve([
+          { key: 'ANTHROPIC_API_KEY', value: '', isSet: false, isSensitive: true, scope: 'claude', description: '', isBuiltIn: true },
+          { key: 'CLAUDE_CODE_MODEL', value: 'opus', isSet: true, isSensitive: false, scope: 'claude', description: '', isBuiltIn: true },
+          { key: 'ENABLE_TOOL_SEARCH', value: '', isSet: false, isSensitive: false, scope: 'claude', description: '', isBuiltIn: true },
+        ])
       }
       return Promise.resolve()
     })

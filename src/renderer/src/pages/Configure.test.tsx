@@ -28,6 +28,7 @@ beforeEach(() => {
     if (channel === 'policy:list-violations') return Promise.resolve([])
     // Integration
     if (channel === 'integration:get-status') return Promise.resolve({ github: null })
+    if (channel === 'integration:custom-list') return Promise.resolve({ success: true, integrations: [] })
     // Feature flags
     if (channel === 'feature-flags:get') return Promise.resolve(null)
     // Agents
@@ -204,6 +205,7 @@ describe('Configure', () => {
     mockInvoke.mockImplementation((channel: string) => {
       if (channel === 'integration:get-status') return Promise.resolve({ github: null })
       if (channel === 'integration:github-connect') return Promise.resolve({ success: false, error: 'Bad token' })
+      if (channel === 'integration:custom-list') return Promise.resolve({ success: true, integrations: [] })
       if (channel === 'feature-flags:get') return Promise.resolve(null)
       return Promise.resolve(null)
     })
@@ -227,6 +229,7 @@ describe('Configure', () => {
     mockInvoke.mockImplementation((channel: string) => {
       if (channel === 'integration:get-status') return Promise.resolve({ github: null })
       if (channel === 'integration:github-connect') return Promise.resolve({ success: false, error: 'Invalid token' })
+      if (channel === 'integration:custom-list') return Promise.resolve({ success: true, integrations: [] })
       if (channel === 'feature-flags:get') return Promise.resolve(null)
       return Promise.resolve(null)
     })
@@ -262,6 +265,7 @@ describe('Configure', () => {
       if (channel === 'integration:get-status') return Promise.resolve({
         github: { connected: true, username: 'testuser', connectedAt: Date.now() - 86400000 },
       })
+      if (channel === 'integration:custom-list') return Promise.resolve({ success: true, integrations: [] })
       if (channel === 'feature-flags:get') return Promise.resolve(null)
       return Promise.resolve(null)
     })
@@ -279,6 +283,7 @@ describe('Configure', () => {
         github: { connected: true, username: 'testuser', connectedAt: Date.now() },
       })
       if (channel === 'integration:github-disconnect') return Promise.resolve(null)
+      if (channel === 'integration:custom-list') return Promise.resolve({ success: true, integrations: [] })
       if (channel === 'feature-flags:get') return Promise.resolve(null)
       return Promise.resolve(null)
     })
@@ -296,6 +301,7 @@ describe('Configure', () => {
       if (channel === 'integration:get-status') return Promise.resolve({ github: null })
       // success: false but no error field — triggers the ?? fallback
       if (channel === 'integration:github-connect') return Promise.resolve({ success: false })
+      if (channel === 'integration:custom-list') return Promise.resolve({ success: true, integrations: [] })
       if (channel === 'feature-flags:get') return Promise.resolve(null)
       return Promise.resolve(null)
     })
@@ -318,6 +324,7 @@ describe('Configure', () => {
       if (channel === 'integration:get-status') return Promise.resolve({
         github: { connected: true, username: 'testuser', connectedAt: Date.now() - 86400000 },
       })
+      if (channel === 'integration:custom-list') return Promise.resolve({ success: true, integrations: [] })
       if (channel === 'feature-flags:get') return Promise.resolve({
         enableExperimentalFeatures: true,
         showPrScores: false,
@@ -347,6 +354,7 @@ describe('Configure', () => {
       if (channel === 'integration:get-status') return Promise.resolve({
         github: { connected: true, username: 'flagger', connectedAt: Date.now() - 86400000 },
       })
+      if (channel === 'integration:custom-list') return Promise.resolve({ success: true, integrations: [] })
       if (channel === 'feature-flags:get') return Promise.resolve({
         enableExperimentalFeatures: true,
         showPrScores: false,
@@ -506,6 +514,7 @@ describe('Configure', () => {
         return Promise.resolve({ github: { connected: true, username: 'newuser', connectedAt: Date.now() } })
       }
       if (channel === 'integration:github-connect') return Promise.resolve({ success: true, username: 'newuser' })
+      if (channel === 'integration:custom-list') return Promise.resolve({ success: true, integrations: [] })
       if (channel === 'feature-flags:get') return Promise.resolve(null)
       return Promise.resolve(null)
     })

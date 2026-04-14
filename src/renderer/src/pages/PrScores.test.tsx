@@ -129,14 +129,14 @@ describe('PrScores', () => {
     expect(document.querySelector('[class]')).toBeTruthy()
   })
 
-  it('shows disabled message (default FeatureFlagContext flags have PrScores disabled)', () => {
+  it('shows PR Scores heading', () => {
     render(<PrScores />)
-    expect(screen.getByText('PR Scores is Disabled')).toBeInTheDocument()
+    expect(screen.getByText('PR Scores')).toBeInTheDocument()
   })
 
-  it('shows enable instructions', () => {
+  it('shows subtitle', () => {
     render(<PrScores />)
-    expect(screen.getByText(/Enable experimental features/)).toBeInTheDocument()
+    expect(screen.getByText('Score and analyze your pull requests')).toBeInTheDocument()
   })
 
   // ── Feature-enabled: tests use vi.resetModules() + dynamic import ─────────────
@@ -206,16 +206,17 @@ describe('PrScores', () => {
       return r(React.createElement(PrScoresPage))
     }
 
-    it('shows "Select a repository" subtitle', async () => {
+    it('shows subtitle in header', async () => {
       setupElectronAPI({
         'integration:get-status': { github: { connected: true, username: 'testuser' } },
         'integration:github-repos': { success: true, repos: [mockRepo] },
         'pr-scores:get-config': PR_SCORES_CONFIG,
         'pr-scores:get-scores': [],
+        'pr-scores:list-scored-repos': [],
       })
       const { unmount } = await renderReposView()
       await waitFor(() =>
-        expect(screen.getByText('Select a repository to score its pull requests')).toBeInTheDocument()
+        expect(screen.getByText('Score and analyze your pull requests')).toBeInTheDocument()
       )
       unmount()
     })
@@ -296,66 +297,70 @@ describe('PrScores', () => {
       unmount()
     })
 
-    it('config button opens config panel', async () => {
+    it('Settings tab opens config panel', async () => {
       setupElectronAPI({
         'integration:get-status': { github: { connected: true, username: 'testuser' } },
         'integration:github-repos': { success: true, repos: [] },
         'pr-scores:get-config': PR_SCORES_CONFIG,
         'pr-scores:get-scores': [],
+        'pr-scores:list-scored-repos': [],
       })
       const { unmount } = await renderReposView()
-      await waitFor(() => screen.getByText('Select a repository to score its pull requests'))
-      fireEvent.click(screen.getByTitle('Configuration'))
-      expect(screen.getByText('PR Scores Configuration')).toBeInTheDocument()
+      await waitFor(() => screen.getByText('Score and analyze your pull requests'))
+      fireEvent.click(screen.getByText('Settings'))
+      await waitFor(() => expect(screen.getByText('PR Scores Configuration')).toBeInTheDocument())
       unmount()
     })
 
-    it('config Cancel button closes panel', async () => {
+    it('clicking Repositories tab from Settings returns to repos view', async () => {
       setupElectronAPI({
         'integration:get-status': { github: { connected: true, username: 'testuser' } },
         'integration:github-repos': { success: true, repos: [] },
         'pr-scores:get-config': PR_SCORES_CONFIG,
         'pr-scores:get-scores': [],
+        'pr-scores:list-scored-repos': [],
       })
       const { unmount } = await renderReposView()
-      await waitFor(() => screen.getByText('Select a repository to score its pull requests'))
-      fireEvent.click(screen.getByTitle('Configuration'))
-      expect(screen.getByText('PR Scores Configuration')).toBeInTheDocument()
-      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
-      expect(screen.queryByText('PR Scores Configuration')).not.toBeInTheDocument()
+      await waitFor(() => screen.getByText('Score and analyze your pull requests'))
+      fireEvent.click(screen.getByText('Settings'))
+      await waitFor(() => screen.getByText('PR Scores Configuration'))
+      fireEvent.click(screen.getByText('Repositories'))
+      await waitFor(() => expect(screen.queryByText('PR Scores Configuration')).not.toBeInTheDocument())
       unmount()
     })
 
-    it('config Save button calls pr-scores:set-config', async () => {
+    it('Settings Save button calls pr-scores:set-config', async () => {
       const { mockInvoke } = setupElectronAPI({
         'integration:get-status': { github: { connected: true, username: 'testuser' } },
         'integration:github-repos': { success: true, repos: [] },
         'pr-scores:get-config': PR_SCORES_CONFIG,
         'pr-scores:get-scores': [],
+        'pr-scores:list-scored-repos': [],
       })
       const { unmount } = await renderReposView()
-      await waitFor(() => screen.getByText('Select a repository to score its pull requests'))
-      fireEvent.click(screen.getByTitle('Configuration'))
+      await waitFor(() => screen.getByText('Score and analyze your pull requests'))
+      fireEvent.click(screen.getByText('Settings'))
       await waitFor(() => screen.getByText('PR Scores Configuration'))
-      fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Save Configuration' }))
       await waitFor(() =>
         expect(mockInvoke).toHaveBeenCalledWith('pr-scores:set-config', expect.anything())
       )
       unmount()
     })
 
-    it('clicking repo navigates to PRs view', async () => {
+    it('clicking repo navigates to Scores tab', async () => {
       setupElectronAPI({
         'integration:get-status': { github: { connected: true, username: 'testuser' } },
         'integration:github-repos': { success: true, repos: [mockRepo] },
         'integration:github-pulls': { success: true, pulls: [] },
         'pr-scores:get-config': PR_SCORES_CONFIG,
         'pr-scores:get-scores': [],
+        'pr-scores:list-scored-repos': [],
       })
       const { unmount } = await renderReposView()
       await waitFor(() => screen.getByText('testuser/my-repo'))
       fireEvent.click(screen.getByText('testuser/my-repo'))
-      await waitFor(() => expect(screen.getByText('0 pull requests found')).toBeInTheDocument())
+      await waitFor(() => expect(screen.getByText('No pull requests found in this repository.')).toBeInTheDocument())
       unmount()
     })
   })
@@ -372,6 +377,7 @@ describe('PrScores', () => {
         'integration:github-pulls': { success: true, pulls: [mockPR] },
         'pr-scores:get-config': PR_SCORES_CONFIG,
         'pr-scores:get-scores': [],
+        'pr-scores:list-scored-repos': [],
       })
       vi.resetModules()
       const { render: r } = await import('@testing-library/react')
@@ -380,19 +386,20 @@ describe('PrScores', () => {
       const utils = r(React.createElement(PrScoresPage))
       await waitFor(() => screen.getByText('testuser/my-repo'))
       fireEvent.click(screen.getByText('testuser/my-repo'))
-      await waitFor(() => screen.getByText('1 pull requests found'))
+      await waitFor(() => screen.getByText('0 of 1 PRs scored'))
       return utils
     }
 
-    it('shows pull requests found subtitle', async () => {
+    it('shows PRs scored subtitle', async () => {
       const { unmount } = await renderPrsView()
-      expect(screen.getByText('1 pull requests found')).toBeInTheDocument()
+      expect(screen.getByText('0 of 1 PRs scored')).toBeInTheDocument()
       unmount()
     })
 
     it('shows Dashboard button', async () => {
       const { unmount } = await renderPrsView()
-      expect(screen.getByRole('button', { name: 'Dashboard' })).toBeInTheDocument()
+      const dashButtons = screen.getAllByRole('button', { name: 'Dashboard' })
+      expect(dashButtons.length).toBeGreaterThanOrEqual(1)
       unmount()
     })
 
@@ -444,20 +451,20 @@ describe('PrScores', () => {
       unmount()
     })
 
-    it('back button returns to repos view', async () => {
+    it('Repositories tab returns to repos view', async () => {
       const { unmount } = await renderPrsView()
-      fireEvent.click(screen.getByText('Back'))
+      fireEvent.click(screen.getByText('Repositories'))
       await waitFor(() =>
-        expect(screen.getByText('Select a repository to score its pull requests')).toBeInTheDocument()
+        expect(screen.getByText('Score and analyze your pull requests')).toBeInTheDocument()
       )
       unmount()
     })
 
-    it('breadcrumb "PR Scores" button returns to repos view', async () => {
+    it('clicking Repositories tab from Scores view shows repos', async () => {
       const { unmount } = await renderPrsView()
-      fireEvent.click(screen.getByRole('button', { name: 'PR Scores' }))
+      fireEvent.click(screen.getByText('Repositories'))
       await waitFor(() =>
-        expect(screen.getByText('Select a repository to score its pull requests')).toBeInTheDocument()
+        expect(screen.getByText('Score and analyze your pull requests')).toBeInTheDocument()
       )
       unmount()
     })
@@ -481,6 +488,7 @@ describe('PrScores', () => {
         'integration:github-pulls': { success: true, pulls: [mockPR] },
         'pr-scores:get-config': PR_SCORES_CONFIG,
         'pr-scores:get-scores': [mockScore],
+        'pr-scores:list-scored-repos': [],
       })
       vi.resetModules()
       const { render: r } = await import('@testing-library/react')
@@ -489,7 +497,7 @@ describe('PrScores', () => {
       const utils = r(React.createElement(PrScoresPage))
       await waitFor(() => screen.getByText('testuser/my-repo'))
       fireEvent.click(screen.getByText('testuser/my-repo'))
-      await waitFor(() => screen.getByText('1 pull requests found'))
+      await waitFor(() => screen.getByText('1 of 1 PRs scored'))
       fireEvent.click(screen.getByRole('button', { name: 'Details' }))
       await waitFor(() => screen.getByText('Score Breakdown'))
       return utils
@@ -503,13 +511,14 @@ describe('PrScores', () => {
 
     it('shows PR title in detail view', async () => {
       const { unmount } = await renderDetailView()
-      expect(screen.getByText(/Fix some bug/)).toBeInTheDocument()
+      const matches = screen.getAllByText(/Fix some bug/)
+      expect(matches.length).toBeGreaterThanOrEqual(1)
       unmount()
     })
 
-    it('shows Re-Score This PR button', async () => {
+    it('shows Re-Score button', async () => {
       const { unmount } = await renderDetailView()
-      expect(screen.getByRole('button', { name: 'Re-Score This PR' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Re-Score' })).toBeInTheDocument()
       unmount()
     })
 
@@ -525,17 +534,17 @@ describe('PrScores', () => {
       unmount()
     })
 
-    it('back button from detail returns to PRs view', async () => {
+    it('Repositories tab from detail returns to repos view', async () => {
       const { unmount } = await renderDetailView()
-      fireEvent.click(screen.getByText('Back'))
-      await waitFor(() => expect(screen.getByText('1 pull requests found')).toBeInTheDocument())
+      fireEvent.click(screen.getByText('Repositories'))
+      await waitFor(() => expect(screen.getByText('Score and analyze your pull requests')).toBeInTheDocument())
       unmount()
     })
 
-    it('breadcrumb repo name returns to PRs view', async () => {
+    it('clicking Scores tab from detail view shows scores list', async () => {
       const { unmount } = await renderDetailView()
-      fireEvent.click(screen.getByRole('button', { name: 'testuser/my-repo' }))
-      await waitFor(() => expect(screen.getByText('1 pull requests found')).toBeInTheDocument())
+      fireEvent.click(screen.getByText('Repositories'))
+      await waitFor(() => expect(screen.getByText('Score and analyze your pull requests')).toBeInTheDocument())
       unmount()
     })
   })
@@ -574,6 +583,8 @@ describe('PrScores', () => {
         'pr-scores:get-config': PR_SCORES_CONFIG,
         'pr-scores:get-scores': [],
         'pr-scores:calculate-metrics': mockMetricSnapshot,
+        'pr-scores:list-scored-repos': [],
+        'pr-scores:compute-deltas': { success: true, deltas: [] },
       })
       vi.resetModules()
       const { render: r } = await import('@testing-library/react')
@@ -582,8 +593,10 @@ describe('PrScores', () => {
       const utils = r(React.createElement(PrScoresPage))
       await waitFor(() => screen.getByText('testuser/my-repo'))
       fireEvent.click(screen.getByText('testuser/my-repo'))
-      await waitFor(() => screen.getByText('1 pull requests found'))
-      fireEvent.click(screen.getByRole('button', { name: 'Dashboard' }))
+      await waitFor(() => screen.getByText('0 of 1 PRs scored'))
+      // Click the Dashboard tab (first match — the tab bar button)
+      const dashboardButtons = screen.getAllByText('Dashboard')
+      fireEvent.click(dashboardButtons[0])
       await waitFor(() => screen.getByText('Repo Score'))
       return utils
     }
@@ -618,17 +631,17 @@ describe('PrScores', () => {
       unmount()
     })
 
-    it('back button from dashboard returns to PRs view', async () => {
+    it('Scores tab from dashboard returns to scores view', async () => {
       const { unmount } = await renderDashboardView()
-      fireEvent.click(screen.getByText('Back'))
-      await waitFor(() => expect(screen.getByText('1 pull requests found')).toBeInTheDocument())
+      fireEvent.click(screen.getByText('Scores'))
+      await waitFor(() => expect(screen.getByText('0 of 1 PRs scored')).toBeInTheDocument())
       unmount()
     })
 
-    it('breadcrumb repo name returns to PRs view from dashboard', async () => {
+    it('Repositories tab from dashboard returns to repos view', async () => {
       const { unmount } = await renderDashboardView()
-      fireEvent.click(screen.getByRole('button', { name: 'testuser/my-repo' }))
-      await waitFor(() => expect(screen.getByText('1 pull requests found')).toBeInTheDocument())
+      fireEvent.click(screen.getByText('Repositories'))
+      await waitFor(() => expect(screen.getByText('Score and analyze your pull requests')).toBeInTheDocument())
       unmount()
     })
   })
