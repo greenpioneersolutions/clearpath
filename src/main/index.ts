@@ -1,3 +1,8 @@
+// MUST be the very first import — registers process.on('uncaughtException') and
+// app.once('ready') before any electron-store constructor can run at module load time.
+// See src/main/utils/corruptionHandler.ts for full explanation.
+import './utils/corruptionHandler'
+
 import { app, BrowserWindow, ipcMain, dialog, protocol } from 'electron'
 import { autoUpdater } from 'electron-updater'
 import { join } from 'path'
@@ -56,6 +61,7 @@ import { AuthManager } from './auth/AuthManager'
 import { AgentManager } from './agents/AgentManager'
 import { initShellEnv } from './utils/shellEnv'
 import { getStoreEncryptionKey, checkEncryptionKeyIntegrity } from './utils/storeEncryption'
+import { probeAllStores, clearAllStoreFiles } from './utils/storeHealthCheck'
 import Store from 'electron-store'
 import { randomUUID } from 'crypto'
 
@@ -485,6 +491,42 @@ app.whenReady().then(async () => {
 
   // Load main process entries for enabled extensions
   await extensionMainLoader.loadAll()
+
+  // ── Store Health Check ────────────────────────────────────────────────────
+  // Probe every known store before the window loads. If any store file is
+  // corrupted (bad encryption key, truncated write, disk error) we surface a
+  // native dialog now — before the renderer ever requests data — so the user
+  // gets a clear recovery path instead of a broken UI.
+  const corruptedStores = probeAllStores()
+  if (corruptedStores.length > 0) {
+    log.warn('[startup] Corrupted stores detected: %s', corruptedStores.join(', '))
+
+    const { response } = await dialog.showMessageBox({
+      type: 'warning',
+      buttons: ['Quit', 'Clear Data & Restart'],
+      defaultId: 1,
+      cancelId: 0,
+      title: 'Corrupted Data Detected',
+      message: 'ClearPath AI could not load its local data.',
+      detail:
+        'One or more data stores are corrupted and cannot be read. This can happen ' +
+        'after a system migration, a hostname or username change, or a disk error.\n\n' +
+        'Clicking "Clear Data & Restart" will permanently delete all local app data ' +
+        '(sessions, settings, costs, etc.) and restart with a clean slate. ' +
+        'Your CLI tools, GitHub account, and any external services will not be affected.\n\n' +
+        'If you choose Quit, the app will close without making any changes.',
+    })
+
+    if (response === 1) {
+      const { deleted, failed } = clearAllStoreFiles()
+      log.info('[startup] Cleared %d store file(s) for recovery. Failed: %d', deleted.length, failed.length)
+      app.relaunch()
+      app.exit(0)
+    } else {
+      app.quit()
+    }
+    return
+  }
 
   // Check if encryption key has changed (hostname/username change)
   const keyCheck = checkEncryptionKeyIntegrity()
