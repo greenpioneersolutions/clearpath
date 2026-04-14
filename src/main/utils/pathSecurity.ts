@@ -25,8 +25,13 @@ export function assertPathWithinRoots(filePath: string, allowedRoots: string[]):
   }
 
   for (const root of allowedRoots) {
-    const resolvedRoot = resolve(root)
-    if (real === resolvedRoot || real.startsWith(resolvedRoot + sep)) {
+    let realRoot: string
+    try {
+      realRoot = realpathSync(resolve(root))
+    } catch {
+      realRoot = resolve(root)
+    }
+    if (real === realRoot || real.startsWith(realRoot + sep)) {
       return real
     }
   }

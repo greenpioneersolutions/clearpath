@@ -43,20 +43,35 @@ describe('ClearPathAI — Extensions', () => {
       expect(html).toContain('Manage installed extensions')
     })
 
-    it('shows Refresh button', async () => {
-      expect(await buttonExists('Refresh')).toBe(true)
+    it('does not show Restart App button initially', async () => {
+      expect(await buttonExists('Restart App')).toBe(false)
     })
 
     it('shows Install Extension button', async () => {
       expect(await buttonExists('Install Extension')).toBe(true)
     })
 
-    it('Refresh button is clickable without error', async () => {
-      await clickButton('Refresh')
-
-      // Should still show the Extensions tab content
+    it('shows Restart App button and banner after toggling an extension', async () => {
       const html = await getRootHTML()
-      expect(html).toContain('Extensions')
+      if (html.includes('No extensions installed')) return
+
+      // Toggle the first extension to trigger pendingRestart state
+      const toggleBtn = await $('button[title="Enable"], button[title="Disable"]')
+      if (!(await toggleBtn.isExisting())) return
+
+      await toggleBtn.click()
+      await browser.pause(500)
+
+      // The "Restart App" button should now be visible
+      expect(await buttonExists('Restart App')).toBe(true)
+
+      // The restart banner should appear with the expected message
+      const bannerHtml = await getRootHTML()
+      expect(bannerHtml).toContain('Changes require a restart')
+
+      // Toggle back to restore original state (pendingRestart stays true, which is fine)
+      await toggleBtn.click()
+      await browser.pause(500)
     })
 
     it('has no critical errors', async () => {
@@ -234,23 +249,32 @@ describe('ClearPathAI — Extensions', () => {
       await browser.pause(500)
     })
 
-    it('Refresh button re-fetches extension list', async () => {
+    it('restart banner can be dismissed', async () => {
       const html = await getRootHTML()
-      if (html.includes('No extensions installed')) {
-        // Refresh should still work with empty list
-        await clickButton('Refresh')
-        const afterHtml = await getRootHTML()
-        expect(afterHtml).toContain('No extensions installed')
-        return
-      }
+      if (html.includes('No extensions installed')) return
 
-      await clickButton('Refresh')
+      // Toggle an extension to trigger the restart banner
+      const toggleBtn = await $('button[title="Enable"], button[title="Disable"]')
+      if (!(await toggleBtn.isExisting())) return
+
+      await toggleBtn.click()
       await browser.pause(500)
 
-      // Extensions should still be listed after refresh
-      const afterHtml = await getRootHTML()
-      const hasExtensions = afterHtml.includes('bundled') || afterHtml.includes('user')
-      expect(hasExtensions).toBe(true)
+      // Verify the banner is showing
+      let bannerHtml = await getRootHTML()
+      expect(bannerHtml).toContain('Changes require a restart')
+
+      // Click the Dismiss button in the banner
+      await clickButton('Dismiss')
+      await browser.pause(300)
+
+      // Verify the banner is no longer visible
+      bannerHtml = await getRootHTML()
+      expect(bannerHtml).not.toContain('Changes require a restart')
+
+      // Toggle back to restore original state
+      await toggleBtn.click()
+      await browser.pause(500)
     })
 
     it('extension:list IPC returns consistent data', async () => {

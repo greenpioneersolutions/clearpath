@@ -4,12 +4,53 @@
   "description": "SDK for building ClearPathAI extensions",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.js"
+    }
+  },
+  "bin": {
+    "clearpath-package-extension": "scripts/package-extension.js"
+  },
   "files": [
-    "dist/"
+    "dist/",
+    "scripts/",
+    "example/",
+    "agents/",
+    "skills/"
   ],
   "scripts": {
     "build": "tsc",
-    "dev": "tsc --watch"
+    "dev": "tsc --watch",
+    "package-extension": "node scripts/package-extension.js",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "clearpath",
+    "extension",
+    "sdk",
+    "plugin",
+    "electron",
+    "react"
+  ],
+  "author": "ClearPathAI",
+  "homepage": "https://github.com/clearpathai/clearpath/tree/main/extension-sdk#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/clearpathai/clearpath.git",
+    "directory": "extension-sdk"
+  },
+  "bugs": {
+    "url": "https://github.com/clearpathai/clearpath/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18.0.0"
   },
   "peerDependencies": {
     "react": "^18.0.0",

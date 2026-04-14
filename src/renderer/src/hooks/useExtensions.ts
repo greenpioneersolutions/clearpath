@@ -110,7 +110,7 @@ interface UseExtensionsResult {
   refresh: () => Promise<void>
   toggle: (extensionId: string, enabled: boolean) => Promise<void>
   uninstall: (extensionId: string) => Promise<void>
-  install: () => Promise<void>
+  install: () => Promise<InstalledExtension | null>
   updatePermissions: (extensionId: string, granted: string[], denied: string[]) => Promise<void>
   checkRequirements: (extensionId: string) => Promise<RequirementCheckResult>
 }
@@ -156,6 +156,10 @@ export function useExtensions(): UseExtensionsResult {
     }
     if (!result.success) throw new Error(result.error)
     await refresh()
+    // Update the preload's extension channel allowlist after enable/disable
+    if (typeof window.electronAPI.refreshExtensionChannels === 'function') {
+      window.electronAPI.refreshExtensionChannels()
+    }
   }, [refresh])
 
   const uninstall = useCallback(async (extensionId: string) => {
@@ -165,17 +169,27 @@ export function useExtensions(): UseExtensionsResult {
     }
     if (!result.success) throw new Error(result.error)
     await refresh()
+    // Update the preload's extension channel allowlist after uninstall
+    if (typeof window.electronAPI.refreshExtensionChannels === 'function') {
+      window.electronAPI.refreshExtensionChannels()
+    }
   }, [refresh])
 
-  const install = useCallback(async () => {
+  const install = useCallback(async (): Promise<InstalledExtension | null> => {
     const result = await window.electronAPI.invoke('extension:install') as {
       success: boolean
+      data?: InstalledExtension
       error?: string
     }
     if (!result.success && result.error !== 'Installation cancelled') {
       throw new Error(result.error)
     }
     await refresh()
+    // Update the preload's extension channel allowlist so new channels work immediately
+    if (result.data && typeof window.electronAPI.refreshExtensionChannels === 'function') {
+      window.electronAPI.refreshExtensionChannels()
+    }
+    return result.data ?? null
   }, [refresh])
 
   const updatePermissions = useCallback(

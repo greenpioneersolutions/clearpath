@@ -3,10 +3,13 @@ import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron'
 // ── IPC Channel Whitelist ──────────────────────────────────────────────────────
 // Security: Only channels explicitly listed here can be invoked from the renderer.
 // This prevents XSS or compromised renderer code from calling arbitrary IPC handlers.
+// Extension channels are loaded dynamically from the main process at startup
+// and can be refreshed after installing/uninstalling extensions.
 
 const ALLOWED_INVOKE_CHANNELS = new Set([
   // App
   'app:get-cwd',
+  'app:restart',
 
   // Auth
   'auth:get-status', 'auth:refresh', 'auth:login-start', 'auth:login-cancel',
@@ -207,58 +210,44 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   'starter-pack:check-handoff', 'starter-pack:build-handoff-context',
   'starter-pack:get-agent-prompt',
 
-  // PR Scores channels (registered by bundled extension, kept in whitelist for renderer access)
-  'pr-scores:get-config', 'pr-scores:set-config',
-  'pr-scores:collect-prs', 'pr-scores:score-pr', 'pr-scores:score-all',
-  'pr-scores:get-scores', 'pr-scores:get-score-detail',
-  'pr-scores:calculate-metrics', 'pr-scores:get-repo-metrics',
-  'pr-scores:compute-deltas', 'pr-scores:build-ai-context',
-  'pr-scores:clear-scores', 'pr-scores:list-scored-repos',
-  'pr-scores:export-csv',
-  'pr-scores:get-author-metrics', 'pr-scores:get-all-repo-metrics',
-  'pr-scores:generate-ai-summary', 'pr-scores:get-session-prs',
-  'pr-scores:record-session-activity',
-
   // Context Sources (extensions + integrations as session context)
   'context-sources:list', 'context-sources:fetch', 'context-sources:fetch-multi',
 
-  // Extensions
+  // Extensions (core extension system — not specific extension channels)
   'extension:list', 'extension:get', 'extension:install', 'extension:uninstall',
   'extension:toggle', 'extension:update-permissions', 'extension:get-channels',
   'extension:check-requirements',
   'extension:storage-get', 'extension:storage-set', 'extension:storage-delete',
   'extension:storage-keys', 'extension:storage-quota',
   'extension:notify', 'extension:record-error',
-
-  // Efficiency Coach extension channels (registered by bundled extension)
-  'efficiency-coach:get-config', 'efficiency-coach:set-config',
-  'efficiency-coach:record-turn', 'efficiency-coach:get-turn-metrics',
-  'efficiency-coach:analyze-session', 'efficiency-coach:analyze-all',
-  'efficiency-coach:get-session-efficiency', 'efficiency-coach:get-overall-score',
-  'efficiency-coach:get-recommendations', 'efficiency-coach:dismiss-recommendation',
-  'efficiency-coach:estimate-context',
-  'efficiency-coach:get-reports', 'efficiency-coach:get-report', 'efficiency-coach:delete-report',
-  'efficiency-coach:get-model-comparison', 'efficiency-coach:get-patterns',
-  'efficiency-coach:enable-efficiency-mode', 'efficiency-coach:disable-efficiency-mode',
-  'efficiency-coach:get-mode-state',
-  'efficiency-coach:get-trends', 'efficiency-coach:clear-data',
-
-  // Backstage Explorer extension
-  'backstage-explorer:get-index', 'backstage-explorer:refresh-index',
-  'backstage-explorer:get-index-status',
-  'backstage-explorer:browse-entities', 'backstage-explorer:get-entity-detail',
-  'backstage-explorer:get-relationships', 'backstage-explorer:get-team-view',
-  'backstage-explorer:search', 'backstage-explorer:get-overview',
-  'backstage-explorer:build-ai-context', 'backstage-explorer:ask-local-ai',
-  'backstage-explorer:get-bookmarks', 'backstage-explorer:set-bookmarks',
-  'backstage-explorer:get-recent', 'backstage-explorer:get-suggestions',
-  'backstage-explorer:get-session-entities', 'backstage-explorer:get-catalog-insights',
-  'backstage-explorer:get-entity-notes', 'backstage-explorer:generate-summary',
-  'backstage-explorer:get-config', 'backstage-explorer:set-config',
-  'backstage-explorer:ctx-catalog-overview', 'backstage-explorer:ctx-entity-detail',
-  'backstage-explorer:ctx-team-services', 'backstage-explorer:ctx-system-architecture',
-  'backstage-explorer:ctx-catalog-search',
 ])
+
+// ── Dynamic Extension Channels ─────────────────────────────────────────────────
+// Extension IPC channels (e.g. "pr-scores:get-config", "efficiency-coach:analyze-session")
+// are fetched from the main process at preload init via a synchronous IPC call,
+// and can be refreshed after extension install/uninstall without a full restart.
+const extensionChannels = new Set<string>()
+
+/** Fetch currently allowed extension channels from the main process (synchronous). */
+function loadExtensionChannels(): void {
+  try {
+    const result = ipcRenderer.sendSync('extension:get-channels-sync') as {
+      success: boolean
+      data?: string[]
+    }
+    if (result?.success && Array.isArray(result.data)) {
+      extensionChannels.clear()
+      for (const ch of result.data) {
+        extensionChannels.add(ch)
+      }
+    }
+  } catch {
+    // Extension system may not be ready yet — channels will be loaded on refresh
+  }
+}
+
+// Load extension channels at preload initialization
+loadExtensionChannels()
 
 // Channels the main process pushes to the renderer via webContents.send()
 const ALLOWED_RECEIVE_CHANNELS = new Set([
@@ -276,7 +265,7 @@ const ALLOWED_RECEIVE_CHANNELS = new Set([
 
 contextBridge.exposeInMainWorld('electronAPI', {
   invoke: (channel: string, ...args: unknown[]): Promise<unknown> => {
-    if (!ALLOWED_INVOKE_CHANNELS.has(channel)) {
+    if (!ALLOWED_INVOKE_CHANNELS.has(channel) && !extensionChannels.has(channel)) {
       return Promise.reject(new Error(`IPC channel not allowed: ${channel}`))
     }
     return ipcRenderer.invoke(channel, ...args)
@@ -299,5 +288,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   off: (channel: string, _callback: (...args: unknown[]) => void): void => {
     if (!ALLOWED_RECEIVE_CHANNELS.has(channel)) return
     ipcRenderer.removeAllListeners(channel)
+  },
+
+  /**
+   * Refresh the extension channel allowlist from the main process.
+   * Call after installing or uninstalling an extension so its IPC channels
+   * are immediately usable without an app restart.
+   */
+  refreshExtensionChannels: (): void => {
+    loadExtensionChannels()
   },
 })

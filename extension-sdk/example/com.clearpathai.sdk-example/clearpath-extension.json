@@ -1,0 +1,93 @@
+{
+  "id": "com.clearpathai.sdk-example",
+  "name": "SDK Example",
+  "version": "1.0.0",
+  "description": "Comprehensive reference extension demonstrating all SDK capabilities: storage, IPC handlers, session hooks, context providers, and lifecycle management.",
+  "author": "ClearPathAI",
+  "icon": "assets/icon.svg",
+  "minAppVersion": "1.8.0",
+  "main": "dist/main.cjs",
+  "renderer": "dist/renderer.js",
+  "ipcNamespace": "sdk-example",
+  "ipcChannels": [
+    "sdk-example:get-config",
+    "sdk-example:set-config",
+    "sdk-example:get-demo-data",
+    "sdk-example:get-event-log",
+    "sdk-example:clear-event-log",
+    "sdk-example:increment-counter",
+    "sdk-example:get-storage-stats",
+    "sdk-example:on-session-started",
+    "sdk-example:on-session-stopped",
+    "sdk-example:on-turn-started",
+    "sdk-example:on-turn-ended",
+    "sdk-example:ctx-demo",
+    "sdk-example:health"
+  ],
+  "permissions": [
+    "storage",
+    "notifications:emit",
+    "sessions:read",
+    "sessions:lifecycle",
+    "cost:read",
+    "feature-flags:read",
+    "env:read"
+  ],
+  "storageQuota": 5242880,
+  "contributes": {
+    "navigation": [
+      {
+        "id": "sdk-example-nav",
+        "path": "/extensions/sdk-example",
+        "label": "SDK Example",
+        "icon": "Puzzle",
+        "position": "bottom"
+      }
+    ],
+    "panels": [
+      {
+        "id": "sdk-example-home-widget",
+        "slot": "home:widgets",
+        "component": "HomeWidget",
+        "label": "SDK Example"
+      }
+    ],
+    "sessionHooks": [
+      { "event": "session:started", "handler": "sdk-example:on-session-started" },
+      { "event": "session:stopped", "handler": "sdk-example:on-session-stopped" },
+      { "event": "turn:started", "handler": "sdk-example:on-turn-started" },
+      { "event": "turn:ended", "handler": "sdk-example:on-turn-ended" }
+    ],
+    "contextProviders": [
+      {
+        "id": "sdk-example-context",
+        "label": "SDK Example Context",
+        "description": "Demo context provider showing extension state and session metrics",
+        "icon": "Code",
+        "parameters": [
+          {
+            "id": "topic",
+            "label": "Topic",
+            "type": "text",
+            "required": false,
+            "placeholder": "Enter a topic for context"
+          }
+        ],
+        "handler": "sdk-example:ctx-demo",
+        "examples": [
+          "Show me the extension state",
+          "How many sessions has this extension seen?"
+        ],
+        "maxTokenEstimate": 500
+      }
+    ],
+    "sidebarWidgets": [
+      {
+        "id": "sdk-example-status",
+        "label": "SDK Example Status",
+        "component": "StatusWidget",
+        "position": "status"
+      }
+    ]
+  }
+}

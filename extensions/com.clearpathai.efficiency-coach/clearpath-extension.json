@@ -53,8 +53,7 @@
         "path": "/efficiency-coach",
         "label": "Efficiency Coach",
         "icon": "bolt",
-        "position": "after:insights",
-        "featureGate": ["showEfficiencyCoach"]
+        "position": "after:insights"
       }
     ],
     "panels": [],

@@ -302,7 +302,7 @@ export function setupElectronAPI(overrides?: Record<string, unknown>) {
   const mockOn = vi.fn(() => vi.fn())
 
   Object.defineProperty(window, 'electronAPI', {
-    value: { invoke: mockInvoke, on: mockOn, off: vi.fn() },
+    value: { invoke: mockInvoke, on: mockOn, off: vi.fn(), refreshExtensionChannels: vi.fn() },
     writable: true,
     configurable: true,
   })

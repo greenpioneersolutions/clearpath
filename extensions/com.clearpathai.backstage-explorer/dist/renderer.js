@@ -409,7 +409,7 @@
   // ── Slot Router ────────────────────────────────────────────────────────────
   // The host tells us which component to render via the slot or component name.
 
-  const root = document.getElementById('root') || document.body
+  const root = document.getElementById('ext-root') || document.getElementById('root') || document.body
 
   // Try to detect which widget to render from slot data
   const slotName = window.__clearpath_slot || ''

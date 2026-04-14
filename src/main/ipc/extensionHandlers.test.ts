@@ -69,18 +69,34 @@ interface HandlerMap {
   [channel: string]: (event: unknown, args: unknown) => Promise<unknown>
 }
 
+interface SyncHandlerMap {
+  [channel: string]: (event: { returnValue: unknown }) => void
+}
+
 function createMockIpcMain() {
   const handlers: HandlerMap = {}
+  const syncHandlers: SyncHandlerMap = {}
   return {
     handle: vi.fn((channel: string, handler: (event: unknown, args: unknown) => Promise<unknown>) => {
       handlers[channel] = handler
     }),
+    on: vi.fn((channel: string, handler: (event: { returnValue: unknown }) => void) => {
+      syncHandlers[channel] = handler
+    }),
     removeHandler: vi.fn(),
     _handlers: handlers,
+    _syncHandlers: syncHandlers,
     _invoke: async (channel: string, args?: unknown) => {
       const handler = handlers[channel]
       if (!handler) throw new Error(`No handler for ${channel}`)
       return handler({}, args)
+    },
+    _invokeSync: (channel: string) => {
+      const handler = syncHandlers[channel]
+      if (!handler) throw new Error(`No sync handler for ${channel}`)
+      const event = { returnValue: undefined as unknown }
+      handler(event)
+      return event.returnValue
     },
   }
 }
@@ -426,6 +442,24 @@ describe('extensionHandlers', () => {
 
       const result = await ipcMain._invoke('extension:get-channels')
       expect(result).toEqual({ success: true, data: ['com.test:a', 'com.test:b'] })
+    })
+  })
+
+  describe('extension:get-channels-sync', () => {
+    it('returns channels synchronously via event.returnValue', () => {
+      registry.getAllExtensionChannels.mockReturnValue(['com.test:x', 'com.test:y'])
+
+      const result = ipcMain._invokeSync('extension:get-channels-sync')
+      expect(result).toEqual({ success: true, data: ['com.test:x', 'com.test:y'] })
+    })
+
+    it('returns empty data on error', () => {
+      registry.getAllExtensionChannels.mockImplementation(() => {
+        throw new Error('Registry unavailable')
+      })
+
+      const result = ipcMain._invokeSync('extension:get-channels-sync')
+      expect(result).toEqual({ success: false, data: [] })
     })
   })
 })

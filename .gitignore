@@ -49,6 +49,12 @@ yarn-error.log*
 # Testing
 coverage/
 
+# Extension build artifacts
+dist-extensions/
+*.clear.ext
+# Root extension for tests
+com.clearpathai.sdk-example-v1.0.0.clear.ext
+
 # Misc
 .cache/
 .temp/

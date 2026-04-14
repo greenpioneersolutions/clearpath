@@ -1,0 +1,39 @@
+{
+  "name": "@clearpath/extension-backstage-explorer",
+  "version": "1.0.0",
+  "description": "AI-powered exploration of your Backstage software catalog — browse entities, map relationships, understand team ownership, and ask questions with full catalog context",
+  "private": false,
+  "main": "dist/main.cjs",
+  "files": [
+    "clearpath-extension.json",
+    "dist/",
+    "assets/"
+  ],
+  "keywords": [
+    "clearpath",
+    "extension",
+    "backstage",
+    "software-catalog",
+    "service-discovery"
+  ],
+  "author": "ClearPathAI",
+  "license": "MIT",
+  "peerDependencies": {
+    "@clearpath/extension-sdk": "^0.2.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/clearpathai/clearpath.git",
+    "directory": "extensions/com.clearpathai.backstage-explorer"
+  },
+  "homepage": "https://github.com/clearpathai/clearpath/tree/main/extensions/com.clearpathai.backstage-explorer#readme",
+  "bugs": {
+    "url": "https://github.com/clearpathai/clearpath/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

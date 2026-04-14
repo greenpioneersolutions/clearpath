@@ -1,0 +1,40 @@
+{
+  "name": "@clearpath/extension-pr-scores",
+  "version": "2.0.0",
+  "description": "Score, analyze, and track pull request quality metrics with automated scoring, author analytics, AI review summaries, and session-aware PR insights powered by pull-request-score",
+  "private": false,
+  "main": "dist/main.cjs",
+  "files": [
+    "clearpath-extension.json",
+    "dist/",
+    "assets/"
+  ],
+  "keywords": [
+    "clearpath",
+    "extension",
+    "pull-request",
+    "code-review",
+    "pr-metrics",
+    "github"
+  ],
+  "author": "ClearPathAI",
+  "license": "MIT",
+  "peerDependencies": {
+    "@clearpath/extension-sdk": "^0.2.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/clearpathai/clearpath.git",
+    "directory": "extensions/com.clearpathai.pr-scores"
+  },
+  "homepage": "https://github.com/clearpathai/clearpath/tree/main/extensions/com.clearpathai.pr-scores#readme",
+  "bugs": {
+    "url": "https://github.com/clearpathai/clearpath/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

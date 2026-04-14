@@ -129,31 +129,97 @@ describe('ExtensionManager', () => {
     })
   })
 
-  it('renders Install Extension and Refresh buttons', async () => {
+  it('renders Install Extension button', async () => {
     setupExtensions([])
     await renderManager()
 
     await waitFor(() => {
       expect(screen.getByText('Install Extension')).toBeInTheDocument()
-      expect(screen.getByText('Refresh')).toBeInTheDocument()
     })
   })
 
-  it('calls extension:list again on Refresh click', async () => {
+  it('does not show Restart App button when no changes pending', async () => {
     setupExtensions([])
     await renderManager()
 
     await waitFor(() => {
-      expect(screen.getByText('Refresh')).toBeInTheDocument()
+      expect(screen.getByText('Install Extension')).toBeInTheDocument()
     })
+    expect(screen.queryByText('Restart App')).not.toBeInTheDocument()
+    expect(screen.queryByText('Restart now')).not.toBeInTheDocument()
+  })
 
-    fireEvent.click(screen.getByText('Refresh'))
+  it('shows restart banner and button after toggling an extension', async () => {
+    setupExtensions([makeExtension('com.test.ext', { enabled: false })])
+    await renderManager()
 
     await waitFor(() => {
-      // Called twice: once on mount, once on refresh
-      const listCalls = mockInvoke.mock.calls.filter((c: unknown[]) => c[0] === 'extension:list')
-      expect(listCalls.length).toBeGreaterThanOrEqual(2)
+      expect(screen.getByTitle('Enable')).toBeInTheDocument()
     })
+
+    fireEvent.click(screen.getByTitle('Enable'))
+
+    await waitFor(() => {
+      expect(screen.getByText('Changes require a restart to take full effect.')).toBeInTheDocument()
+      expect(screen.getByText('Restart App')).toBeInTheDocument()
+    })
+  })
+
+  it('dismisses restart banner when Dismiss is clicked', async () => {
+    setupExtensions([makeExtension('com.test.ext', { enabled: false })])
+    await renderManager()
+
+    await waitFor(() => {
+      expect(screen.getByTitle('Enable')).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByTitle('Enable'))
+
+    await waitFor(() => {
+      expect(screen.getByText('Dismiss')).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByText('Dismiss'))
+
+    await waitFor(() => {
+      expect(screen.queryByText('Changes require a restart to take full effect.')).not.toBeInTheDocument()
+    })
+  })
+
+  it('calls app:restart when Restart App is clicked', async () => {
+    setupExtensions([makeExtension('com.test.ext', { enabled: false })])
+    await renderManager()
+
+    await waitFor(() => {
+      expect(screen.getByTitle('Enable')).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByTitle('Enable'))
+
+    await waitFor(() => {
+      expect(screen.getByText('Restart App')).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByText('Restart App'))
+
+    expect(mockInvoke).toHaveBeenCalledWith('app:restart')
+  })
+
+  it('does not show restart banner after installing an extension', async () => {
+    setupExtensions([])
+    await renderManager()
+
+    await waitFor(() => {
+      expect(screen.getByText('Install Extension')).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByText('Install Extension'))
+
+    // Install no longer triggers restart — it works immediately via dynamic channel refresh
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith('extension:install')
+    })
+    expect(screen.queryByText('Changes require a restart to take full effect.')).not.toBeInTheDocument()
   })
 
   it('calls extension:install on Install Extension click', async () => {
