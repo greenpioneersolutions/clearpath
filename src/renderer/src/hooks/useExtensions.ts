@@ -156,6 +156,10 @@ export function useExtensions(): UseExtensionsResult {
     }
     if (!result.success) throw new Error(result.error)
     await refresh()
+    // Update the preload's extension channel allowlist after enable/disable
+    if (typeof window.electronAPI.refreshExtensionChannels === 'function') {
+      window.electronAPI.refreshExtensionChannels()
+    }
   }, [refresh])
 
   const uninstall = useCallback(async (extensionId: string) => {
@@ -165,6 +169,10 @@ export function useExtensions(): UseExtensionsResult {
     }
     if (!result.success) throw new Error(result.error)
     await refresh()
+    // Update the preload's extension channel allowlist after uninstall
+    if (typeof window.electronAPI.refreshExtensionChannels === 'function') {
+      window.electronAPI.refreshExtensionChannels()
+    }
   }, [refresh])
 
   const install = useCallback(async (): Promise<InstalledExtension | null> => {
@@ -177,6 +185,10 @@ export function useExtensions(): UseExtensionsResult {
       throw new Error(result.error)
     }
     await refresh()
+    // Update the preload's extension channel allowlist so new channels work immediately
+    if (result.data && typeof window.electronAPI.refreshExtensionChannels === 'function') {
+      window.electronAPI.refreshExtensionChannels()
+    }
     return result.data ?? null
   }, [refresh])
 

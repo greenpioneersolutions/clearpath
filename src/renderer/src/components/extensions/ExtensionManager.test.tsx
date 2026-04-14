@@ -205,7 +205,7 @@ describe('ExtensionManager', () => {
     expect(mockInvoke).toHaveBeenCalledWith('app:restart')
   })
 
-  it('shows restart banner after installing an extension', async () => {
+  it('does not show restart banner after installing an extension', async () => {
     setupExtensions([])
     await renderManager()
 
@@ -215,9 +215,11 @@ describe('ExtensionManager', () => {
 
     fireEvent.click(screen.getByText('Install Extension'))
 
+    // Install no longer triggers restart — it works immediately via dynamic channel refresh
     await waitFor(() => {
-      expect(screen.getByText('Changes require a restart to take full effect.')).toBeInTheDocument()
+      expect(mockInvoke).toHaveBeenCalledWith('extension:install')
     })
+    expect(screen.queryByText('Changes require a restart to take full effect.')).not.toBeInTheDocument()
   })
 
   it('calls extension:install on Install Extension click', async () => {

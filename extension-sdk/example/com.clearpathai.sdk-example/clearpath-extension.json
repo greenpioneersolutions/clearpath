@@ -2,40 +2,46 @@
   "id": "com.clearpathai.sdk-example",
   "name": "SDK Example",
   "version": "1.0.0",
-  "description": "Example extension demonstrating all ClearPathAI Extension SDK capabilities. Ships as a reference implementation with the SDK package.",
+  "description": "Comprehensive reference extension demonstrating all SDK capabilities: storage, IPC handlers, session hooks, context providers, and lifecycle management.",
   "author": "ClearPathAI",
   "icon": "assets/icon.svg",
   "minAppVersion": "1.8.0",
   "main": "dist/main.cjs",
   "renderer": "dist/renderer.js",
-  "permissions": [
-    "storage",
-    "notifications:emit",
-    "sessions:read",
-    "cost:read",
-    "feature-flags:read",
-    "feature-flags:write",
-    "context:estimate",
-    "navigation",
-    "env:read"
-  ],
   "ipcNamespace": "sdk-example",
   "ipcChannels": [
     "sdk-example:get-config",
     "sdk-example:set-config",
     "sdk-example:get-demo-data",
+    "sdk-example:get-event-log",
+    "sdk-example:clear-event-log",
+    "sdk-example:increment-counter",
+    "sdk-example:get-storage-stats",
+    "sdk-example:on-session-started",
+    "sdk-example:on-session-stopped",
+    "sdk-example:on-turn-started",
     "sdk-example:on-turn-ended",
-    "sdk-example:ctx-demo"
+    "sdk-example:ctx-demo",
+    "sdk-example:health"
+  ],
+  "permissions": [
+    "storage",
+    "notifications:emit",
+    "sessions:read",
+    "sessions:lifecycle",
+    "cost:read",
+    "feature-flags:read",
+    "env:read"
   ],
   "storageQuota": 5242880,
   "contributes": {
     "navigation": [
       {
-        "id": "sdk-example-page",
-        "path": "/sdk-example",
+        "id": "sdk-example-nav",
+        "path": "/extensions/sdk-example",
         "label": "SDK Example",
-        "icon": "code",
-        "position": "after:insights"
+        "icon": "Puzzle",
+        "position": "bottom"
       }
     ],
     "panels": [
@@ -46,35 +52,41 @@
         "label": "SDK Example"
       }
     ],
-    "featureFlags": [
-      "sdkExampleVerbose"
-    ],
     "sessionHooks": [
-      {
-        "event": "turn:ended",
-        "handler": "sdk-example:on-turn-ended"
-      }
+      { "event": "session:started", "handler": "sdk-example:on-session-started" },
+      { "event": "session:stopped", "handler": "sdk-example:on-session-stopped" },
+      { "event": "turn:started", "handler": "sdk-example:on-turn-started" },
+      { "event": "turn:ended", "handler": "sdk-example:on-turn-ended" }
     ],
     "contextProviders": [
       {
-        "id": "sdk-demo-context",
-        "label": "SDK Demo Context",
-        "description": "Example context provider that returns demo data from the SDK Example extension",
+        "id": "sdk-example-context",
+        "label": "SDK Example Context",
+        "description": "Demo context provider showing extension state and session metrics",
+        "icon": "Code",
         "parameters": [
           {
             "id": "topic",
             "label": "Topic",
             "type": "text",
             "required": false,
-            "placeholder": "e.g. storage, sessions"
+            "placeholder": "Enter a topic for context"
           }
         ],
         "handler": "sdk-example:ctx-demo",
         "examples": [
-          "Show me SDK example data",
-          "What can the SDK do?"
+          "Show me the extension state",
+          "How many sessions has this extension seen?"
         ],
-        "maxTokenEstimate": 1000
+        "maxTokenEstimate": 500
+      }
+    ],
+    "sidebarWidgets": [
+      {
+        "id": "sdk-example-status",
+        "label": "SDK Example Status",
+        "component": "StatusWidget",
+        "position": "status"
       }
     ]
   }

@@ -252,6 +252,9 @@ export interface ElectronAPI {
   invoke(channel: string, ...args: unknown[]): Promise<unknown>
   on(channel: string, callback: (...args: unknown[]) => void): () => void
   off(channel: string, callback: (...args: unknown[]) => void): void
+  /** Refresh the preload's extension channel allowlist from the main process.
+   *  Called after installing an extension so its IPC channels work immediately. */
+  refreshExtensionChannels?: () => void
 }
 
 declare global {

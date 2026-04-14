@@ -580,16 +580,32 @@ app.whenReady().then(async () => {
 
   // Restart the app (used by extension manager after changes that require restart)
   ipcMain.handle('app:restart', async () => {
-    // Close all windows first so the renderer cleans up properly
-    const windows = BrowserWindow.getAllWindows()
-    for (const win of windows) {
-      win.removeAllListeners('close')
-      win.close()
+    const isDev = !!process.env['ELECTRON_RENDERER_URL']
+
+    if (isDev) {
+      // In dev mode, app.relaunch() can't work because the Vite dev server is
+      // managed by electron-vite — the relaunched process loses ELECTRON_RENDERER_URL
+      // and shows a blank screen. Instead, reload extensions in-place and refresh the renderer.
+      log.info('[app] Dev-mode restart: reloading extensions and refreshing renderer')
+      await extensionMainLoader.unloadAll()
+      extensionRegistry.discoverAll()
+      await extensionMainLoader.loadAll()
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        extensionMainLoader.setWebContents(mainWindow.webContents)
+        mainWindow.webContents.reload()
+      }
+    } else {
+      // In production, do a full process restart
+      log.info('[app] Production restart: relaunching app')
+      const windows = BrowserWindow.getAllWindows()
+      for (const win of windows) {
+        win.removeAllListeners('close')
+        win.close()
+      }
+      await new Promise((resolve) => setTimeout(resolve, 200))
+      app.relaunch()
+      app.exit(0)
     }
-    // Small delay to let windows finish closing
-    await new Promise((resolve) => setTimeout(resolve, 200))
-    app.relaunch()
-    app.exit(0)
   })
 
   // IPC handlers for manual update control

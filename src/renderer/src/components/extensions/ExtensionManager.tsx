@@ -102,7 +102,6 @@ export default function ExtensionManager({ onPendingRestartChange }: ExtensionMa
         setSelectedPerms(new Set(ext.manifest.permissions)) // All selected by default
         setShowPermissionModal(true)
       }
-      setPendingRestart(true)
     } catch (err) {
       setActionError(String(err))
     }

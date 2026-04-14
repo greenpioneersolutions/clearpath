@@ -45,7 +45,7 @@ export default function Memory(): JSX.Element {
       {/* Page header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Memory & Context</h1>
+          <h1 className="text-2xl font-bold text-white">Memory & Context</h1>
           <p className="text-sm text-gray-500 mt-0.5">
             Manage config files, instructions, memory entries, and context usage
           </p>
@@ -61,7 +61,7 @@ export default function Memory(): JSX.Element {
               className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
                 cli === c
                   ? 'bg-indigo-600 text-white'
-                  : 'bg-white text-gray-600 border border-gray-300 hover:bg-gray-50'
+                  : 'bg-gray-800 text-gray-400 border border-gray-600 hover:bg-gray-700'
               }`}
             >
               {c === 'copilot' ? 'Copilot' : 'Claude'}
@@ -71,7 +71,7 @@ export default function Memory(): JSX.Element {
       </div>
 
       {/* Tabs */}
-      <div className="border-b border-gray-200">
+      <div className="border-b border-gray-700">
         <nav className="flex gap-6">
           {TABS.map((t) => (
             <button
@@ -80,7 +80,7 @@ export default function Memory(): JSX.Element {
               className={`pb-3 text-sm font-medium border-b-2 transition-colors ${
                 tab === t.key
                   ? 'border-indigo-600 text-indigo-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  : 'border-transparent text-gray-500 hover:text-gray-300 hover:border-gray-500'
               }`}
             >
               {t.label}
@@ -90,7 +90,7 @@ export default function Memory(): JSX.Element {
       </div>
 
       {/* Tab content */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+      <div className="bg-gray-800 rounded-xl shadow-sm border border-gray-700 overflow-hidden">
         {tab === 'notes' ? (
           <div className="p-6">
             <NotesManager />

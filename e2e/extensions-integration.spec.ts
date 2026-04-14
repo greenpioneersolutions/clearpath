@@ -24,7 +24,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 // Path to the pre-packaged example extension
 const EXAMPLE_EXT_PATH = path.resolve(
   __dirname,
-  '../extension-sdk/example/com.clearpathai.sdk-example/dist/com.clearpathai.sdk-example-v1.0.0.clear.ext'
+  '../com.clearpathai.sdk-example-v1.0.0.clear.ext'
 )
 
 describe('ClearPathAI — Extension Integration', () => {
@@ -50,6 +50,15 @@ describe('ClearPathAI — Extension Integration', () => {
 
       expect(result.success).toBe(true)
       expect(result.data?.manifest?.id).toBe('com.clearpathai.sdk-example')
+
+      // Refresh the preload's extension channel allowlist so IPC channels work
+      // without requiring a full app restart
+      await browser.execute(() => {
+        const api = (window as any).electronAPI
+        if (typeof api.refreshExtensionChannels === 'function') {
+          api.refreshExtensionChannels()
+        }
+      })
     })
 
     it('shows the installed extension in the list', async () => {
@@ -83,6 +92,82 @@ describe('ClearPathAI — Extension Integration', () => {
     })
   })
 
+  // ── Extension IPC Channel Access ──────────────────────────────────────
+
+  describe('Extension IPC Channel Access', () => {
+    it('can call sdk-example:health after install', async () => {
+      // The preload should have refreshed extension channels after install
+      // so we can call extension IPC channels directly
+      const result = await invokeIPC('sdk-example:health') as {
+        success: boolean
+        data?: { status: string; handlers: string[] }
+      }
+      expect(result.success).toBe(true)
+      expect(result.data?.status).toBe('healthy')
+      expect(result.data?.handlers.length).toBeGreaterThan(0)
+    })
+
+    it('can call sdk-example:get-config', async () => {
+      const result = await invokeIPC('sdk-example:get-config') as {
+        success: boolean
+        data?: { greeting: string }
+      }
+      expect(result.success).toBe(true)
+      expect(result.data).toBeTruthy()
+    })
+
+    it('can call sdk-example:increment-counter', async () => {
+      const result = await invokeIPC('sdk-example:increment-counter') as {
+        success: boolean
+        data?: { counter: number }
+      }
+      expect(result.success).toBe(true)
+      expect(typeof result.data?.counter).toBe('number')
+    })
+
+    it('can call sdk-example:get-event-log', async () => {
+      const result = await invokeIPC('sdk-example:get-event-log') as {
+        success: boolean
+        data?: Array<{ type: string; details: string }>
+      }
+      expect(result.success).toBe(true)
+      expect(Array.isArray(result.data)).toBe(true)
+    })
+
+    it('can call sdk-example:get-storage-stats', async () => {
+      const result = await invokeIPC('sdk-example:get-storage-stats') as {
+        success: boolean
+        data?: { keyCount: number }
+      }
+      expect(result.success).toBe(true)
+      expect(typeof result.data?.keyCount).toBe('number')
+    })
+
+    it('can call sdk-example:clear-event-log', async () => {
+      const result = await invokeIPC('sdk-example:clear-event-log') as { success: boolean }
+      expect(result.success).toBe(true)
+    })
+
+    it('can call sdk-example:get-demo-data', async () => {
+      const result = await invokeIPC('sdk-example:get-demo-data') as {
+        success: boolean
+        data?: { extensionId: string; sessionCount: number; turnCount: number }
+      }
+      expect(result.success).toBe(true)
+      expect(result.data?.extensionId).toBe('com.clearpathai.sdk-example')
+    })
+
+    it('can call sdk-example:ctx-demo context provider', async () => {
+      const result = await invokeIPC('sdk-example:ctx-demo', { topic: 'testing' }) as {
+        success: boolean
+        context?: string
+        metadata?: { topic: string }
+      }
+      expect(result.success).toBe(true)
+      expect(result.metadata?.topic).toBe('testing')
+    })
+  })
+
   // ── Enable/Disable + Restart Banner ──────────────────────────────────
 
   describe('Extension Toggle and Restart Flow', () => {
@@ -91,7 +176,11 @@ describe('ClearPathAI — Extension Integration', () => {
       await browser.pause(500)
     })
 
-    it('shows no restart banner initially', async () => {
+    it('shows no restart banner initially (install does not require restart)', async () => {
+      // Extension install uses the install-without-restart flow:
+      // channels are refreshed via refreshExtensionChannels() so no
+      // pendingRestart state is set. Only enable/disable toggles trigger
+      // the restart banner.
       const html = await getRootHTML()
       expect(html).not.toContain('Changes require a restart')
     })

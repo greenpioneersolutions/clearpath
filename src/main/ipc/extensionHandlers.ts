@@ -369,6 +369,17 @@ export function registerExtensionHandlers(
     }
   })
 
+  // Synchronous channel fetch for preload initialization.
+  // The preload script calls sendSync('extension:get-channels-sync') before the
+  // window is ready, so it needs a synchronous response via event.returnValue.
+  ipcMain.on('extension:get-channels-sync', (event) => {
+    try {
+      event.returnValue = { success: true, data: registry.getAllExtensionChannels() }
+    } catch {
+      event.returnValue = { success: false, data: [] }
+    }
+  })
+
   // ── Error recording (from renderer when iframe errors are caught) ─────────
 
   ipcMain.handle(

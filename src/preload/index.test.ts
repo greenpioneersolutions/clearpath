@@ -3,6 +3,8 @@
  *
  * The preload script uses contextBridge.exposeInMainWorld to expose a safe
  * electronAPI object. It validates all IPC channels against explicit allowlists.
+ * Extension channels are loaded dynamically via sendSync at preload init and
+ * can be refreshed via refreshExtensionChannels().
  */
 
 import { contextBridge, ipcRenderer } from 'electron'
@@ -15,6 +17,7 @@ function getExposedAPI(): {
   invoke: (channel: string, ...args: unknown[]) => Promise<unknown>
   on: (channel: string, callback: (...args: unknown[]) => void) => () => void
   off: (channel: string, callback: (...args: unknown[]) => void) => void
+  refreshExtensionChannels: () => void
 } {
   // contextBridge.exposeInMainWorld was called with ('electronAPI', api)
   const calls = vi.mocked(contextBridge.exposeInMainWorld).mock.calls
@@ -22,6 +25,9 @@ function getExposedAPI(): {
   if (!apiCall) throw new Error('electronAPI was not exposed via contextBridge')
   return apiCall[1] as ReturnType<typeof getExposedAPI>
 }
+
+// Capture sendSync calls made during module import (before any beforeEach resets)
+const sendSyncCallsDuringInit = vi.mocked(ipcRenderer.sendSync).mock.calls.slice()
 
 describe('preload IPC security boundary', () => {
   let api: ReturnType<typeof getExposedAPI>
@@ -35,6 +41,17 @@ describe('preload IPC security boundary', () => {
     vi.mocked(ipcRenderer.on).mockReset()
     vi.mocked(ipcRenderer.removeListener).mockReset()
     vi.mocked(ipcRenderer.removeAllListeners).mockReset()
+    vi.mocked(ipcRenderer.sendSync).mockReset()
+  })
+
+  describe('initial extension channel loading', () => {
+    it('calls sendSync to fetch extension channels at module load', () => {
+      // sendSync was called during module import (preload init), captured before resets
+      const syncCall = sendSyncCallsDuringInit.find(
+        (call) => call[0] === 'extension:get-channels-sync',
+      )
+      expect(syncCall).toBeDefined()
+    })
   })
 
   describe('invoke()', () => {
@@ -94,7 +111,7 @@ describe('preload IPC security boundary', () => {
       'accessibility:get',
       'wizard:get-config',
       'starter-pack:get-agents',
-      'pr-scores:get-config',
+      'extension:get-channels',
       'data:get-storage-stats',
       'workspace:list',
       'onboarding:get-state',
@@ -177,6 +194,105 @@ describe('preload IPC security boundary', () => {
       api.off('not:allowed', callback)
 
       expect(ipcRenderer.removeAllListeners).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('refreshExtensionChannels()', () => {
+    it('adds extension channels to the allowlist after fetching from main process', async () => {
+      // Initially, a custom extension channel should be blocked
+      await expect(api.invoke('com.custom-ext:do-thing')).rejects.toThrow(
+        'IPC channel not allowed: com.custom-ext:do-thing',
+      )
+
+      // Mock the sendSync response for extension channels
+      vi.mocked(ipcRenderer.sendSync).mockReturnValueOnce({
+        success: true,
+        data: ['com.custom-ext:do-thing', 'com.custom-ext:query'],
+      })
+
+      api.refreshExtensionChannels()
+
+      // The channel should now be allowed
+      vi.mocked(ipcRenderer.invoke).mockResolvedValue(null)
+      await api.invoke('com.custom-ext:do-thing')
+      expect(ipcRenderer.invoke).toHaveBeenCalledWith('com.custom-ext:do-thing')
+
+      expect(ipcRenderer.sendSync).toHaveBeenCalledWith('extension:get-channels-sync')
+    })
+
+    it('preserves static channels after refresh', async () => {
+      // Mock the sendSync response
+      vi.mocked(ipcRenderer.sendSync).mockReturnValueOnce({
+        success: true,
+        data: ['com.new-ext:action'],
+      })
+
+      api.refreshExtensionChannels()
+
+      // Extension channel should work
+      vi.mocked(ipcRenderer.invoke).mockResolvedValue(null)
+      await api.invoke('com.new-ext:action')
+      expect(ipcRenderer.invoke).toHaveBeenCalledWith('com.new-ext:action')
+
+      // Static channels should still work
+      vi.mocked(ipcRenderer.invoke).mockResolvedValue(null)
+      await api.invoke('settings:get')
+      expect(ipcRenderer.invoke).toHaveBeenCalledWith('settings:get')
+    })
+
+    it('clears previous extension channels on refresh', async () => {
+      // First refresh: add channel A
+      vi.mocked(ipcRenderer.sendSync).mockReturnValueOnce({
+        success: true,
+        data: ['ext-a:action'],
+      })
+      api.refreshExtensionChannels()
+
+      vi.mocked(ipcRenderer.invoke).mockResolvedValue(null)
+      await api.invoke('ext-a:action') // should work
+
+      // Second refresh: only channel B (A was removed from the extension)
+      vi.mocked(ipcRenderer.sendSync).mockReturnValueOnce({
+        success: true,
+        data: ['ext-b:action'],
+      })
+      api.refreshExtensionChannels()
+
+      // Channel A should now be blocked
+      await expect(api.invoke('ext-a:action')).rejects.toThrow(
+        'IPC channel not allowed: ext-a:action',
+      )
+
+      // Channel B should work
+      vi.mocked(ipcRenderer.invoke).mockResolvedValue(null)
+      await api.invoke('ext-b:action')
+      expect(ipcRenderer.invoke).toHaveBeenCalledWith('ext-b:action')
+    })
+
+    it('silently ignores errors from the main process', async () => {
+      vi.mocked(ipcRenderer.sendSync).mockImplementationOnce(() => {
+        throw new Error('IPC failed')
+      })
+
+      // Should not throw
+      api.refreshExtensionChannels()
+
+      // Static channels should still work fine
+      vi.mocked(ipcRenderer.invoke).mockResolvedValue(null)
+      await api.invoke('settings:get')
+      expect(ipcRenderer.invoke).toHaveBeenCalledWith('settings:get')
+    })
+
+    it('handles malformed response gracefully', async () => {
+      vi.mocked(ipcRenderer.sendSync).mockReturnValueOnce({ success: false })
+
+      // Should not throw
+      api.refreshExtensionChannels()
+
+      // Static channels should still work
+      vi.mocked(ipcRenderer.invoke).mockResolvedValue(null)
+      await api.invoke('settings:get')
+      expect(ipcRenderer.invoke).toHaveBeenCalledWith('settings:get')
     })
   })
 })
