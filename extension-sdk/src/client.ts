@@ -1,8 +1,18 @@
 import type { ExtensionSDK, ClearPathTheme } from './types'
 
 /**
- * Creates an SDK client that communicates with the host app via MessagePort.
- * This runs inside the extension iframe.
+ * Creates an SDK client that communicates with the host app over a `MessagePort`.
+ *
+ * This factory is called internally by `createExtension()` when the extension iframe
+ * boots. Extension authors do not call this directly -- use `useSDK()` in React
+ * components instead.
+ *
+ * The returned object implements the full {@link ExtensionSDK} interface. Each method
+ * sends a structured request message to the host via the port and awaits a response.
+ *
+ * @param port - The `MessagePort` injected into the iframe by the host's srcdoc bootstrap.
+ * @param extensionId - The extension's unique manifest ID, used to scope requests.
+ * @returns A fully wired {@link ExtensionSDK} instance.
  */
 export function createSDKClient(port: MessagePort, extensionId: string): ExtensionSDK {
   let requestCounter = 0
@@ -49,6 +59,17 @@ export function createSDKClient(port: MessagePort, extensionId: string): Extensi
     }
   }
 
+  /**
+   * Send an RPC-style request to the host and return a promise for the result.
+   *
+   * Protocol: posts `{ type: 'ext:request', id, method, params }` to the host.
+   * The host responds with `{ type: 'ext:response', id, result?, error? }`.
+   * Requests time out after 30 seconds.
+   *
+   * @param method - Dot-delimited SDK method name (e.g., `"github.listRepos"`).
+   * @param params - JSON-serializable parameters for the method.
+   * @returns The raw result from the host (before unwrapping).
+   */
   function request(method: string, params?: unknown): Promise<unknown> {
     const id = `req-${++requestCounter}`
     return new Promise((resolve, reject) => {
@@ -73,6 +94,17 @@ export function createSDKClient(port: MessagePort, extensionId: string): Extensi
     })
   }
 
+  /**
+   * Unwrap a host response that follows the `{ success, data?, error? }` envelope pattern.
+   *
+   * If the result is an envelope with `success: false`, throws an `Error` with the
+   * provided error message. If `success: true`, returns the `data` payload. If the
+   * result is not an envelope (no `success` field), returns it as-is.
+   *
+   * @param result - Raw result from the host.
+   * @returns The unwrapped data payload.
+   * @throws {Error} If the envelope indicates failure.
+   */
   function unwrapResult(result: unknown): unknown {
     if (result && typeof result === 'object' && 'success' in result) {
       const r = result as { success: boolean; data?: unknown; error?: string }

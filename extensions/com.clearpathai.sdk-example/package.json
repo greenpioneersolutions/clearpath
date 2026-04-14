@@ -1,0 +1,39 @@
+{
+  "name": "@clearpath/extension-sdk-example",
+  "version": "1.0.0",
+  "description": "Example extension demonstrating all ClearPathAI Extension SDK capabilities. Ships as a reference implementation with the SDK package.",
+  "private": false,
+  "main": "dist/main.cjs",
+  "files": [
+    "clearpath-extension.json",
+    "dist/",
+    "assets/"
+  ],
+  "keywords": [
+    "clearpath",
+    "extension",
+    "example",
+    "sdk",
+    "reference"
+  ],
+  "author": "ClearPathAI",
+  "license": "MIT",
+  "peerDependencies": {
+    "@clearpath/extension-sdk": "^0.2.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/clearpathai/clearpath.git",
+    "directory": "extensions/com.clearpathai.sdk-example"
+  },
+  "homepage": "https://github.com/clearpathai/clearpath/tree/main/extensions/com.clearpathai.sdk-example#readme",
+  "bugs": {
+    "url": "https://github.com/clearpathai/clearpath/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

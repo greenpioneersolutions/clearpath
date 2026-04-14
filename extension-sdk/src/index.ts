@@ -1,8 +1,20 @@
+/**
+ * ClearPathAI Extension SDK -- the public API for building extensions.
+ *
+ * Extensions use three main exports:
+ * - {@link createExtension} -- define the renderer entry point (components + lifecycle hooks).
+ * - {@link useSDK} -- React hook to access the SDK from any component.
+ * - {@link ClearPathProvider} -- React context provider (used internally by `createExtension`).
+ *
+ * All TypeScript types are also re-exported for use in extension code.
+ *
+ * @packageDocumentation
+ */
 import React, { createContext, useContext, useState, useEffect } from 'react'
 import { createSDKClient } from './client'
 import type { ExtensionSDK, CreateExtensionOptions } from './types'
 
-// Re-export all types
+// Re-export all types for extension consumers
 export type {
   ExtensionSDK,
   ExtensionManifest,
@@ -26,7 +38,18 @@ const SDKContext = createContext<ExtensionSDK | null>(null)
 
 /**
  * React hook to access the ClearPathAI Extension SDK.
- * Must be used within a component rendered by createExtension().
+ * Must be used within a component rendered by `createExtension()`.
+ *
+ * @returns The {@link ExtensionSDK} instance for the current extension.
+ * @throws {Error} If called outside of a ClearPath extension component tree.
+ *
+ * @example
+ * ```tsx
+ * function MyWidget() {
+ *   const sdk = useSDK()
+ *   // sdk.storage.get('key'), sdk.github.listRepos(), etc.
+ * }
+ * ```
  */
 export function useSDK(): ExtensionSDK {
   const sdk = useContext(SDKContext)
@@ -38,7 +61,12 @@ export function useSDK(): ExtensionSDK {
 
 /**
  * React context provider that wraps extension components with SDK access.
- * Typically used internally by createExtension() — not called directly.
+ *
+ * Typically used internally by `createExtension()`. Extension authors rarely
+ * need to use this directly unless building a custom mounting strategy.
+ *
+ * @param props.sdk - The {@link ExtensionSDK} instance to provide to descendants.
+ * @param props.children - React children that will have access to `useSDK()`.
  */
 export function ClearPathProvider({
   sdk,

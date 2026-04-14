@@ -1,0 +1,81 @@
+{
+  "id": "com.clearpathai.sdk-example",
+  "name": "SDK Example",
+  "version": "1.0.0",
+  "description": "Example extension demonstrating all ClearPathAI Extension SDK capabilities. Ships as a reference implementation with the SDK package.",
+  "author": "ClearPathAI",
+  "icon": "assets/icon.svg",
+  "minAppVersion": "1.8.0",
+  "main": "dist/main.cjs",
+  "renderer": "dist/renderer.js",
+  "permissions": [
+    "storage",
+    "notifications:emit",
+    "sessions:read",
+    "cost:read",
+    "feature-flags:read",
+    "feature-flags:write",
+    "context:estimate",
+    "navigation",
+    "env:read"
+  ],
+  "ipcNamespace": "sdk-example",
+  "ipcChannels": [
+    "sdk-example:get-config",
+    "sdk-example:set-config",
+    "sdk-example:get-demo-data",
+    "sdk-example:on-turn-ended",
+    "sdk-example:ctx-demo"
+  ],
+  "storageQuota": 5242880,
+  "contributes": {
+    "navigation": [
+      {
+        "id": "sdk-example-page",
+        "path": "/sdk-example",
+        "label": "SDK Example",
+        "icon": "code",
+        "position": "after:insights"
+      }
+    ],
+    "panels": [
+      {
+        "id": "sdk-example-home-widget",
+        "slot": "home:widgets",
+        "component": "HomeWidget",
+        "label": "SDK Example"
+      }
+    ],
+    "featureFlags": [
+      "sdkExampleVerbose"
+    ],
+    "sessionHooks": [
+      {
+        "event": "turn:ended",
+        "handler": "sdk-example:on-turn-ended"
+      }
+    ],
+    "contextProviders": [
+      {
+        "id": "sdk-demo-context",
+        "label": "SDK Demo Context",
+        "description": "Example context provider that returns demo data from the SDK Example extension",
+        "parameters": [
+          {
+            "id": "topic",
+            "label": "Topic",
+            "type": "text",
+            "required": false,
+            "placeholder": "e.g. storage, sessions"
+          }
+        ],
+        "handler": "sdk-example:ctx-demo",
+        "examples": [
+          "Show me SDK example data",
+          "What can the SDK do?"
+        ],
+        "maxTokenEstimate": 1000
+      }
+    ]
+  }
+}
