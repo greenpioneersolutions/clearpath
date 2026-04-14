@@ -4,6 +4,7 @@ import { Version3Client } from 'jira.js'
 import { storeSecret, retrieveSecret, deleteSecret } from '../utils/credentialStore'
 import { getStoreEncryptionKey } from '../utils/storeEncryption'
 import { log } from '../utils/logger'
+import { systemFetch } from '../utils/electronFetch'
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -212,7 +213,7 @@ async function atlassianFetch(
   token: string,
   options: RequestInit = {},
 ): Promise<Response> {
-  const response = await fetch(url, {
+  const response = await systemFetch(url, {
     ...options,
     headers: {
       'Authorization': buildBasicAuth(email, token),

@@ -3,6 +3,7 @@ import Store from 'electron-store'
 import { storeSecret, retrieveSecret, deleteSecret } from '../utils/credentialStore'
 import { getStoreEncryptionKey } from '../utils/storeEncryption'
 import { log } from '../utils/logger'
+import { systemFetch } from '../utils/electronFetch'
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -128,7 +129,7 @@ class BackstageClient {
 
     let response: Response
     try {
-      response = await fetch(url, { ...options, headers })
+      response = await systemFetch(url, { ...options, headers })
     } catch (err) {
       log.error('[backstage] Network error on %s — %s', path, err)
       throw new Error(`Failed to connect to Backstage at ${this.baseUrl}. Check your network and base URL.`)
@@ -156,7 +157,7 @@ class BackstageClient {
     try {
       const url = `${this.baseUrl}${path}`
       const token = retrieveSecret('backstage-token')
-      const response = await fetch(url, {
+      const response = await systemFetch(url, {
         headers: {
           'Accept': 'application/json',
           'Authorization': `Bearer ${token}`,

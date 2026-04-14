@@ -20,6 +20,32 @@ import {
   ELEMENT_TIMEOUT,
 } from './helpers/app.js'
 
+/**
+ * Dismiss any restart banner or modal overlay that may be blocking the UI.
+ * Toggling extensions can trigger a "Changes require a restart" banner
+ * with a Dismiss button, or a full-screen modal overlay.
+ */
+async function dismissOverlays(): Promise<void> {
+  // Try clicking Dismiss button (restart banner)
+  try {
+    const dismissBtn = await $('//button[contains(., "Dismiss")]')
+    if (await dismissBtn.isExisting()) {
+      await dismissBtn.click()
+      await browser.pause(300)
+    }
+  } catch { /* no dismiss button — fine */ }
+
+  // Try clicking outside any modal overlay to close it
+  try {
+    const overlay = await $('div.fixed.inset-0.z-50')
+    if (await overlay.isExisting()) {
+      // Click the overlay backdrop to dismiss
+      await overlay.click()
+      await browser.pause(300)
+    }
+  } catch { /* no overlay — fine */ }
+}
+
 describe('ClearPathAI — Extensions', () => {
   before(async () => {
     await waitForAppReady()
@@ -215,9 +241,10 @@ describe('ClearPathAI — Extensions', () => {
       const titleAfter = await toggleBtnAfter.getAttribute('title')
       expect(titleAfter).not.toBe(titleBefore)
 
-      // Toggle back to restore state
+      // Toggle back to restore state and dismiss any overlay
       await toggleBtnAfter.click()
       await browser.pause(500)
+      await dismissOverlays()
     })
 
     it('toggle state persists after tab switch', async () => {
@@ -232,6 +259,7 @@ describe('ClearPathAI — Extensions', () => {
       // Toggle it
       await toggleBtn.click()
       await browser.pause(500)
+      await dismissOverlays()
 
       // Switch away and back
       await navigateToConfigureTab('settings')
@@ -244,9 +272,10 @@ describe('ClearPathAI — Extensions', () => {
       const titleAfter = await toggleBtnAfter.getAttribute('title')
       expect(titleAfter).not.toBe(titleBefore)
 
-      // Restore
+      // Restore and dismiss
       await toggleBtnAfter.click()
       await browser.pause(500)
+      await dismissOverlays()
     })
 
     it('restart banner can be dismissed', async () => {
@@ -272,9 +301,10 @@ describe('ClearPathAI — Extensions', () => {
       bannerHtml = await getRootHTML()
       expect(bannerHtml).not.toContain('Changes require a restart')
 
-      // Toggle back to restore original state
+      // Toggle back to restore original state and clean up
       await toggleBtn.click()
       await browser.pause(500)
+      await dismissOverlays()
     })
 
     it('extension:list IPC returns consistent data', async () => {

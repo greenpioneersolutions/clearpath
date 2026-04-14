@@ -2,6 +2,44 @@
 
 All notable changes to ClearPathAI will be documented in this file.
 
+## [1.9.0] - 2026-04-14
+
+### Added
+- **Extension SDK & Developer Tooling** — Full `@clearpath/extension-sdk` with comprehensive documentation (README, API reference, manifest reference, permissions guide, security model, storage system, communication protocol, contribution types). Includes example extension (`com.clearpathai.sdk-example`), migration guides, and Claude agent/skill definitions for extension development assistance
+- **Extension Packaging** — `clearpath-package-extension` CLI tool packages extensions into `.clear.ext` archives (validates manifest, excludes dev files, produces versioned output). Exposed via `npm run package:extension` and `npm run package:extensions` for bundled extensions
+- **Zip Installation** — Extensions can now be installed from `.clear.ext` or `.zip` files directly through the UI, with archive extraction, validation, and registration in a single flow
+- **Dynamic Extension IPC Channels** — Extension IPC channels are now loaded dynamically at preload init via synchronous `extension:get-channels-sync` handler and refreshed after install/uninstall/enable/disable. Newly installed extensions work without an app restart
+- **Extension Restart UX** — Toggle operations show a "Changes require a restart" banner with Restart App and Dismiss buttons. Install/uninstall operations refresh channels dynamically and skip the restart prompt
+- **Store Corruption Handler** — New `corruptionHandler.ts` and `storeHealthCheck.ts` detect and recover from corrupted electron-store JSON files. Validates all store files on startup, backs up corrupted files, and resets to defaults with user notification
+- **Extension Developer Agent** — Claude agent definition (`.claude/agents/extension-developer.md`) with extension SDK and migration skills for AI-assisted extension development
+- **PR Scores IPC Module** — Dedicated `prScoresHandlers.ts` with full scoring, collection, metrics, CSV export, AI context building, and session activity tracking. Decoupled from the bundled extension for direct IPC access
+- **E2E Extension Integration Tests** — New `e2e/extensions-integration.spec.ts` with comprehensive tests for extension IPC channel access, restart banner flows, and toggle state verification
+- **Corporate proxy SSL fix** — All integration HTTP calls use Electron's `net.fetch()` via `electronFetch.ts` instead of Node's built-in `fetch()`, trusting system certificates for corporate proxy environments
+
+### Changed
+- **Extension Manager UI** — Redesigned with restart banner, dismiss flow, and visual polish. Toggle operations track pending restart state. Install operations use dynamic channel refresh instead of requiring restart
+- **Preload Bridge** — Extended with `refreshExtensionChannels()` API and synchronous channel loading at init. Extension channels are now part of the IPC allowlist dynamically
+- **Configure Page** — Updated styles and layout for Memory tab content area
+- **Extension SDK Package** — Enhanced `package.json` with exports map, bin entry, keywords, repository metadata, engines, publishConfig, and sideEffects flag
+- **GitHub Token Input** — Added `aria-label` to the token input field in IntegrationsTab for accessibility and e2e testability
+- **Environment Variables API** — `settings:get-env-vars` now returns an array shape (`envVarEntries`) for cleaner serialization
+- **Octokit Client** — Uses Electron's `net.fetch` for corporate proxy compatibility
+
+### Fixed
+- **PR Scores Tests** — Updated test expectations for revised UI copy, navigation labels, and IPC mock shapes
+- **Settings Handler Tests** — Aligned with new env-var entries array format
+- **Work Page Tests** — Guards against optional feature-flagged tabs that may not render
+- **Configure Page Tests** — Added coverage for new extension restart banner behavior
+- **Extension Manager Tests** — Added restart banner, dismiss, and app:restart IPC tests
+
+## [1.8.2] - 2026-04-13
+
+### Fixed
+- **Corporate proxy SSL errors** — All integration HTTP calls (GitHub, Backstage, Atlassian, ServiceNow, Datadog, PowerBI, Splunk, custom APIs) now use Electron's `net.fetch()` instead of Node's built-in `fetch()`. Node.js ignores the system certificate store, so corporate proxies doing SSL inspection caused "self-signed certificate in the certificate chain" errors even though the same URLs worked in browsers and `curl`. Electron's `net` module uses Chromium's networking stack which trusts system certificates. Added `src/main/utils/electronFetch.ts` as the centralized proxy-safe fetch utility
+
+### Changed
+- **Octokit client** — Now passes `request.fetch` option using Electron's `net.fetch` so GitHub API calls work behind corporate SSL inspection proxies
+
 ## [1.8.1] - 2026-04-13
 
 ### Fixed

@@ -4,6 +4,7 @@ import Store from 'electron-store'
 import { storeSecret, retrieveSecret, deleteSecret } from '../utils/credentialStore'
 import { getStoreEncryptionKey } from '../utils/storeEncryption'
 import { log } from '../utils/logger'
+import { systemFetch } from '../utils/electronFetch'
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -213,7 +214,7 @@ class SplunkClient {
 
     let response: Response
     try {
-      response = await fetch(url, { ...this.buildFetchOptions(options), headers })
+      response = await systemFetch(url, { ...this.buildFetchOptions(options), headers })
     } catch (err) {
       log.error('[splunk] Network error on %s — %s', path, err)
       throw new Error(`Failed to connect to Splunk at ${this.hostUrl}. Check your network and host URL.`)
@@ -226,7 +227,7 @@ class SplunkClient {
       if (refreshed) {
         headers['Authorization'] = this.getAuthHeader()
         try {
-          response = await fetch(url, { ...this.buildFetchOptions(options), headers })
+          response = await systemFetch(url, { ...this.buildFetchOptions(options), headers })
         } catch (err) {
           throw new Error(`Failed to connect to Splunk after re-authentication: ${err}`)
         }
@@ -263,7 +264,7 @@ class SplunkClient {
 
     let response: Response
     try {
-      response = await fetch(url, {
+      response = await systemFetch(url, {
         ...this.buildFetchOptions(),
         method: 'POST',
         headers: {

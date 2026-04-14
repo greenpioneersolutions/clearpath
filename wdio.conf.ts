@@ -7,7 +7,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 export const config: Options.Testrunner = {
   runner: 'local',
   specs: ['./e2e/**/*.spec.ts'],
-  exclude: [],
+  exclude: [
+    // extensions-integration requires a pre-packaged .clear.ext file.
+    // Run it separately via: npm run e2e:extensions
+    './e2e/extensions-integration.spec.ts',
+  ],
   maxInstances: 1,
 
   capabilities: [

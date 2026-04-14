@@ -3,6 +3,7 @@ import Store from 'electron-store'
 import { storeSecret, retrieveSecret, deleteSecret, hasSecret } from '../utils/credentialStore'
 import { getStoreEncryptionKey } from '../utils/storeEncryption'
 import { log } from '../utils/logger'
+import { systemFetch } from '../utils/electronFetch'
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -128,7 +129,7 @@ async function acquireOAuth2ClientCredentialsToken(integration: CustomIntegratio
     params.set('scope', auth.oauth2Scopes)
   }
 
-  const response = await fetch(auth.oauth2TokenUrl, {
+  const response = await systemFetch(auth.oauth2TokenUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: params.toString(),
@@ -305,7 +306,7 @@ async function executeRequest(
 
   log.debug('[custom-integration] %s %s', endpoint.method, url.toString())
 
-  const response = await fetch(url.toString(), requestInit)
+  const response = await systemFetch(url.toString(), requestInit)
 
   // Extract response headers as plain object
   const responseHeaders: Record<string, string> = {}

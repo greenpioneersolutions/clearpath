@@ -4,6 +4,7 @@ import { Octokit } from 'octokit'
 import { storeSecret, retrieveSecret, deleteSecret } from '../utils/credentialStore'
 import { getStoreEncryptionKey } from '../utils/storeEncryption'
 import { log } from '../utils/logger'
+import { getSystemFetch } from '../utils/electronFetch'
 
 // ── Store ────────────────────────────────────────────────────────────────────
 
@@ -77,7 +78,7 @@ function getOctokit(): Octokit | null {
 
   log.info('[integration] getOctokit: Token retrieved OK (length=%d, prefix=%s…) — creating Octokit client', token.length, token.slice(0, 4))
   lastOctokitError = null
-  octokit = new Octokit({ auth: token })
+  octokit = new Octokit({ auth: token, request: { fetch: getSystemFetch() } })
   return octokit
 }
 
@@ -116,7 +117,7 @@ export function registerIntegrationHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('integration:github-connect', async (_e, args: { token: string }) => {
     log.info('[integration] github-connect: Attempting connection (token length=%d, prefix=%s...)', args.token.length, args.token.slice(0, 4))
     try {
-      const kit = new Octokit({ auth: args.token })
+      const kit = new Octokit({ auth: args.token, request: { fetch: getSystemFetch() } })
       const { data: user } = await kit.rest.users.getAuthenticated()
       log.info('[integration] github-connect: Authenticated as "%s" (id=%d)', user.login, user.id)
 

@@ -3,6 +3,7 @@ import Store from 'electron-store'
 import { storeSecret, retrieveSecret, deleteSecret } from '../utils/credentialStore'
 import { getStoreEncryptionKey } from '../utils/storeEncryption'
 import { log } from '../utils/logger'
+import { systemFetch } from '../utils/electronFetch'
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -142,7 +143,7 @@ class DatadogClient {
 
     let response: Response
     try {
-      response = await fetch(url, { ...options, headers })
+      response = await systemFetch(url, { ...options, headers })
     } catch (err) {
       log.error('[datadog] Network error on %s — %s', path, err)
       throw new Error(`Failed to connect to Datadog at ${this.apiUrl}. Check your network and API URL.`)
@@ -174,7 +175,7 @@ class DatadogClient {
 
     let response: Response
     try {
-      response = await fetch(url, {
+      response = await systemFetch(url, {
         headers: {
           'DD-API-KEY': apiKey,
           'Accept': 'application/json',

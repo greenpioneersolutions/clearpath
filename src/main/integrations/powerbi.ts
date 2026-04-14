@@ -4,6 +4,7 @@ import Store from 'electron-store'
 import { storeSecret, retrieveSecret, deleteSecret, hasSecret } from '../utils/credentialStore'
 import { getStoreEncryptionKey } from '../utils/storeEncryption'
 import { log } from '../utils/logger'
+import { systemFetch } from '../utils/electronFetch'
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -252,7 +253,7 @@ async function powerBIFetch<T>(path: string): Promise<T> {
   const url = `${POWER_BI_API_BASE}${path}`
 
   log.debug('[powerbi] GET %s', url)
-  const response = await fetch(url, {
+  const response = await systemFetch(url, {
     headers: {
       Authorization: `Bearer ${token}`,
       Accept: 'application/json',
@@ -347,7 +348,7 @@ export function registerPowerBIHandlers(ipcMain: IpcMain): void {
             // Validate by calling the Power BI API
             const token = result.accessToken
             log.info('[powerbi] Validating Power BI access...')
-            const validateResponse = await fetch(`${POWER_BI_API_BASE}/groups`, {
+            const validateResponse = await systemFetch(`${POWER_BI_API_BASE}/groups`, {
               headers: {
                 Authorization: `Bearer ${token}`,
                 Accept: 'application/json',

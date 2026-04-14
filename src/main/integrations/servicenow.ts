@@ -3,6 +3,7 @@ import Store from 'electron-store'
 import { storeSecret, retrieveSecret, deleteSecret } from '../utils/credentialStore'
 import { getStoreEncryptionKey } from '../utils/storeEncryption'
 import { log } from '../utils/logger'
+import { systemFetch } from '../utils/electronFetch'
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -140,7 +141,7 @@ class ServiceNowClient {
 
     let response: Response
     try {
-      response = await fetch(url, { ...options, headers })
+      response = await systemFetch(url, { ...options, headers })
     } catch (err) {
       log.error('[servicenow] Network error on %s — %s', path, err)
       throw new Error(`Failed to connect to ServiceNow at ${this.instanceUrl}. Check your network and instance URL.`)
@@ -153,7 +154,7 @@ class ServiceNowClient {
       if (refreshed) {
         headers['Authorization'] = this.getAuthHeader()
         try {
-          response = await fetch(url, { ...options, headers })
+          response = await systemFetch(url, { ...options, headers })
         } catch (err) {
           throw new Error(`Failed to connect to ServiceNow after token refresh: ${err}`)
         }
@@ -201,7 +202,7 @@ class ServiceNowClient {
         ...(clientSecret ? { client_secret: clientSecret } : {}),
       })
 
-      const response = await fetch(`${this.instanceUrl}/oauth_token.do`, {
+      const response = await systemFetch(`${this.instanceUrl}/oauth_token.do`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: body.toString(),
@@ -241,7 +242,7 @@ class ServiceNowClient {
       ...(clientSecret ? { client_secret: clientSecret } : {}),
     })
 
-    const response = await fetch(`${instanceUrl}/oauth_token.do`, {
+    const response = await systemFetch(`${instanceUrl}/oauth_token.do`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: body.toString(),
