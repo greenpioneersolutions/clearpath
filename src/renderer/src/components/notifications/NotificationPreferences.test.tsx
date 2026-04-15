@@ -165,9 +165,17 @@ describe('NotificationPreferences', () => {
     await waitFor(() => {
       expect(screen.getByText('Notification Preferences')).toBeDefined()
     })
-    // All toggles should render with default (on) state without throwing
+    // All toggles should render without throwing
     const switches = screen.getAllByRole('switch')
     expect(switches.length).toBe(ALL_NOTIFICATION_TYPES.length * 3 + 1)
+    // inbox defaults: all true
+    expect(screen.getByLabelText('Toggle Sessions inbox').getAttribute('aria-checked')).toBe('true')
+    // webhook defaults: all false
+    expect(screen.getByLabelText('Toggle Sessions webhook').getAttribute('aria-checked')).toBe('false')
+    // desktop defaults: session-complete is true
+    expect(screen.getByLabelText('Toggle Sessions desktop').getAttribute('aria-checked')).toBe('true')
+    // desktop defaults: rate-limit is false
+    expect(screen.getByLabelText('Toggle Rate Limits desktop').getAttribute('aria-checked')).toBe('false')
   })
 
   it('does not crash when prefs is missing inbox/desktop/webhook keys', async () => {
@@ -178,6 +186,8 @@ describe('NotificationPreferences', () => {
     })
     const switches = screen.getAllByRole('switch')
     expect(switches.length).toBe(ALL_NOTIFICATION_TYPES.length * 3 + 1)
+    // Falls back to inbox defaults (all true)
+    expect(screen.getByLabelText('Toggle Sessions inbox').getAttribute('aria-checked')).toBe('true')
   })
 
   it('does not crash when prefs is null', async () => {
@@ -188,6 +198,8 @@ describe('NotificationPreferences', () => {
     })
     const switches = screen.getAllByRole('switch')
     expect(switches.length).toBe(ALL_NOTIFICATION_TYPES.length * 3 + 1)
+    // Falls back to inbox defaults (all true)
+    expect(screen.getByLabelText('Toggle Sessions inbox').getAttribute('aria-checked')).toBe('true')
   })
 
   it('fills in default channel values for missing sub-keys', async () => {
@@ -196,9 +208,27 @@ describe('NotificationPreferences', () => {
     await waitFor(() => {
       expect(screen.getByText('Notification Preferences')).toBeDefined()
     })
-    // All type/channel toggles should be rendered (filled from defaults)
     const switches = screen.getAllByRole('switch')
     expect(switches.length).toBe(ALL_NOTIFICATION_TYPES.length * 3 + 1)
+    // inbox undefined falls back to all-true default
+    expect(screen.getByLabelText('Toggle Sessions inbox').getAttribute('aria-checked')).toBe('true')
+  })
+
+  it('normalizes partial channel maps — missing per-type keys fall back to defaults', async () => {
+    // inbox is a real object but empty; desktop has only 'error' set explicitly
+    mockInvoke.mockResolvedValue({ inbox: {}, desktop: { 'error': true } })
+    render(<NotificationPreferences />)
+    await waitFor(() => {
+      expect(screen.getByText('Notification Preferences')).toBeDefined()
+    })
+    // inbox['session-complete'] missing → falls back to DEFAULT_PREFS.inbox (true)
+    expect(screen.getByLabelText('Toggle Sessions inbox').getAttribute('aria-checked')).toBe('true')
+    // desktop['error'] explicitly set true
+    expect(screen.getByLabelText('Toggle Errors desktop').getAttribute('aria-checked')).toBe('true')
+    // desktop['rate-limit'] missing → falls back to DEFAULT_PREFS.desktop['rate-limit'] (false)
+    expect(screen.getByLabelText('Toggle Rate Limits desktop').getAttribute('aria-checked')).toBe('false')
+    // webhook missing entirely → all false
+    expect(screen.getByLabelText('Toggle Sessions webhook').getAttribute('aria-checked')).toBe('false')
   })
 
   it('updates quiet hours start time', async () => {

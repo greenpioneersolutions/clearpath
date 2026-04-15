@@ -10,18 +10,37 @@ function makeDefaultChannelPrefs(enabledByDefault: boolean): Record<Notification
 
 const DEFAULT_PREFS: NotificationPrefs = {
   inbox: makeDefaultChannelPrefs(true),
-  desktop: makeDefaultChannelPrefs(false),
+  desktop: {
+    ...makeDefaultChannelPrefs(false),
+    'session-complete': true,
+    'permission-request': true,
+    'budget-alert': true,
+    'security-event': true,
+    'policy-violation': true,
+    'error': true,
+  } as Record<NotificationType, boolean>,
   webhook: makeDefaultChannelPrefs(false),
   quietHoursEnabled: false,
   quietHoursStart: '22:00',
   quietHoursEnd: '07:00',
 }
 
+function normalizeChannel(
+  raw: Partial<Record<NotificationType, boolean>> | undefined,
+  defaults: Record<NotificationType, boolean>
+): Record<NotificationType, boolean> {
+  const result = {} as Record<NotificationType, boolean>
+  for (const t of ALL_NOTIFICATION_TYPES) {
+    result[t] = raw?.[t] ?? defaults[t]
+  }
+  return result
+}
+
 function normalizePrefs(raw: Partial<NotificationPrefs>): NotificationPrefs {
   return {
-    inbox: raw.inbox ?? DEFAULT_PREFS.inbox,
-    desktop: raw.desktop ?? DEFAULT_PREFS.desktop,
-    webhook: raw.webhook ?? DEFAULT_PREFS.webhook,
+    inbox: normalizeChannel(raw.inbox, DEFAULT_PREFS.inbox),
+    desktop: normalizeChannel(raw.desktop, DEFAULT_PREFS.desktop),
+    webhook: normalizeChannel(raw.webhook, DEFAULT_PREFS.webhook),
     quietHoursEnabled: raw.quietHoursEnabled ?? DEFAULT_PREFS.quietHoursEnabled,
     quietHoursStart: raw.quietHoursStart ?? DEFAULT_PREFS.quietHoursStart,
     quietHoursEnd: raw.quietHoursEnd ?? DEFAULT_PREFS.quietHoursEnd,
@@ -83,14 +102,14 @@ export default function NotificationPreferences(): JSX.Element {
                     <button
                       onClick={() => toggle(ch, type)}
                       className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                        prefs?.[ch]?.[type] ? 'bg-indigo-600' : 'bg-gray-300'
+                        prefs[ch][type] ? 'bg-indigo-600' : 'bg-gray-300'
                       }`}
                       role="switch"
-                      aria-checked={prefs?.[ch]?.[type]}
+                      aria-checked={!!prefs[ch][type]}
                       aria-label={`Toggle ${TYPE_LABELS[type]} ${ch}`}
                     >
                       <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
-                        prefs?.[ch]?.[type] ? 'translate-x-4' : 'translate-x-0.5'
+                        prefs[ch][type] ? 'translate-x-4' : 'translate-x-0.5'
                       }`} />
                     </button>
                   </td>
