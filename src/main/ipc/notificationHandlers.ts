@@ -66,7 +66,7 @@ export function registerNotificationHandlers(ipcMain: IpcMain, manager: Notifica
           return { error: 'Only HTTPS webhook URLs are allowed' }
         }
         // Strip IPv6 brackets: URL.hostname returns "[::1]" for IPv6, strip to "::1"
-        const host = parsed.hostname.replace(/^\[|\]$/g, '').toLowerCase()
+        const host = parsed.hostname.replace(/^\[(.*)\]$/, '$1').toLowerCase()
         if (host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '0.0.0.0' ||
             host.startsWith('fd') || host.startsWith('fc') || host.startsWith('fe80') ||
             /^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|169\.254\.)/.test(host)) {

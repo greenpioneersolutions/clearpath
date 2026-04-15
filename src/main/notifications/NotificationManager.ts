@@ -282,7 +282,7 @@ export class NotificationManager {
     }
 
     // Strip IPv6 brackets: URL.hostname returns "[::1]" for IPv6, strip to "::1"
-    const host = parsed.hostname.replace(/^\[|\]$/g, '').toLowerCase()
+    const host = parsed.hostname.replace(/^\[(.*)\]$/, '$1').toLowerCase()
 
     // Block localhost
     if (host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '0.0.0.0') {
