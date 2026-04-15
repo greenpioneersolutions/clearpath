@@ -243,25 +243,23 @@ describe('notificationHandlers', () => {
       expect(result.error).toBe('Private/internal URLs are not allowed for webhooks')
     })
 
-    // BUG: The source code checks `host === '::1'` but new URL('https://[::1]/hook').hostname
-    // may not match '::1' depending on the Node.js URL parser behavior. In Node.js,
-    // URL.hostname for IPv6 returns the address without brackets (e.g., '::1'), but the
-    // regex check for private IPs (10.x, 172.x, etc.) runs against this hostname value
-    // which wouldn't match '::1'. The equality check `host === '::1'` should work, but
-    // if it doesn't, this is a bug — IPv6 loopback bypasses SSRF protection.
-    // See BUG-008 (already filed) for broader IPv6 SSRF bypass issue.
-    it('checks IPv6 loopback ::1 (may bypass validation — see BUG-008)', () => {
+    it('rejects IPv6 loopback ::1', () => {
       const args = { name: 'IPv6', url: 'https://[::1]/hook', type: 'generic-json', enabledTypes: [], enabled: true }
       const result = handlers['notifications:save-webhook'](mockEvent, args) as any
-      // If hostname returns '::1' (no brackets), the check passes and this would be an error.
-      // If hostname returns '[::1]' (with brackets), the check fails and webhook is saved.
-      // We test the actual behavior rather than the expected behavior:
-      if (result.error) {
-        expect(result.error).toBe('Private/internal URLs are not allowed for webhooks')
-      } else {
-        // Webhook was saved despite being a loopback address — this IS the bug
-        expect(result.id).toBeDefined()
-      }
+      expect(result.error).toBe('Private/internal URLs are not allowed for webhooks')
+      expect(manager.saveWebhook).not.toHaveBeenCalled()
+    })
+
+    it('rejects IPv6 unique-local fd::/8 addresses', () => {
+      const args = { name: 'IPv6ULA', url: 'https://[fd00::1]/hook', type: 'generic-json', enabledTypes: [], enabled: true }
+      const result = handlers['notifications:save-webhook'](mockEvent, args) as any
+      expect(result.error).toBe('Private/internal URLs are not allowed for webhooks')
+    })
+
+    it('rejects IPv6 link-local fe80::/10 addresses', () => {
+      const args = { name: 'IPv6LL', url: 'https://[fe80::1]/hook', type: 'generic-json', enabledTypes: [], enabled: true }
+      const result = handlers['notifications:save-webhook'](mockEvent, args) as any
+      expect(result.error).toBe('Private/internal URLs are not allowed for webhooks')
     })
 
     it('rejects 10.x.x.x private IPs', () => {

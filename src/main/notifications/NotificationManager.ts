@@ -281,7 +281,8 @@ export class NotificationManager {
       return { safe: false, reason: 'Only HTTPS URLs are allowed for webhooks' }
     }
 
-    const host = parsed.hostname.toLowerCase()
+    // Strip IPv6 brackets: URL.hostname returns "[::1]" for IPv6, strip to "::1"
+    const host = parsed.hostname.replace(/^\[|\]$/g, '').toLowerCase()
 
     // Block localhost
     if (host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '0.0.0.0') {
@@ -296,9 +297,9 @@ export class NotificationManager {
       return { safe: false, reason: 'Private IP addresses are not allowed' }
     }
 
-    // Block link-local and metadata service IPs
+    // Block link-local and metadata service IPs (IPv4 and IPv6)
     if (host === '169.254.169.254' || host === '169.254.170.2' ||
-        host.startsWith('fd') || host.startsWith('fc') ||
+        host.startsWith('fd') || host.startsWith('fc') || host.startsWith('fe80') ||
         /^169\.254\./.test(host)) {
       return { safe: false, reason: 'Metadata service and link-local addresses are not allowed' }
     }

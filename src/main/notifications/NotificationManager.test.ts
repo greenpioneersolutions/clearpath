@@ -483,14 +483,10 @@ describe('NotificationManager', () => {
       expect(isUrlSafe('https://0.0.0.0/hook').safe).toBe(false)
     })
 
-    // NEW BUG: IPv6 addresses are not blocked because URL.hostname includes brackets
-    // (e.g. "[::1]" not "::1"), so the equality check `host === '::1'` fails.
-    // The SSRF protection should strip brackets or use a different check.
-    it('BUG: does NOT block IPv6 loopback — hostname includes brackets', () => {
-      // EXPECTED: safe should be false (it's localhost)
-      // ACTUAL: safe is true (source code bug — brackets not stripped)
+    it('blocks IPv6 loopback ::1', () => {
       const result = isUrlSafe('https://[::1]/hook')
-      expect(result.safe).toBe(true) // documents current buggy behavior
+      expect(result.safe).toBe(false)
+      expect(result.reason).toContain('Localhost')
     })
 
     it('blocks private 10.x.x.x range', () => {
@@ -530,13 +526,13 @@ describe('NotificationManager', () => {
       expect(isUrlSafe('https://169.254.1.1/hook').safe).toBe(false)
     })
 
-    // NEW BUG: Same IPv6 bracket issue — hostname is "[fd00::1]" not "fd00::1",
-    // so `host.startsWith('fd')` and `host.startsWith('fc')` both fail.
-    it('BUG: does NOT block IPv6 unique local addresses — hostname includes brackets', () => {
-      // EXPECTED: safe should be false (private IPv6 range)
-      // ACTUAL: safe is true (source code bug — brackets not stripped)
-      expect(isUrlSafe('https://[fd00::1]/hook').safe).toBe(true) // buggy
-      expect(isUrlSafe('https://[fc00::1]/hook').safe).toBe(true) // buggy
+    it('blocks IPv6 unique-local addresses (fd::/8 and fc::/8)', () => {
+      expect(isUrlSafe('https://[fd00::1]/hook').safe).toBe(false)
+      expect(isUrlSafe('https://[fc00::1]/hook').safe).toBe(false)
+    })
+
+    it('blocks IPv6 link-local addresses (fe80::/10)', () => {
+      expect(isUrlSafe('https://[fe80::1]/hook').safe).toBe(false)
     })
   })
 
