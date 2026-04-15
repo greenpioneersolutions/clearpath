@@ -87,10 +87,11 @@ When delegating to sub-agents:
 ## Build & Development
 
 - Check `package.json` for available scripts before assuming what's available
-- There are currently **no lint or test suites** configured — but you can build them if needed
+- This repo does have test scripts configured; use the scripts defined in `package.json` rather than assuming tests are unavailable
+- Use `npm run test` for the Vitest unit test suite, and run the configured e2e/WebdriverIO scripts from `package.json` when your changes affect end-to-end behavior
 - Use the dev script to verify the app runs after changes
 - The Electron app uses a standard main/renderer split with preload scripts
-- use wallaby tools for unit testing. If wallaby is not installed, use command line testing with `npm run test` or similar scripts defined in `package.json`
+- Use Wallaby tools for unit testing. If Wallaby is not installed, use command-line testing with `npm run test` and any other relevant scripts defined in `package.json`
 
 **Update your agent memory** as you discover codepaths, module relationships, architectural patterns, file locations, and conventions in this codebase. This builds institutional knowledge across conversations. Write concise notes about what you found and where.
 
