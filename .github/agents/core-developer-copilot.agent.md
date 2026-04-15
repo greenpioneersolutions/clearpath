@@ -1,5 +1,5 @@
 ---
-name: "core-developer"
+name: "core-developer-copilot"
 description: "Use when implementing features, fixing bugs, refactoring code, or performing any development work on the CoPilot Commander Electron + React + TypeScript application. Handles end-to-end coding tasks: adding UI components, fixing chat/session bugs, refactoring CLIManager adapters, building notification systems, navigating codebase architecture."
 ---
 
