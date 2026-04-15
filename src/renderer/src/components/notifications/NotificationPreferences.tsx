@@ -2,13 +2,39 @@ import { useState, useEffect, useCallback } from 'react'
 import type { NotificationPrefs, NotificationType } from '../../types/notification'
 import { ALL_NOTIFICATION_TYPES, TYPE_LABELS } from '../../types/notification'
 
+function makeDefaultChannelPrefs(): Record<NotificationType, boolean> {
+  const result = {} as Record<NotificationType, boolean>
+  for (const t of ALL_NOTIFICATION_TYPES) result[t] = true
+  return result
+}
+
+const DEFAULT_PREFS: NotificationPrefs = {
+  inbox: makeDefaultChannelPrefs(),
+  desktop: makeDefaultChannelPrefs(),
+  webhook: makeDefaultChannelPrefs(),
+  quietHoursEnabled: false,
+  quietHoursStart: '22:00',
+  quietHoursEnd: '08:00',
+}
+
+function normalizePrefs(raw: Partial<NotificationPrefs>): NotificationPrefs {
+  return {
+    inbox: raw.inbox ?? DEFAULT_PREFS.inbox,
+    desktop: raw.desktop ?? DEFAULT_PREFS.desktop,
+    webhook: raw.webhook ?? DEFAULT_PREFS.webhook,
+    quietHoursEnabled: raw.quietHoursEnabled ?? DEFAULT_PREFS.quietHoursEnabled,
+    quietHoursStart: raw.quietHoursStart ?? DEFAULT_PREFS.quietHoursStart,
+    quietHoursEnd: raw.quietHoursEnd ?? DEFAULT_PREFS.quietHoursEnd,
+  }
+}
+
 export default function NotificationPreferences(): JSX.Element {
   const [prefs, setPrefs] = useState<NotificationPrefs | null>(null)
   const [saving, setSaving] = useState(false)
 
   const load = useCallback(async () => {
-    const p = await window.electronAPI.invoke('notifications:get-prefs') as NotificationPrefs
-    setPrefs(p)
+    const p = await window.electronAPI.invoke('notifications:get-prefs') as Partial<NotificationPrefs> | null
+    setPrefs(normalizePrefs(p ?? {}))
   }, [])
 
   useEffect(() => { void load() }, [load])
@@ -57,14 +83,14 @@ export default function NotificationPreferences(): JSX.Element {
                     <button
                       onClick={() => toggle(ch, type)}
                       className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                        prefs[ch][type] ? 'bg-indigo-600' : 'bg-gray-300'
+                        prefs?.[ch]?.[type] ? 'bg-indigo-600' : 'bg-gray-300'
                       }`}
                       role="switch"
-                      aria-checked={prefs[ch][type]}
+                      aria-checked={prefs?.[ch]?.[type]}
                       aria-label={`Toggle ${TYPE_LABELS[type]} ${ch}`}
                     >
                       <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
-                        prefs[ch][type] ? 'translate-x-4' : 'translate-x-0.5'
+                        prefs?.[ch]?.[type] ? 'translate-x-4' : 'translate-x-0.5'
                       }`} />
                     </button>
                   </td>

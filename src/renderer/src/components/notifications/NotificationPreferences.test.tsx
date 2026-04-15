@@ -159,6 +159,48 @@ describe('NotificationPreferences', () => {
     expect(screen.queryByText('End')).toBeNull()
   })
 
+  it('does not crash when prefs is an empty object', async () => {
+    mockInvoke.mockResolvedValue({})
+    render(<NotificationPreferences />)
+    await waitFor(() => {
+      expect(screen.getByText('Notification Preferences')).toBeDefined()
+    })
+    // All toggles should render with default (on) state without throwing
+    const switches = screen.getAllByRole('switch')
+    expect(switches.length).toBe(ALL_NOTIFICATION_TYPES.length * 3 + 1)
+  })
+
+  it('does not crash when prefs is missing inbox/desktop/webhook keys', async () => {
+    mockInvoke.mockResolvedValue({ quietHoursEnabled: false, quietHoursStart: '22:00', quietHoursEnd: '08:00' })
+    render(<NotificationPreferences />)
+    await waitFor(() => {
+      expect(screen.getByText('Notification Preferences')).toBeDefined()
+    })
+    const switches = screen.getAllByRole('switch')
+    expect(switches.length).toBe(ALL_NOTIFICATION_TYPES.length * 3 + 1)
+  })
+
+  it('does not crash when prefs is null', async () => {
+    mockInvoke.mockResolvedValue(null)
+    render(<NotificationPreferences />)
+    await waitFor(() => {
+      expect(screen.getByText('Notification Preferences')).toBeDefined()
+    })
+    const switches = screen.getAllByRole('switch')
+    expect(switches.length).toBe(ALL_NOTIFICATION_TYPES.length * 3 + 1)
+  })
+
+  it('fills in default channel values for missing sub-keys', async () => {
+    mockInvoke.mockResolvedValue({ inbox: undefined, desktop: undefined, webhook: undefined })
+    render(<NotificationPreferences />)
+    await waitFor(() => {
+      expect(screen.getByText('Notification Preferences')).toBeDefined()
+    })
+    // All type/channel toggles should be rendered (filled from defaults)
+    const switches = screen.getAllByRole('switch')
+    expect(switches.length).toBe(ALL_NOTIFICATION_TYPES.length * 3 + 1)
+  })
+
   it('updates quiet hours start time', async () => {
     mockInvoke.mockResolvedValue(makePrefs({ quietHoursEnabled: true }))
     render(<NotificationPreferences />)
