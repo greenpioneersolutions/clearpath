@@ -2,19 +2,19 @@ import { useState, useEffect, useCallback } from 'react'
 import type { NotificationPrefs, NotificationType } from '../../types/notification'
 import { ALL_NOTIFICATION_TYPES, TYPE_LABELS } from '../../types/notification'
 
-function makeDefaultChannelPrefs(): Record<NotificationType, boolean> {
+function makeDefaultChannelPrefs(enabledByDefault: boolean): Record<NotificationType, boolean> {
   const result = {} as Record<NotificationType, boolean>
-  for (const t of ALL_NOTIFICATION_TYPES) result[t] = true
+  for (const t of ALL_NOTIFICATION_TYPES) result[t] = enabledByDefault
   return result
 }
 
 const DEFAULT_PREFS: NotificationPrefs = {
-  inbox: makeDefaultChannelPrefs(),
-  desktop: makeDefaultChannelPrefs(),
-  webhook: makeDefaultChannelPrefs(),
+  inbox: makeDefaultChannelPrefs(true),
+  desktop: makeDefaultChannelPrefs(false),
+  webhook: makeDefaultChannelPrefs(false),
   quietHoursEnabled: false,
   quietHoursStart: '22:00',
-  quietHoursEnd: '08:00',
+  quietHoursEnd: '07:00',
 }
 
 function normalizePrefs(raw: Partial<NotificationPrefs>): NotificationPrefs {
