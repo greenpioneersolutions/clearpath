@@ -1,8 +1,9 @@
 import type { IpcMain } from 'electron'
 import { dialog } from 'electron'
 import Store from 'electron-store'
-import { existsSync, statSync } from 'fs'
-import { basename, resolve } from 'path'
+import { existsSync, statSync, mkdirSync } from 'fs'
+import { basename, resolve, join, dirname } from 'path'
+import { homedir } from 'os'
 import { assertPathWithinRoots, getWorkspaceAllowedRoots, isSensitiveSystemPath } from '../utils/pathSecurity'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
@@ -164,8 +165,7 @@ export function registerWorkspaceHandlers(ipcMain: IpcMain): void {
       cloneDir = resolve(args.targetDir)
     } else {
       // Default to ~/ClearPath-repos/<workspace-name>/<repo-name>
-      const home = require('os').homedir()
-      const { join } = require('path')
+      const home = homedir()
       const safeWsName = ws.name.replace(/[^a-zA-Z0-9_-]/g, '-')
       cloneDir = join(home, 'ClearPath-repos', safeWsName, repoName)
     }
@@ -191,8 +191,6 @@ export function registerWorkspaceHandlers(ipcMain: IpcMain): void {
 
     // Clone
     try {
-      const { mkdirSync } = require('fs')
-      const { dirname } = require('path')
       mkdirSync(dirname(cloneDir), { recursive: true })
 
       await execFileAsync('git', ['clone', args.url, cloneDir], {
