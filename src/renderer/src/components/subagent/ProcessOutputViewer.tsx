@@ -16,7 +16,8 @@ export default function ProcessOutputViewer({ subAgentId, isPopout }: Props): JS
   // Load existing output log
   useEffect(() => {
     void (async () => {
-      const log = await window.electronAPI.invoke('subagent:get-output', { id: subAgentId }) as ParsedOutput[]
+      const raw = await window.electronAPI.invoke('subagent:get-output', { id: subAgentId })
+      const log: ParsedOutput[] = Array.isArray(raw) ? raw as ParsedOutput[] : []
       const msgs: OutputMessage[] = log.map((output, i) => ({
         id: String(i),
         output,

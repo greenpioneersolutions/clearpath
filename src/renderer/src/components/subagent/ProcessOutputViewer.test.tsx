@@ -66,6 +66,27 @@ describe('ProcessOutputViewer', () => {
     })
   })
 
+  it('handles null response from subagent:get-output without crashing', async () => {
+    mockInvoke.mockResolvedValue(null)
+
+    render(<ProcessOutputViewer subAgentId="sa-1" />)
+
+    // Should render the output container without throwing
+    await waitFor(() => {
+      expect(screen.getByRole('log')).toBeInTheDocument()
+    })
+  })
+
+  it('handles undefined response from subagent:get-output without crashing', async () => {
+    mockInvoke.mockResolvedValue(undefined)
+
+    render(<ProcessOutputViewer subAgentId="sa-1" />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('log')).toBeInTheDocument()
+    })
+  })
+
   it('applies popout height class when isPopout is true', async () => {
     mockInvoke.mockResolvedValue([])
 
