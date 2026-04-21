@@ -69,6 +69,23 @@ export default createExtension({
 }
 ```
 
+## Example Extension
+
+The SDK ships with a complete reference implementation at `example/com.clearpathai.sdk-example/`. It exercises every SDK namespace across 14 UI tabs — storage, notifications, GitHub, sessions, cost, feature flags, local models, events, and more — and serves as a copy-paste starting point for new extensions.
+
+When the SDK is installed from npm, copy the example into your project and build it:
+
+```bash
+cp -r node_modules/@clearpath/extension-sdk/example/com.clearpathai.sdk-example my-extension
+cd my-extension
+npm install
+npm run package:dist
+```
+
+`package:dist` bundles against the installed SDK (no source alias) and packages into a `.clear.ext` file. Install it in ClearPathAI via **Configure → Extensions → Install Extension** — no restart required.
+
+> **Source checkout / e2e testing**: Building and testing from this repo uses `scripts/build-sdk-for-testing.js` which compiles the SDK, packs it as a registry-equivalent tarball, installs it into the example, bundles in dist mode, and packages. See [`EXTENSION_TESTING.md`](../EXTENSION_TESTING.md) for the full workflow.
+
 ## Architecture
 
 ### How Extensions Work

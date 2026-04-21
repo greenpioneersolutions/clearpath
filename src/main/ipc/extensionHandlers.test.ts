@@ -25,6 +25,13 @@ vi.mock('crypto', () => ({
   }),
 }))
 
+vi.mock('adm-zip', () => ({
+  default: class MockAdmZip {
+    extractAllTo = vi.fn()
+    getEntries = vi.fn().mockReturnValue([])
+  }
+}))
+
 vi.mock('electron-store', () => ({
   default: class MockStore {
     get = vi.fn().mockReturnValue({})
@@ -460,6 +467,53 @@ describe('extensionHandlers', () => {
 
       const result = ipcMain._invokeSync('extension:get-channels-sync')
       expect(result).toEqual({ success: false, data: [] })
+    })
+  })
+
+  describe('extension:install', () => {
+    it('installs from a directory path', async () => {
+      existsSyncMock.mockReturnValue(true)
+      statSyncMock.mockReturnValue({ isDirectory: () => true })
+
+      const ext = makeInstalledExt('com.test.ext')
+      registry.install.mockReturnValue(ext)
+      registry.get.mockReturnValue(ext)
+
+      const result = await ipcMain._invoke('extension:install', { filePath: '/path/to/ext' })
+      expect(result.success).toBe(true)
+      expect(registry.install).toHaveBeenCalledWith('/path/to/ext')
+      expect(registry.grantPermissions).toHaveBeenCalledWith('com.test.ext', ext.manifest.permissions)
+      expect(registry.setEnabled).toHaveBeenCalledWith('com.test.ext', true)
+    })
+
+    it('returns error when extension source does not exist', async () => {
+      existsSyncMock.mockReturnValue(false)
+      statSyncMock.mockReturnValue({ isDirectory: () => false })
+
+      // Force a throw by making install fail
+      registry.install.mockImplementation(() => { throw new Error('ENOENT') })
+
+      const result = await ipcMain._invoke('extension:install', { filePath: '/nonexistent/path' })
+      expect(result.success).toBe(false)
+    })
+  })
+
+  describe('extension:check-requirements', () => {
+    it('returns met: true when extension has no requires', async () => {
+      const ext = makeInstalledExt('com.test.ext', {
+        manifest: { ...makeInstalledExt('com.test.ext').manifest, requires: [] }
+      })
+      registry.get.mockReturnValue(ext)
+
+      const result = await ipcMain._invoke('extension:check-requirements', { extensionId: 'com.test.ext' })
+      expect(result.success).toBe(true)
+      expect(result.data?.met).toBe(true)
+    })
+
+    it('returns error for unknown extension', async () => {
+      registry.get.mockReturnValue(undefined)
+      const result = await ipcMain._invoke('extension:check-requirements', { extensionId: 'missing' })
+      expect(result.success).toBe(false)
     })
   })
 })

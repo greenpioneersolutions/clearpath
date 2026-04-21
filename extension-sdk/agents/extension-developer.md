@@ -69,6 +69,7 @@ After implementation:
 3. Run unit tests: `npm run test`
 4. Check for TypeScript compilation errors
 5. Verify IPC channel names match between manifest, main.cjs, and renderer.js
+6. Run extension e2e tests: `npm run e2e:extensions` (builds SDK dist, installs, bundles, tests)
 
 ## Code Patterns
 
@@ -125,7 +126,7 @@ function request(method, params) {
 | SDK CHANGELOG | `extension-sdk/CHANGELOG.md` |
 | SDK package | `extension-sdk/package.json` |
 | Bundled extensions | `extensions/` (4 extensions) |
-| SDK Example | `extensions/com.clearpathai.sdk-example/` |
+| SDK Example | `extension-sdk/example/com.clearpathai.sdk-example/` |
 | Extension docs | `docs/extensions.md` |
 | Extension system | `src/main/extensions/` (Registry, Validator, MainLoader, Store) |
 | Extension IPC | `src/main/ipc/extensionHandlers.ts` |

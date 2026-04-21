@@ -260,7 +260,7 @@ const ALLOWED_RECEIVE_CHANNELS = new Set([
   'updater:status',
   'integration:powerbi-device-code',
   'integration:powerbi-auth-complete',
-  'extension:updated', 'extension:removed', 'extension:event',
+  'extension:updated', 'extension:removed', 'extension:event', 'extension:changed',
 ])
 
 contextBridge.exposeInMainWorld('electronAPI', {

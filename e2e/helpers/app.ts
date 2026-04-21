@@ -339,3 +339,116 @@ export async function waitForSelector(selector: string, timeout = ELEMENT_TIMEOU
     { timeout, timeoutMsg: `Selector "${selector}" did not appear within ${timeout}ms`, interval: 300 },
   )
 }
+
+/**
+ * Wait for a sidebar navigation item with the given label to appear.
+ * Extension-contributed nav items are rendered dynamically after extension:changed
+ * is received from the main process; this helper polls until the link exists.
+ */
+export async function waitForSidebarNavItem(label: string, timeout = ELEMENT_TIMEOUT): Promise<void> {
+  await browser.waitUntil(
+    async () => {
+      try {
+        const xpath = `//aside//a[contains(., '${label}')]`
+        const link = await $(xpath)
+        return link.isExisting()
+      } catch {
+        return false
+      }
+    },
+    {
+      timeout,
+      timeoutMsg: `Sidebar nav item "${label}" did not appear within ${timeout}ms`,
+      interval: 400,
+    },
+  )
+}
+
+/**
+ * Wait for an iframe element to exist and report that it has loaded.
+ * The extension host renders an iframe for the extension renderer bundle;
+ * we poll until the iframe is present in the DOM.
+ */
+export async function waitForExtensionIframe(timeout = ELEMENT_TIMEOUT): Promise<void> {
+  await browser.waitUntil(
+    async () => {
+      try {
+        const iframe = await $('iframe[title^="Extension:"]')
+        return iframe.isExisting()
+      } catch {
+        return false
+      }
+    },
+    {
+      timeout,
+      timeoutMsg: `Extension iframe did not appear within ${timeout}ms`,
+      interval: 400,
+    },
+  )
+}
+
+/**
+ * Switch into the extension iframe context and wait for React to mount
+ * content inside `#ext-root`. Returns the innerHTML of ext-root.
+ *
+ * Call `browser.switchToFrame(null)` after using this helper to return to
+ * the top-level browsing context.
+ *
+ * @param timeout  How long to wait for ext-root to be populated (ms).
+ */
+export async function waitForExtensionContent(timeout = 15000): Promise<string> {
+  // The iframe title matches "Extension: SDK Example" (or any Extension: prefix)
+  const iframe = await $('iframe[title*="Extension:"]')
+  await iframe.waitForExist({ timeout: ELEMENT_TIMEOUT })
+
+  // Enter the iframe browsing context
+  await browser.switchToFrame(iframe)
+
+  // Poll until #ext-root has meaningful child content (React mounted)
+  await browser.waitUntil(
+    async () => {
+      try {
+        const root = await $('#ext-root')
+        const html = await root.getHTML()
+        // More than just the empty div opening/closing tag (~30 chars)
+        return html.length > 30
+      } catch {
+        return false
+      }
+    },
+    {
+      timeout,
+      timeoutMsg: `ext-root never populated — React did not mount inside the extension iframe within ${timeout}ms`,
+      interval: 400,
+    },
+  )
+
+  const root = await $('#ext-root')
+  return root.getHTML()
+}
+
+/**
+ * While already in the iframe context (after waitForExtensionContent),
+ * click an extension tab by its visible label text and wait briefly for
+ * the tab content to render.
+ */
+export async function clickExtensionTab(label: string): Promise<void> {
+  // Tab buttons are plain <button> elements with the label as text content.
+  // We use XPath to match by text because the buttons have no id attributes.
+  const xpath = `//button[normalize-space(.)='${label}']`
+  const btn = await $(xpath)
+  await btn.waitForExist({ timeout: ELEMENT_TIMEOUT })
+  await btn.waitForClickable({ timeout: ELEMENT_TIMEOUT })
+  await btn.click()
+  // Brief pause for React state update and tab content render
+  await browser.pause(400)
+}
+
+/**
+ * While already in the iframe context, return the full HTML of the
+ * extension tab content area (the div that wraps the active tab component).
+ */
+export async function getExtensionTabHTML(): Promise<string> {
+  const root = await $('#ext-root')
+  return root.getHTML()
+}

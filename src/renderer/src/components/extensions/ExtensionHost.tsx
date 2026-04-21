@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, useCallback } from 'react'
+import { useRef, useEffect, useLayoutEffect, useState, useCallback } from 'react'
 import type { InstalledExtension } from '../../hooks/useExtensions'
 
 /** Events that extensions can subscribe to via sdk.events.on() */
@@ -43,13 +43,31 @@ export default function ExtensionHost({ extension, className, slotData }: Extens
     [],
   )
 
-  useEffect(() => {
+  // ── Critical: MessageChannel + port transfer (useLayoutEffect to avoid load-event race) ──
+  // React defers useEffect until after the browser paints. For srcdoc iframes in Electron,
+  // the iframe's `load` event can fire BEFORE useEffect runs, causing the port to never be
+  // sent and leaving #ext-root empty. useLayoutEffect runs synchronously after the DOM
+  // commit (before any async events like `load` can be delivered), eliminating the race.
+  useLayoutEffect(() => {
     const iframe = iframeRef.current
     if (!iframe) return
 
     // Create a MessageChannel for private communication with this extension
     const channel = new MessageChannel()
     portRef.current = channel.port1
+
+    // Ensure port2 is transferred exactly once (idempotent send)
+    let portSent = false
+    const sendPort = () => {
+      if (portSent || !iframe.contentWindow) return
+      portSent = true
+      console.log(`[ClearPath:ExtHost] sending ext:port to extension "${extId}"`)
+      iframe.contentWindow.postMessage(
+        { type: 'ext:port', extensionId: extId },
+        '*',
+        [channel.port2],
+      )
+    }
 
     // Listen for messages from the extension
     channel.port1.onmessage = (event: MessageEvent) => {
@@ -58,7 +76,9 @@ export default function ExtensionHost({ extension, className, slotData }: Extens
 
       switch (data.type) {
         case 'ext:ready':
+          console.log(`[ClearPath:ExtHost] received ext:ready from extension "${extId}" — sending ext:init`)
           setLoaded(true)
+          console.log(`[ClearPath:ExtHost] loaded state set to true for extension "${extId}"`)
           // Send init event with theme and config
           channel.port1.postMessage({
             type: 'ext:init',
@@ -71,36 +91,67 @@ export default function ExtensionHost({ extension, className, slotData }: Extens
             },
             extensionId: extId,
           })
+          console.log(`[ClearPath:ExtHost] ext:init sent to extension "${extId}"`)
           break
 
         case 'ext:activated':
           // Extension has finished its activate() lifecycle
           break
 
+        case 'ext:warning': {
+          const warnMsg = String((data.warning as Record<string, unknown>)?.message ?? 'unknown')
+          console.warn(`[ClearPath:ExtHost] ext:warning in "${extId}": ${warnMsg}`)
+          break
+        }
+
         case 'ext:request':
           handleSdkRequest(data)
           break
 
-        case 'ext:error':
+        case 'ext:error': {
+          const errMsg = String((data.error as Record<string, unknown>)?.message ?? 'unknown')
+          const errSrc = String((data.error as Record<string, unknown>)?.source ?? '')
+          const errLine = String((data.error as Record<string, unknown>)?.lineno ?? '')
+          console.error(`[ClearPath:ExtHost] ext:error in "${extId}": ${errMsg} (${errSrc}:${errLine})`)
           handleExtensionError(data.error)
           break
+        }
 
         default:
           break
       }
     }
 
-    // Transfer port2 to the iframe once it loads
+    // Send port when the iframe's load event fires
     const onLoad = () => {
-      iframe.contentWindow?.postMessage(
-        { type: 'ext:port', extensionId: extId },
-        '*',
-        [channel.port2],
-      )
+      console.log(`[ClearPath:ExtHost] iframe onLoad fired for extension "${extId}"`)
+      sendPort()
+    }
+
+    // Belt-and-suspenders: the srcdoc inline script sends 'ext:iframe-ready' to the parent
+    // window (via window.parent.postMessage) once its message listener is set up. This covers
+    // the case where the load event fires before our listener was added.
+    const onWindowMessage = (ev: MessageEvent) => {
+      if (ev.source !== iframe.contentWindow) return
+      if (ev.data?.type === 'ext:iframe-ready') {
+        sendPort()
+      }
     }
 
     iframe.addEventListener('load', onLoad)
+    window.addEventListener('message', onWindowMessage)
 
+    return () => {
+      iframe.removeEventListener('load', onLoad)
+      window.removeEventListener('message', onWindowMessage)
+      channel.port1.close()
+      portRef.current = null
+      subscribedEventsRef.current.clear()
+    }
+  }, [extId])
+
+  // ── Extension event subscriptions (timing not critical — useEffect is fine) ──
+  useEffect(() => {
     // Listen for extension events forwarded from the main process
     const handleExtEvent = (_e: unknown, payload: { event: string; data: unknown }) => {
       if (payload?.event) {
@@ -119,16 +170,12 @@ export default function ExtensionHost({ extension, className, slotData }: Extens
     const unsubCliExit = window.electronAPI.on('cli:exit', handleCliExit)
 
     return () => {
-      iframe.removeEventListener('load', onLoad)
-      channel.port1.close()
-      portRef.current = null
-      subscribedEventsRef.current.clear()
       unsubExtEvent()
       unsubTurnStart()
       unsubTurnEnd()
       unsubCliExit()
     }
-  }, [extId, forwardEvent])
+  }, [forwardEvent])
 
   // Forward slotData changes to the extension
   useEffect(() => {
@@ -367,52 +414,11 @@ export default function ExtensionHost({ extension, className, slotData }: Extens
     })
   }
 
-  // Build the srcdoc that loads the extension's renderer bundle
-  const rendererEntry = extension.manifest.renderer
-  const srcdoc = rendererEntry
-    ? `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src clearpath-ext: 'unsafe-inline'; style-src clearpath-ext: 'unsafe-inline'; img-src clearpath-ext: data:; connect-src 'none';">
-  <style>
-    *, *::before, *::after { box-sizing: border-box; }
-    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: transparent; color: #e2e8f0; }
-  </style>
-</head>
-<body>
-  <div id="ext-root"></div>
-  <script>
-    // Wait for the host to transfer the MessagePort
-    window.addEventListener('message', function onInit(event) {
-      if (event.data?.type !== 'ext:port') return;
-      window.removeEventListener('message', onInit);
-
-      const port = event.ports[0];
-      if (!port) return;
-
-      // Make port available globally for the extension SDK
-      window.__clearpath_port = port;
-      window.__clearpath_extension_id = event.data.extensionId;
-
-      // Signal ready to host
-      port.postMessage({ type: 'ext:ready' });
-
-      // Global error handler — forward to host
-      window.onerror = function(message, source, lineno, colno) {
-        port.postMessage({
-          type: 'ext:error',
-          error: { message: String(message), source: source, lineno: lineno, colno: colno }
-        });
-      };
-    });
-  </script>
-  <script src="clearpath-ext://${extId}/${rendererEntry}"></script>
-</body>
-</html>`
-    : null
-
-  if (!rendererEntry) {
+  // The bootstrap HTML is served by the clearpath-ext:// protocol handler
+  // at /__host__.html — no srcdoc needed. Using src= instead of srcDoc=
+  // ensures the iframe load is always async (a real protocol request),
+  // which eliminates the load-event race condition entirely.
+  if (!extension.manifest.renderer) {
     // Extension has no renderer — skip silently. It may still have main process
     // handlers and manifest contributions, just no iframe-based UI.
     return null
@@ -441,7 +447,7 @@ export default function ExtensionHost({ extension, className, slotData }: Extens
       <iframe
         ref={iframeRef}
         sandbox="allow-scripts"
-        srcDoc={srcdoc ?? ''}
+        src={`clearpath-ext://${extId}/__host__.html`}
         className="w-full h-full border-0"
         title={`Extension: ${extension.manifest.name}`}
       />

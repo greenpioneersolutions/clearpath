@@ -4,6 +4,15 @@ import { fileURLToPath } from 'url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
+// VS Code sets ELECTRON_RUN_AS_NODE=1 so its extension host process can use
+// Electron as a pure Node.js runtime. This env var is inherited by any shell
+// spawned from VS Code's integrated terminal. When it is set, the Electron
+// binary runs without the browser-process APIs (process.type stays undefined,
+// require('electron') resolves to the npm shim instead of the built-in module),
+// which causes the main process to crash immediately. Unset it here so the
+// Electron app launched by wdio-electron-service starts normally.
+delete process.env.ELECTRON_RUN_AS_NODE
+
 export const config: Options.Testrunner = {
   runner: 'local',
   specs: ['./e2e/**/*.spec.ts'],

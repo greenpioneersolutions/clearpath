@@ -25,7 +25,11 @@
     "build": "tsc",
     "dev": "tsc --watch",
     "package-extension": "node scripts/package-extension.js",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "example:build": "cd example/com.clearpathai.sdk-example && npm run build",
+    "example:bundle": "cd example/com.clearpathai.sdk-example && npm run bundle",
+    "example:package": "cd example/com.clearpathai.sdk-example && npm run package",
+    "example:test-dist": "node ../scripts/build-sdk-for-testing.js"
   },
   "keywords": [
     "clearpath",

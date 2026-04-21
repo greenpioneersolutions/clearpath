@@ -1,4 +1,4 @@
-import type { IpcMain } from 'electron'
+import type { IpcMain, WebContents } from 'electron'
 import { dialog, app } from 'electron'
 import { existsSync, mkdirSync, rmSync, readdirSync, cpSync, statSync } from 'fs'
 import AdmZip from 'adm-zip'
@@ -22,7 +22,13 @@ export function registerExtensionHandlers(
   loader: ExtensionMainLoader,
   storeFactory: ExtensionStoreFactory,
   notificationManager: NotificationManager,
+  getWebContents?: () => WebContents | null,
 ): void {
+  /** Push an `extension:changed` event to the renderer so all `useExtensions`
+   *  hook instances (Sidebar, ExtensionManager, etc.) refresh their list. */
+  const notifyRenderer = () => {
+    getWebContents?.()?.send('extension:changed')
+  }
 
   // ── List all registered extensions ────────────────────────────────────────
 
@@ -105,6 +111,12 @@ export function registerExtensionHandlers(
 
       const ext = registry.install(extractedDir)
 
+      // Auto-grant all permissions declared in the manifest so the extension works
+      // out of the box. Users can review/revoke permissions in Configure > Extensions.
+      if (ext.manifest.permissions.length > 0) {
+        registry.grantPermissions(ext.manifest.id, ext.manifest.permissions)
+      }
+
       // Auto-enable newly installed extensions
       registry.setEnabled(ext.manifest.id, true)
       const updatedExt = registry.get(ext.manifest.id)!
@@ -129,6 +141,9 @@ export function registerExtensionHandlers(
         title: 'Extension Installed',
         message: `"${updatedExt.manifest.name}" has been installed and enabled. Review permissions in Configure > Extensions.`,
       })
+
+      // Notify the renderer so all useExtensions() instances refresh their lists
+      notifyRenderer()
 
       return { success: true, data: updatedExt }
     } catch (err) {
@@ -160,6 +175,9 @@ export function registerExtensionHandlers(
         message: `"${ext.manifest.name}" has been removed.`,
       })
 
+      // Notify the renderer so all useExtensions() instances refresh their lists
+      notifyRenderer()
+
       return { success: true }
     } catch (err) {
       log.error('[ext-handlers] Uninstall failed: %s', err)
@@ -188,6 +206,9 @@ export function registerExtensionHandlers(
         await loader.unload(args.extensionId)
         registry.setEnabled(args.extensionId, false)
       }
+
+      // Notify the renderer so all useExtensions() instances refresh their lists
+      notifyRenderer()
 
       return { success: true }
     } catch (err) {

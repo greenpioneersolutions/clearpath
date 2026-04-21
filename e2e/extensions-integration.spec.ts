@@ -1,35 +1,84 @@
 /**
  * e2e/extensions-integration.spec.ts
  *
- * Integration tests for extension install, enable/disable, and restart flow.
- * Requires pre-packaged .clear.ext file — run `npm run pretest:e2e:extensions` first.
+ * Full lifecycle e2e tests for the SDK example extension.
+ *
+ * The extension under test is built from the compiled SDK dist (not source aliases),
+ * exactly as a real consumer would build and package it. The .clear.ext file is
+ * produced by `npm run pretest:e2e:extensions` (runs scripts/build-sdk-for-testing.js)
+ * which: builds the SDK → packs it → installs into example → bundles dist mode → packages.
+ *
+ * Run standalone:
+ *   npm run e2e:extensions
+ *
+ * Or generate the package separately then run the app tests:
+ *   npm run pretest:e2e:extensions
+ *   npm run build
+ *   wdio run wdio.extensions.conf.ts
  */
 
 import {
   waitForAppReady,
   getCriticalConsoleErrors,
   navigateToConfigureTab,
+  navigateSidebarTo,
   waitForText,
   buttonExists,
   clickButton,
   getRootHTML,
   invokeIPC,
+  waitForSidebarNavItem,
+  waitForExtensionIframe,
+  waitForExtensionContent,
+  clickExtensionTab,
+  getExtensionTabHTML,
   ELEMENT_TIMEOUT,
 } from './helpers/app.js'
 import path from 'path'
+import fs from 'fs'
 import { fileURLToPath } from 'url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
-// Path to the pre-packaged example extension
+// Path to the pre-packaged example extension (produced by pretest:e2e:extensions)
 const EXAMPLE_EXT_PATH = path.resolve(
   __dirname,
   '../com.clearpathai.sdk-example-v1.0.0.clear.ext'
 )
 
+// Number of IPC handlers declared in the example manifest and registered in main.ts
+const EXPECTED_HANDLER_COUNT = 13
+
 describe('ClearPathAI — Extension Integration', () => {
   before(async () => {
     await waitForAppReady()
+  })
+
+  // ── SDK Build Pre-conditions ──────────────────────────────────────────
+  // These run first to give a clear error if the .clear.ext was not produced
+  // by `npm run pretest:e2e:extensions` (scripts/build-sdk-for-testing.js).
+
+  describe('SDK Build Pre-conditions', () => {
+    it('packaged .clear.ext file exists at expected path', () => {
+      const exists = fs.existsSync(EXAMPLE_EXT_PATH)
+      if (!exists) {
+        throw new Error(
+          `Pre-packaged extension not found at:\n  ${EXAMPLE_EXT_PATH}\n\n` +
+          `Run the following to build and package it:\n  npm run pretest:e2e:extensions\n\n` +
+          `This script builds the SDK, packs it as a tarball, installs it into the ` +
+          `example extension as a consumer would, bundles in dist mode, then packages ` +
+          `to a .clear.ext file at the project root.`
+        )
+      }
+      expect(exists).toBe(true)
+    })
+
+    it('packaged .clear.ext is a non-empty file', () => {
+      const stat = fs.statSync(EXAMPLE_EXT_PATH)
+      expect(stat.isFile()).toBe(true)
+      // A valid zip has at least a 22-byte end-of-central-directory record
+      expect(stat.size).toBeGreaterThan(100)
+    })
   })
 
   // ── Install Extension via IPC ────────────────────────────────────────
@@ -89,6 +138,216 @@ describe('ClearPathAI — Extension Integration', () => {
       )
       expect(sdkExample).toBeTruthy()
       expect(sdkExample?.source).toBe('user')
+    })
+
+    it('enables the extension so the clearpath-ext:// protocol serves its assets', async () => {
+      // User-installed extensions start disabled (enabled: false by design).
+      // The clearpath-ext:// protocol handler returns 403 for disabled extensions,
+      // so the renderer bundle would never load (blank iframe). Enable it here.
+      const result = await invokeIPC('extension:toggle', {
+        extensionId: 'com.clearpathai.sdk-example',
+        enabled: true,
+      }) as { success: boolean; error?: string }
+      expect(result.success).toBe(true)
+
+      // Refresh the preload's extension channel allowlist now that it is enabled
+      await browser.execute(() => {
+        const api = (window as any).electronAPI
+        if (typeof api.refreshExtensionChannels === 'function') {
+          api.refreshExtensionChannels()
+        }
+      })
+
+      // Brief pause for state to propagate
+      await browser.pause(500)
+    })
+  })
+
+  // ── Sidebar Navigation (extension:changed refresh) ────────────────────
+  //
+  // After install the main process fires `extension:changed` via webContents.send().
+  // All useExtensions() hook instances (including the Sidebar's) receive it and
+  // call refresh(), so the extension nav item appears without a page reload.
+
+  describe('Extension Sidebar Navigation', () => {
+    // ── 1. Sidebar presence check ─────────────────────────────────────
+    it('sidebar shows the extension nav item after install (no page refresh)', async () => {
+      // The SDK Example extension contributes a nav item with label "SDK Example"
+      // (clearpath-extension.json → contributes.navigation[0].label).
+      // After extension:changed is received the Sidebar re-renders with the new item.
+      await waitForSidebarNavItem('SDK Example', ELEMENT_TIMEOUT)
+
+      const xpath = `//aside//a[contains(., 'SDK Example')]`
+      const link = await $(xpath)
+      expect(await link.isExisting()).toBe(true)
+    })
+
+    // ── 2. Navigation and iframe load ─────────────────────────────────
+    it('clicking the extension nav item navigates to the extension page', async () => {
+      await navigateSidebarTo('SDK Example')
+
+      // The route is /ext/com.clearpathai.sdk-example/extensions/sdk-example.
+      // ExtensionPage renders either an iframe (if renderer is present) or a
+      // "no UI component" message. Either way it should not show the generic
+      // "Extension not found" error.
+      const html = await getRootHTML()
+      expect(html).not.toContain('Extension not found')
+    })
+
+    it('extension page renders the iframe for the renderer bundle', async () => {
+      // The SDK example has a renderer entry (dist/renderer.js), so ExtensionHost
+      // renders a sandboxed iframe with title "Extension: SDK Example".
+      await waitForExtensionIframe(ELEMENT_TIMEOUT)
+
+      const iframe = await $('iframe[title^="Extension:"]')
+      expect(await iframe.isExisting()).toBe(true)
+
+      const title = await iframe.getAttribute('title')
+      expect(title).toContain('SDK Example')
+    })
+
+    it('ext-root is populated — React mounted inside the iframe', async () => {
+      // This is the critical test that catches the blank page bug.
+      // waitForExtensionContent switches into the iframe context, polls until
+      // #ext-root has child content, then returns the inner HTML.
+      // try/finally ensures we always exit iframe context so subsequent tests
+      // don't run inside the wrong browsing context.
+      try {
+        const extRootHtml = await waitForExtensionContent(15000)
+
+        // Must contain substantially more than an empty div tag
+        expect(extRootHtml.length).toBeGreaterThan(100)
+
+        // The App header is always rendered as the very first element inside
+        // ext-root regardless of which tab is active.
+        expect(extRootHtml).toContain('SDK Example Extension')
+      } finally {
+        // Always return to top-level context — even on timeout or assertion failure
+        await browser.switchToFrame(null).catch(() => {/* ignore if already at top */})
+      }
+    })
+
+    // ── 3. Extension tab navigation and content ───────────────────────
+    it('Overview tab is the default active tab and shows Extension Identity', async () => {
+      const iframe = await $('iframe[title*="Extension:"]')
+      await browser.switchToFrame(iframe)
+      try {
+        const html = await getExtensionTabHTML()
+        expect(html).toContain('Extension Overview')
+        expect(html).toContain('Extension Identity')
+        expect(html).toContain('Extension ID')
+        expect(html).toContain('com.clearpathai.sdk-example')
+      } finally {
+        await browser.switchToFrame(null).catch(() => {})
+      }
+    })
+
+    it('clicking the Storage tab shows the storage UI', async () => {
+      const iframe = await $('iframe[title*="Extension:"]')
+      await browser.switchToFrame(iframe)
+      try {
+        await clickExtensionTab('Storage')
+        const html = await getExtensionTabHTML()
+        expect(html).toContain('Storage (sdk.storage)')
+        expect(html).toContain('Add / Update Entry')
+        expect(html).toContain('Stored Keys')
+      } finally {
+        await browser.switchToFrame(null).catch(() => {})
+      }
+    })
+
+    it('clicking the Sessions tab shows the sessions UI', async () => {
+      const iframe = await $('iframe[title*="Extension:"]')
+      await browser.switchToFrame(iframe)
+      try {
+        await clickExtensionTab('Sessions')
+        const html = await getExtensionTabHTML()
+        expect(html).toContain('Sessions')
+      } finally {
+        await browser.switchToFrame(null).catch(() => {})
+      }
+    })
+
+    it('all 14 tab buttons are present in the tab bar', async () => {
+      const iframe = await $('iframe[title*="Extension:"]')
+      await browser.switchToFrame(iframe)
+      try {
+        const extHtml = await getExtensionTabHTML()
+        const expectedTabs = [
+          'Overview', 'Storage', 'Notifications', 'Environment',
+          'HTTP', 'Theme', 'Sessions', 'Cost',
+          'Feature Flags', 'Local Models', 'Context', 'GitHub',
+          'Events', 'Navigation',
+        ]
+        for (const tabLabel of expectedTabs) {
+          expect(extHtml).toContain(tabLabel)
+        }
+      } finally {
+        await browser.switchToFrame(null).catch(() => {})
+      }
+    })
+
+    // ── 4. IPC data visible in rendered UI ────────────────────────────
+    it('Overview tab shows the extension ID sourced from IPC (sdk.extensionId)', async () => {
+      const iframe = await $('iframe[title*="Extension:"]')
+      await browser.switchToFrame(iframe)
+      try {
+        await clickExtensionTab('Overview')
+        const html = await getExtensionTabHTML()
+        expect(html).toContain('com.clearpathai.sdk-example')
+      } finally {
+        await browser.switchToFrame(null).catch(() => {})
+      }
+    })
+
+    it('Storage tab quota data loads from IPC (sdk.storage.quota)', async () => {
+      const iframe = await $('iframe[title*="Extension:"]')
+      await browser.switchToFrame(iframe)
+      try {
+        await clickExtensionTab('Storage')
+
+        // Wait for the quota card to appear — it requires an IPC round-trip
+        await browser.waitUntil(
+          async () => {
+            const html = await getExtensionTabHTML()
+            return html.includes('Quota')
+          },
+          {
+            timeout: 10000,
+            timeoutMsg: 'Storage quota did not load from IPC within 10s',
+            interval: 400,
+          },
+        )
+
+        const html = await getExtensionTabHTML()
+        expect(html).toContain('Used')
+        expect(html).toContain('Limit')
+        expect(html).toContain('Usage')
+      } finally {
+        await browser.switchToFrame(null).catch(() => {})
+      }
+    })
+
+    // ── 5. Console error check ────────────────────────────────────────
+    it('no extension-related critical console errors after full navigation', async () => {
+      const errors = await getCriticalConsoleErrors()
+      // Only flag errors explicitly tied to the extension or its host component.
+      // General React warnings (e.g. key props) are not critical errors.
+      const extErrors = errors.filter((e) =>
+        e.includes('sdk-example') ||
+        e.includes('clearpath-ext') ||
+        e.includes('ExtensionHost') ||
+        e.includes('[SDK Example]')
+      )
+      expect(extErrors).toHaveLength(0)
+    })
+
+    it('navigates back to configure/extensions tab', async () => {
+      await navigateToConfigureTab('extensions')
+
+      // Verify we are back on the Extensions configure tab
+      const html = await getRootHTML()
+      expect(html).toContain('SDK Example')
     })
   })
 
@@ -165,6 +424,35 @@ describe('ClearPathAI — Extension Integration', () => {
       }
       expect(result.success).toBe(true)
       expect(result.metadata?.topic).toBe('testing')
+    })
+
+    it('sdk-example:set-config + sdk-example:get-config storage round-trip', async () => {
+      // Verifies that the dist-built main.cjs correctly reads/writes extension storage
+      const testGreeting = 'Hello from e2e dist test'
+      const setResult = await invokeIPC('sdk-example:set-config', {
+        greeting: testGreeting,
+      }) as { success: boolean; data?: { greeting: string } }
+      expect(setResult.success).toBe(true)
+      expect(setResult.data?.greeting).toBe(testGreeting)
+
+      const getResult = await invokeIPC('sdk-example:get-config') as {
+        success: boolean
+        data?: { greeting: string }
+      }
+      expect(getResult.success).toBe(true)
+      expect(getResult.data?.greeting).toBe(testGreeting)
+    })
+
+    it(`sdk-example:health reports exactly ${EXPECTED_HANDLER_COUNT} registered handlers`, async () => {
+      // All handlers declared in ipcChannels (clearpath-extension.json) must be
+      // registered when activate() runs. This validates the dist build compiled
+      // all 13 handlers correctly.
+      const result = await invokeIPC('sdk-example:health') as {
+        success: boolean
+        data?: { handlers: string[] }
+      }
+      expect(result.success).toBe(true)
+      expect(result.data?.handlers.length).toBe(EXPECTED_HANDLER_COUNT)
     })
   })
 

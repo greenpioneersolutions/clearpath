@@ -38,7 +38,8 @@ describe('useExtensions', () => {
     mockInvoke.mockResolvedValue({ success: true, data: [] })
 
     Object.defineProperty(window, 'electronAPI', {
-      value: { invoke: mockInvoke, on: vi.fn(), off: vi.fn() },
+      // on() must return an unsubscribe function — the hook calls it on cleanup
+      value: { invoke: mockInvoke, on: vi.fn(() => vi.fn()), off: vi.fn() },
       writable: true,
       configurable: true,
     })
