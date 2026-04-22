@@ -9,6 +9,16 @@
     "dist/",
     "assets/"
   ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "build:dist": "tsc -p tsconfig.dist.json",
+    "bundle": "node build.mjs",
+    "bundle:dist": "node build.mjs --dist",
+    "package": "npm run bundle && node ../../scripts/package-extension.js .",
+    "package:dist": "npm run bundle:dist && node ../../scripts/package-extension.js .",
+    "clean": "rm -rf dist",
+    "dev": "node build.mjs --watch"
+  },
   "keywords": [
     "clearpath",
     "extension",
@@ -21,12 +31,20 @@
   "peerDependencies": {
     "@clearpath/extension-sdk": "^0.2.0"
   },
+  "devDependencies": {
+    "esbuild": "^0.21.0",
+    "typescript": "^5.5.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/clearpathai/clearpath.git",
-    "directory": "extensions/com.clearpathai.sdk-example"
+    "directory": "extension-sdk/example/com.clearpathai.sdk-example"
   },
-  "homepage": "https://github.com/clearpathai/clearpath/tree/main/extensions/com.clearpathai.sdk-example#readme",
+  "homepage": "https://github.com/clearpathai/clearpath/tree/main/extension-sdk/example/com.clearpathai.sdk-example#readme",
   "bugs": {
     "url": "https://github.com/clearpathai/clearpath/issues"
   },

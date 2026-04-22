@@ -19,8 +19,8 @@
     "e2e:headless": "npm run build && ELECTRON_ENABLE_LOGGING=1 wdio run wdio.conf.ts",
     "package:extension": "node extension-sdk/scripts/package-extension.js",
     "package:extensions": "node extension-sdk/scripts/package-extension.js extensions/com.clearpathai.backstage-explorer --output dist-extensions/ && node extension-sdk/scripts/package-extension.js extensions/com.clearpathai.efficiency-coach --output dist-extensions/ && node extension-sdk/scripts/package-extension.js extensions/com.clearpathai.pr-scores --output dist-extensions/",
-    "pretest:e2e:extensions": "node extension-sdk/scripts/package-extension.js extension-sdk/example/com.clearpathai.sdk-example --output ./",
-    "e2e:extensions": "npm run pretest:e2e:extensions && npm run build && wdio run wdio.conf.ts --spec e2e/extensions-integration.spec.ts"
+    "pretest:e2e:extensions": "node scripts/build-sdk-for-testing.js",
+    "e2e:extensions": "npm run pretest:e2e:extensions && npm run build && wdio run wdio.extensions.conf.ts"
   },
   "dependencies": {
     "@codemirror/lang-json": "^6.0.2",

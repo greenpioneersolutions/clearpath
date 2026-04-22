@@ -3,7 +3,7 @@
 // See src/main/utils/corruptionHandler.ts for full explanation.
 import './utils/corruptionHandler'
 
-import { app, BrowserWindow, ipcMain, dialog, protocol } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, protocol, net } from 'electron'
 import { autoUpdater } from 'electron-updater'
 import { join } from 'path'
 import { log } from './utils/logger'
@@ -64,6 +64,21 @@ import { getStoreEncryptionKey, checkEncryptionKeyIntegrity } from './utils/stor
 import { probeAllStores, clearAllStoreFiles } from './utils/storeHealthCheck'
 import Store from 'electron-store'
 import { randomUUID } from 'crypto'
+
+// Register clearpath-ext:// as a privileged scheme BEFORE app is ready.
+// This must happen before app.whenReady() so Chromium treats the scheme
+// as standard+secure, which is required for protocol.handle() to serve
+// documents and scripts correctly from inside sandboxed iframes.
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'clearpath-ext',
+    privileges: {
+      standard: true,    // URLs parsed like http/https (authority + path)
+      secure: true,      // Treated as a secure context (same as https)
+      corsEnabled: true, // Allow CORS requests to this scheme
+    },
+  },
+])
 
 // Suppress Chromium Autofill protocol errors in DevTools
 // (Electron's Chromium build doesn't support the Autofill domain)
@@ -128,7 +143,7 @@ registerFeatureFlagHandlers(ipcMain)
 registerBrandingHandlers(ipcMain)
 registerStarterPackHandlers(ipcMain)
 registerAccessibilityHandlers(ipcMain)
-registerExtensionHandlers(ipcMain, extensionRegistry, extensionMainLoader, extensionStoreFactory, notificationManager)
+registerExtensionHandlers(ipcMain, extensionRegistry, extensionMainLoader, extensionStoreFactory, notificationManager, getWebContents)
 registerContextSourceHandlers(ipcMain, extensionRegistry)
 
 // Register host handlers that extensions can call through ctx.invoke()
@@ -431,11 +446,18 @@ function createWindow(): void {
     : "'self' https://api.github.com"
 
   mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
+    // Don't override CSP for extension protocol requests — they manage their own CSP
+    // and must NOT receive `frame-ancestors 'none'` (which would block them from being
+    // embedded in the main window's iframe).
+    if (details.url.startsWith('clearpath-ext:')) {
+      callback({ responseHeaders: details.responseHeaders })
+      return
+    }
     callback({
       responseHeaders: {
         ...details.responseHeaders,
         'Content-Security-Policy': [
-          `default-src 'self'; script-src ${cspScriptSrc} clearpath-ext:; style-src 'self' 'unsafe-inline' clearpath-ext:; img-src 'self' data: clearpath-ext:; font-src 'self' data:; connect-src ${cspConnectSrc}; frame-src 'self' blob: data:; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self'`
+          `default-src 'self'; script-src ${cspScriptSrc} clearpath-ext:; style-src 'self' 'unsafe-inline' clearpath-ext:; img-src 'self' data: clearpath-ext:; font-src 'self' data:; connect-src ${cspConnectSrc}; frame-src 'self' blob: data: clearpath-ext:; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self'`
         ],
       },
     })
@@ -459,7 +481,8 @@ app.whenReady().then(async () => {
   // ── Extension System: Custom Protocol ──────────────────────────────────
   // Registers clearpath-ext:// protocol so extension iframes can load assets
   // from their install directory without a local HTTP server.
-  protocol.registerFileProtocol('clearpath-ext', (request, callback) => {
+  // Uses protocol.handle (modern API) instead of the deprecated registerFileProtocol.
+  protocol.handle('clearpath-ext', async (request) => {
     try {
       const url = new URL(request.url)
       const extensionId = url.hostname
@@ -467,18 +490,92 @@ app.whenReady().then(async () => {
 
       const ext = extensionRegistry.get(extensionId)
       if (!ext || !ext.enabled) {
-        callback({ statusCode: 403 })
-        return
+        return new Response(null, { status: 403 })
       }
 
+      // /__host__.html: dynamically-generated bootstrap HTML for the extension iframe.
+      // Serves the sandboxed page that sets up the MessagePort and loads the renderer bundle.
+      if (filePath === '/__host__.html') {
+        const rendererEntry = ext.manifest.renderer
+        if (!rendererEntry) {
+          return new Response(null, { status: 404 })
+        }
+        const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src clearpath-ext: 'unsafe-inline'; style-src clearpath-ext: 'unsafe-inline'; img-src clearpath-ext: data:; connect-src 'none';">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: transparent; color: #e2e8f0; }
+  </style>
+</head>
+<body>
+  <div id="ext-root"></div>
+  <script>
+    // Wait for the host to transfer the MessagePort
+    window.addEventListener('message', function onInit(event) {
+      if (event.data && event.data.type !== 'ext:port') return;
+      window.removeEventListener('message', onInit);
+
+      var port = event.ports[0];
+      if (!port) return;
+
+      // Make port available globally for the extension SDK before loading the bundle
+      window.__clearpath_port = port;
+      window.__clearpath_extension_id = event.data.extensionId;
+
+      // Activate the port so messages can flow
+      port.start();
+
+      // Signal ready to host
+      port.postMessage({ type: 'ext:ready' });
+
+      // Global error handler — forward to host (5th param is the Error object with stack)
+      window.onerror = function(message, source, lineno, colno, error) {
+        var stack = error && error.stack ? String(error.stack) : '';
+        port.postMessage({
+          type: 'ext:error',
+          error: { message: String(message), source: source, lineno: lineno, colno: colno, stack: stack }
+        });
+      };
+      // Unhandled promise rejections — forward as ext:warning (diagnostic only, not an ext:error)
+      window.addEventListener('unhandledrejection', function(event) {
+        var reason = event.reason;
+        var msg = reason instanceof Error ? reason.message : String(reason);
+        var stack = reason instanceof Error && reason.stack ? reason.stack : '';
+        port.postMessage({
+          type: 'ext:warning',
+          warning: { message: 'UnhandledRejection: ' + msg, stack: stack }
+        });
+      });
+
+      // Load the renderer bundle NOW that window.__clearpath_port is set
+      var s = document.createElement('script');
+      s.src = 'clearpath-ext://${extensionId}/${rendererEntry}';
+      s.onerror = function(e) { console.error('[ClearPath:ExtHost] renderer script failed to load', e); };
+      document.body.appendChild(s);
+    });
+
+    // Proactively signal the parent that we are ready to receive the port.
+    window.parent.postMessage({ type: 'ext:iframe-ready' }, '*');
+  </script>
+</body>
+</html>`
+        return new Response(html, {
+          headers: { 'Content-Type': 'text/html; charset=utf-8' },
+        })
+      }
+
+      // All other paths: serve static files from the extension's install directory
       const resolved = assertPathWithinRoots(
         join(ext.installPath, filePath),
         [ext.installPath],
       )
-      callback({ path: resolved })
+      return net.fetch(`file://${resolved}`)
     } catch (err) {
       log.error('[ext-protocol] Error resolving extension asset: %s', err)
-      callback({ statusCode: 404 })
+      return new Response(null, { status: 404 })
     }
   })
 
@@ -595,14 +692,11 @@ app.whenReady().then(async () => {
         mainWindow.webContents.reload()
       }
     } else {
-      // In production, do a full process restart
+      // In production, schedule a relaunch then exit immediately.
+      // app.exit(0) forcefully terminates the process (no before-quit / will-quit),
+      // so there is no need to manually close windows first — doing so races with the
+      // window-all-closed → app.quit() lifecycle and causes hangs.
       log.info('[app] Production restart: relaunching app')
-      const windows = BrowserWindow.getAllWindows()
-      for (const win of windows) {
-        win.removeAllListeners('close')
-        win.close()
-      }
-      await new Promise((resolve) => setTimeout(resolve, 200))
       app.relaunch()
       app.exit(0)
     }

@@ -179,7 +179,7 @@ describe('integrationHandlers', () => {
       storeData['github'] = { connected: true, username: 'user', connectedAt: 1000 }
       retrieveSecretMock.mockReturnValue('ghp_validtoken')
       mockOctokitInstance.rest.repos.listForAuthenticatedUser.mockResolvedValue({
-        data: [{ id: 1, name: 'repo1', full_name: 'user/repo1', description: 'Test', private: false, html_url: 'https://github.com/user/repo1', pushed_at: '2024-01-01', language: 'TypeScript', default_branch: 'main' }],
+        data: [{ id: 1, name: 'repo1', full_name: 'user/repo1', owner: { login: 'user' }, description: 'Test', private: false, html_url: 'https://github.com/user/repo1', pushed_at: '2024-01-01', language: 'TypeScript', default_branch: 'main' }],
         headers: { 'x-ratelimit-remaining': '59' },
       })
 

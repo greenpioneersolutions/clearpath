@@ -1,4 +1,4 @@
-import type { IpcMain } from 'electron'
+import type { IpcMain, IpcMainInvokeEvent } from 'electron'
 import Store from 'electron-store'
 import { getStoreEncryptionKey } from '../utils/storeEncryption'
 
@@ -354,26 +354,39 @@ const store = new Store<{ branding: BrandingConfig }>({
 
 // ── Registration ─────────────────────────────────────────────────────────────
 
+/** Map a BrandingConfig to the ClearPathTheme shape expected by extension SDK. */
+function brandingToTheme(b: BrandingConfig): { primary: string; sidebar: string; accent: string; isDark: boolean } {
+  return {
+    primary: b.colorPrimary,
+    sidebar: b.colorSidebarBg,
+    accent: b.colorAccent,
+    isDark: b.colorMode !== 'light',
+  }
+}
+
 export function registerBrandingHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('branding:get', () => store.get('branding'))
 
-  ipcMain.handle('branding:set', (_e, args: Partial<BrandingConfig>) => {
+  ipcMain.handle('branding:set', (event: IpcMainInvokeEvent, args: Partial<BrandingConfig>) => {
     const current = store.get('branding')
     const updated = { ...current, ...args }
     store.set('branding', updated)
+    event.sender.send('extension:event', { event: 'theme-changed', data: brandingToTheme(updated) })
     return updated
   })
 
-  ipcMain.handle('branding:reset', () => {
+  ipcMain.handle('branding:reset', (event: IpcMainInvokeEvent) => {
     store.set('branding', DEFAULT_BRANDING)
+    event.sender.send('extension:event', { event: 'theme-changed', data: brandingToTheme(DEFAULT_BRANDING) })
     return DEFAULT_BRANDING
   })
 
-  ipcMain.handle('branding:apply-preset', (_e, args: { presetId: string }) => {
+  ipcMain.handle('branding:apply-preset', (event: IpcMainInvokeEvent, args: { presetId: string }) => {
     const preset = BRAND_PRESETS.find((p) => p.id === args.presetId)
     if (!preset) return { error: 'Unknown preset' }
     const updated = { ...DEFAULT_BRANDING, ...preset.config }
     store.set('branding', updated)
+    event.sender.send('extension:event', { event: 'theme-changed', data: brandingToTheme(updated) })
     return updated
   })
 

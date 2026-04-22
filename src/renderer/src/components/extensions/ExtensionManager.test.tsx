@@ -8,7 +8,8 @@ import '@testing-library/jest-dom'
 // ── Mock electronAPI ──────────────────────────────────────────────────────────
 
 const mockInvoke = vi.fn()
-const mockOn = vi.fn()
+// on() must return an unsubscribe function — useExtensions calls it on cleanup
+const mockOn = vi.fn(() => vi.fn())
 
 function makeExtension(id: string, overrides: Record<string, unknown> = {}) {
   return {

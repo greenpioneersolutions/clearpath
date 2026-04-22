@@ -31,7 +31,17 @@
     "sessions:lifecycle",
     "cost:read",
     "feature-flags:read",
-    "env:read"
+    "feature-flags:write",
+    "env:read",
+    "http:fetch",
+    "navigation",
+    "integration:github:read",
+    "local-models:access",
+    "context:estimate"
+  ],
+  "allowedDomains": [
+    "api.github.com",
+    "jsonplaceholder.typicode.com"
   ],
   "storageQuota": 5242880,
   "contributes": {
@@ -51,6 +61,10 @@
         "component": "HomeWidget",
         "label": "SDK Example"
       }
+    ],
+    "featureFlags": [
+      "sdkExampleEnabled",
+      "sdkExampleDebugMode"
     ],
     "sessionHooks": [
       { "event": "session:started", "handler": "sdk-example:on-session-started" },

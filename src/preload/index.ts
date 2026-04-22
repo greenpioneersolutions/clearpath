@@ -219,7 +219,7 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   'extension:check-requirements',
   'extension:storage-get', 'extension:storage-set', 'extension:storage-delete',
   'extension:storage-keys', 'extension:storage-quota',
-  'extension:notify', 'extension:record-error',
+  'extension:notify', 'extension:record-error', 'extension:http-fetch',
 ])
 
 // ── Dynamic Extension Channels ─────────────────────────────────────────────────
@@ -260,7 +260,7 @@ const ALLOWED_RECEIVE_CHANNELS = new Set([
   'updater:status',
   'integration:powerbi-device-code',
   'integration:powerbi-auth-complete',
-  'extension:updated', 'extension:removed', 'extension:event',
+  'extension:updated', 'extension:removed', 'extension:event', 'extension:changed',
 ])
 
 contextBridge.exposeInMainWorld('electronAPI', {

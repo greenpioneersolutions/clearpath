@@ -149,6 +149,21 @@ export function useExtensions(): UseExtensionsResult {
     refresh()
   }, [refresh])
 
+  // Refresh when the main process fires `extension:changed` (after install, toggle, uninstall).
+  // This ensures all hook instances — including the Sidebar's — update immediately
+  // without requiring a page refresh.
+  useEffect(() => {
+    // Guard: window.electronAPI.on may be absent in test environments or non-Electron
+    // contexts where this hook is used but the preload isn't loaded.
+    if (!window.electronAPI?.on) return
+    const unsubscribe = window.electronAPI.on('extension:changed', () => {
+      void refresh()
+    })
+    return () => {
+      if (typeof unsubscribe === 'function') unsubscribe()
+    }
+  }, [refresh])
+
   const toggle = useCallback(async (extensionId: string, enabled: boolean) => {
     const result = await window.electronAPI.invoke('extension:toggle', { extensionId, enabled }) as {
       success: boolean

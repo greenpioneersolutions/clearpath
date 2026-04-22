@@ -1,4 +1,4 @@
-import type { IpcMain } from 'electron'
+import type { IpcMain, IpcMainInvokeEvent } from 'electron'
 import Store from 'electron-store'
 import { getStoreEncryptionKey } from '../utils/storeEncryption'
 
@@ -264,29 +264,35 @@ export function registerFeatureFlagHandlers(ipcMain: IpcMain): void {
   }))
 
   /** Set individual flag overrides. */
-  ipcMain.handle('feature-flags:set', (_e, args: Partial<FeatureFlags>) => {
+  ipcMain.handle('feature-flags:set', (event: IpcMainInvokeEvent, args: Partial<FeatureFlags>) => {
     const current = store.get('flags')
     store.set('flags', { ...current, ...args })
     store.set('activePresetId', null) // Custom override = no preset
-    return resolveFlags()
+    const flags = resolveFlags()
+    event.sender.send('extension:event', { event: 'feature-flags-changed', data: flags })
+    return flags
   })
 
   /** Apply a preset (replaces all overrides). */
-  ipcMain.handle('feature-flags:apply-preset', (_e, args: { presetId: string }) => {
+  ipcMain.handle('feature-flags:apply-preset', (event: IpcMainInvokeEvent, args: { presetId: string }) => {
     const preset = PRESETS.find((p) => p.id === args.presetId)
     if (!preset) return { error: 'Unknown preset' }
     store.set('flags', preset.flags)
     store.set('activePresetId', args.presetId)
-    return resolveFlags()
+    const flags = resolveFlags()
+    event.sender.send('extension:event', { event: 'feature-flags-changed', data: flags })
+    return flags
   })
 
   /** Get available presets. */
   ipcMain.handle('feature-flags:get-presets', () => PRESETS)
 
   /** Reset to all-on defaults. */
-  ipcMain.handle('feature-flags:reset', () => {
+  ipcMain.handle('feature-flags:reset', (event: IpcMainInvokeEvent) => {
     store.set('flags', {})
     store.set('activePresetId', 'all-on')
-    return resolveFlags()
+    const flags = resolveFlags()
+    event.sender.send('extension:event', { event: 'feature-flags-changed', data: flags })
+    return flags
   })
 }

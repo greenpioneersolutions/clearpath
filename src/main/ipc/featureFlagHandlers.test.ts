@@ -49,7 +49,7 @@ function getHandler(channel: string): HandlerFn {
   return calls[calls.length - 1][1] as HandlerFn
 }
 
-const mockEvent = {} as Electron.IpcMainInvokeEvent
+const mockEvent = { sender: { send: vi.fn() } } as unknown as Electron.IpcMainInvokeEvent
 
 // ── Tests ───────────────────────────────────────────────────────────────────
 
