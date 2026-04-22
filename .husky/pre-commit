@@ -23,5 +23,3 @@ if ! grep -q "filter=lfs" .gitattributes 2>/dev/null; then
   exit 1
 fi
 
-# Delegate to the built-in LFS pre-push hook (validates pointers)
-git lfs pre-push origin 2>/dev/null || true
