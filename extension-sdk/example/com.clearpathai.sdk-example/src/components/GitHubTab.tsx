@@ -163,7 +163,7 @@ export function GitHubTab(): React.ReactElement {
             <tbody>
               {repos.slice(0, 20).map((repo: unknown, i) => {
                 const r = repo as Record<string, unknown>
-                const owner = (r.owner as Record<string, unknown>)?.login as string ?? ''
+                const owner = r.owner as string ?? ''
                 const name = r.name as string ?? ''
                 return (
                   <tr key={i}>

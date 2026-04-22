@@ -187,6 +187,7 @@ export function registerIntegrationHandlers(ipcMain: IpcMain): void {
           id: r.id,
           name: r.name,
           fullName: r.full_name,
+          owner: r.owner.login,
           description: r.description,
           private: r.private,
           url: r.html_url,

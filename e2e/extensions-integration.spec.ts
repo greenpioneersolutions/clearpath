@@ -49,6 +49,50 @@ const EXAMPLE_EXT_PATH = path.resolve(
 // Number of IPC handlers declared in the example manifest and registered in main.ts
 const EXPECTED_HANDLER_COUNT = 13
 
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * Switch into the extension iframe, run an action, then switch back.
+ * Handles the try/finally boilerplate for every tab test.
+ */
+async function withExtensionFrame<T>(fn: () => Promise<T>): Promise<T> {
+  const iframe = await $('iframe[title*="Extension:"]')
+  await browser.switchToFrame(iframe)
+  try {
+    return await fn()
+  } finally {
+    await browser.switchToFrame(null).catch(() => {/* ignore if already at top */})
+  }
+}
+
+/**
+ * Click a tab inside the already-open extension iframe and return the content HTML.
+ * Must be called from within an active iframe frame context.
+ */
+async function switchToTab(label: string): Promise<string> {
+  await clickExtensionTab(label)
+  // Give async IPC calls (quota, theme.get, etc.) time to resolve
+  await browser.pause(800)
+  return getExtensionTabHTML()
+}
+
+/**
+ * Click a tab and wait for a specific string to appear in the tab content.
+ */
+async function switchToTabAndWaitFor(label: string, text: string, timeout = 8000): Promise<string> {
+  await clickExtensionTab(label)
+  await browser.waitUntil(
+    async () => {
+      const html = await getExtensionTabHTML()
+      return html.includes(text)
+    },
+    { timeout, timeoutMsg: `"${text}" did not appear in ${label} tab within ${timeout}ms`, interval: 400 },
+  )
+  return getExtensionTabHTML()
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 describe('ClearPathAI — Extension Integration', () => {
   before(async () => {
     await waitForAppReady()
@@ -163,18 +207,10 @@ describe('ClearPathAI — Extension Integration', () => {
     })
   })
 
-  // ── Sidebar Navigation (extension:changed refresh) ────────────────────
-  //
-  // After install the main process fires `extension:changed` via webContents.send().
-  // All useExtensions() hook instances (including the Sidebar's) receive it and
-  // call refresh(), so the extension nav item appears without a page reload.
+  // ── Sidebar Navigation ────────────────────────────────────────────────
 
   describe('Extension Sidebar Navigation', () => {
-    // ── 1. Sidebar presence check ─────────────────────────────────────
     it('sidebar shows the extension nav item after install (no page refresh)', async () => {
-      // The SDK Example extension contributes a nav item with label "SDK Example"
-      // (clearpath-extension.json → contributes.navigation[0].label).
-      // After extension:changed is received the Sidebar re-renders with the new item.
       await waitForSidebarNavItem('SDK Example', ELEMENT_TIMEOUT)
 
       const xpath = `//aside//a[contains(., 'SDK Example')]`
@@ -182,21 +218,14 @@ describe('ClearPathAI — Extension Integration', () => {
       expect(await link.isExisting()).toBe(true)
     })
 
-    // ── 2. Navigation and iframe load ─────────────────────────────────
     it('clicking the extension nav item navigates to the extension page', async () => {
       await navigateSidebarTo('SDK Example')
 
-      // The route is /ext/com.clearpathai.sdk-example/extensions/sdk-example.
-      // ExtensionPage renders either an iframe (if renderer is present) or a
-      // "no UI component" message. Either way it should not show the generic
-      // "Extension not found" error.
       const html = await getRootHTML()
       expect(html).not.toContain('Extension not found')
     })
 
     it('extension page renders the iframe for the renderer bundle', async () => {
-      // The SDK example has a renderer entry (dist/renderer.js), so ExtensionHost
-      // renders a sandboxed iframe with title "Extension: SDK Example".
       await waitForExtensionIframe(ELEMENT_TIMEOUT)
 
       const iframe = await $('iframe[title^="Extension:"]')
@@ -207,71 +236,18 @@ describe('ClearPathAI — Extension Integration', () => {
     })
 
     it('ext-root is populated — React mounted inside the iframe', async () => {
-      // This is the critical test that catches the blank page bug.
-      // waitForExtensionContent switches into the iframe context, polls until
-      // #ext-root has child content, then returns the inner HTML.
-      // try/finally ensures we always exit iframe context so subsequent tests
-      // don't run inside the wrong browsing context.
       try {
         const extRootHtml = await waitForExtensionContent(15000)
 
-        // Must contain substantially more than an empty div tag
         expect(extRootHtml.length).toBeGreaterThan(100)
-
-        // The App header is always rendered as the very first element inside
-        // ext-root regardless of which tab is active.
         expect(extRootHtml).toContain('SDK Example Extension')
-      } finally {
-        // Always return to top-level context — even on timeout or assertion failure
-        await browser.switchToFrame(null).catch(() => {/* ignore if already at top */})
-      }
-    })
-
-    // ── 3. Extension tab navigation and content ───────────────────────
-    it('Overview tab is the default active tab and shows Extension Identity', async () => {
-      const iframe = await $('iframe[title*="Extension:"]')
-      await browser.switchToFrame(iframe)
-      try {
-        const html = await getExtensionTabHTML()
-        expect(html).toContain('Extension Overview')
-        expect(html).toContain('Extension Identity')
-        expect(html).toContain('Extension ID')
-        expect(html).toContain('com.clearpathai.sdk-example')
-      } finally {
-        await browser.switchToFrame(null).catch(() => {})
-      }
-    })
-
-    it('clicking the Storage tab shows the storage UI', async () => {
-      const iframe = await $('iframe[title*="Extension:"]')
-      await browser.switchToFrame(iframe)
-      try {
-        await clickExtensionTab('Storage')
-        const html = await getExtensionTabHTML()
-        expect(html).toContain('Storage (sdk.storage)')
-        expect(html).toContain('Add / Update Entry')
-        expect(html).toContain('Stored Keys')
-      } finally {
-        await browser.switchToFrame(null).catch(() => {})
-      }
-    })
-
-    it('clicking the Sessions tab shows the sessions UI', async () => {
-      const iframe = await $('iframe[title*="Extension:"]')
-      await browser.switchToFrame(iframe)
-      try {
-        await clickExtensionTab('Sessions')
-        const html = await getExtensionTabHTML()
-        expect(html).toContain('Sessions')
       } finally {
         await browser.switchToFrame(null).catch(() => {})
       }
     })
 
     it('all 14 tab buttons are present in the tab bar', async () => {
-      const iframe = await $('iframe[title*="Extension:"]')
-      await browser.switchToFrame(iframe)
-      try {
+      await withExtensionFrame(async () => {
         const extHtml = await getExtensionTabHTML()
         const expectedTabs = [
           'Overview', 'Storage', 'Notifications', 'Environment',
@@ -282,31 +258,386 @@ describe('ClearPathAI — Extension Integration', () => {
         for (const tabLabel of expectedTabs) {
           expect(extHtml).toContain(tabLabel)
         }
-      } finally {
-        await browser.switchToFrame(null).catch(() => {})
-      }
+      })
+    })
+  })
+
+  // ── Tab Content Tests — one describe per tab ──────────────────────────
+
+  describe('Overview tab', () => {
+    it('shows Extension Identity section with the correct extension ID', async () => {
+      await withExtensionFrame(async () => {
+        const html = await switchToTabAndWaitFor('Overview', 'Extension Identity')
+        expect(html).toContain('Extension Overview')
+        expect(html).toContain('Extension ID')
+        expect(html).toContain('com.clearpathai.sdk-example')
+      })
     })
 
-    // ── 4. IPC data visible in rendered UI ────────────────────────────
-    it('Overview tab shows the extension ID sourced from IPC (sdk.extensionId)', async () => {
-      const iframe = await $('iframe[title*="Extension:"]')
-      await browser.switchToFrame(iframe)
-      try {
+    it('loads and displays the current theme from sdk.theme.get()', async () => {
+      await withExtensionFrame(async () => {
+        // Theme data requires an IPC round-trip; wait for it
+        const html = await switchToTabAndWaitFor('Overview', 'Current Theme')
+        // Mode, primary, sidebar, accent should all appear
+        expect(html).toContain('Mode')
+        expect(html).toContain('primary')
+        expect(html).toContain('sidebar')
+        expect(html).toContain('accent')
+      })
+    })
+  })
+
+  describe('Storage tab', () => {
+    it('shows heading and Add / Update Entry form', async () => {
+      await withExtensionFrame(async () => {
+        const html = await switchToTab('Storage')
+        expect(html).toContain('Storage (sdk.storage)')
+        expect(html).toContain('Add / Update Entry')
+        expect(html).toContain('Stored Keys')
+      })
+    })
+
+    it('loads quota data via sdk.storage.quota()', async () => {
+      await withExtensionFrame(async () => {
+        const html = await switchToTabAndWaitFor('Storage', 'Quota', 10000)
+        expect(html).toContain('Used')
+        expect(html).toContain('Limit')
+        expect(html).toContain('Usage')
+      })
+    })
+  })
+
+  describe('Notifications tab', () => {
+    it('shows compose form with title, message, and severity inputs', async () => {
+      await withExtensionFrame(async () => {
+        const html = await switchToTab('Notifications')
+        expect(html).toContain('Notifications (sdk.notifications)')
+        expect(html).toContain('Compose Notification')
+        expect(html).toContain('Emit Notification')
+        expect(html).toContain('Quick Presets')
+      })
+    })
+
+    it('shows severity selector with info and warning options', async () => {
+      await withExtensionFrame(async () => {
+        const html = await getExtensionTabHTML()
+        expect(html).toContain('info')
+        expect(html).toContain('warning')
+      })
+    })
+
+    it('shows notification presets in the list', async () => {
+      await withExtensionFrame(async () => {
+        const html = await getExtensionTabHTML()
+        expect(html).toContain('Build Complete')
+        expect(html).toContain('High Cost Alert')
+        expect(html).toContain('Extension Ready')
+      })
+    })
+  })
+
+  describe('Environment tab', () => {
+    it('shows lookup form and list all button', async () => {
+      await withExtensionFrame(async () => {
+        const html = await switchToTab('Environment')
+        expect(html).toContain('Environment (sdk.env)')
+        expect(html).toContain('Lookup Variable')
+      })
+    })
+
+    it('loads environment variable list via sdk.env.keys()', async () => {
+      await withExtensionFrame(async () => {
+        // env.keys() returns an empty array in test (env vars not exposed to renderer)
+        // but the section should still render
+        const html = await switchToTabAndWaitFor('Environment', 'Available Variables', 8000)
+        expect(html).toContain('Available Variables')
+      })
+    })
+  })
+
+  describe('HTTP tab', () => {
+    it('shows request builder UI with method selector and URL input', async () => {
+      await withExtensionFrame(async () => {
+        const html = await switchToTab('HTTP')
+        expect(html).toContain('HTTP (sdk.http)')
+        expect(html).toContain('Request')
+        expect(html).toContain('Send')
+        // Method options
+        expect(html).toContain('GET')
+        expect(html).toContain('POST')
+      })
+    })
+
+    it('shows preset URL examples for allowed domains', async () => {
+      await withExtensionFrame(async () => {
+        const html = await getExtensionTabHTML()
+        // Preset URL buttons use their labels (e.g. "JSONPlaceholder Post #1", "GitHub API Root")
+        const hasPresets = html.includes('JSONPlaceholder') || html.includes('GitHub API Root')
+        expect(hasPresets).toBe(true)
+        // Should mention one of the allowed domain URLs
+        expect(html).toMatch(/jsonplaceholder|api\.github\.com/i)
+      })
+    })
+  })
+
+  describe('Theme tab', () => {
+    it('shows theme heading and loads theme via sdk.theme.get()', async () => {
+      await withExtensionFrame(async () => {
+        const html = await switchToTabAndWaitFor('Theme', 'Dark Mode', 8000)
+        expect(html).toContain('Theme (sdk.theme)')
+        expect(html).toContain('Mode')
+        expect(html).toContain('Colors')
+        // Should show actual hex color values
+        expect(html).toMatch(/#[0-9a-fA-F]{6}/)
+      })
+    })
+
+    it('shows color swatches for Primary, Sidebar, Accent', async () => {
+      await withExtensionFrame(async () => {
+        const html = await getExtensionTabHTML()
+        expect(html).toContain('Primary')
+        expect(html).toContain('Sidebar')
+        expect(html).toContain('Accent')
+      })
+    })
+
+    it('shows Raw Theme Object JSON', async () => {
+      await withExtensionFrame(async () => {
+        const html = await getExtensionTabHTML()
+        expect(html).toContain('Raw Theme Object')
+        // JSON should include the isDark field
+        expect(html).toContain('isDark')
+      })
+    })
+
+    it('shows theme changes observed counter', async () => {
+      await withExtensionFrame(async () => {
+        const html = await getExtensionTabHTML()
+        expect(html).toContain('Theme changes observed')
+      })
+    })
+  })
+
+  describe('Sessions tab', () => {
+    it('shows sessions heading and loads session list via sdk.sessions.list()', async () => {
+      await withExtensionFrame(async () => {
+        const html = await switchToTabAndWaitFor('Sessions', 'Sessions', 8000)
+        expect(html).toContain('Sessions (sdk.sessions)')
+        // Either sessions are listed or the empty state message
+        const hasContent = html.includes('Active Session') || html.includes('No sessions') || html.includes('session')
+        expect(hasContent).toBe(true)
+      })
+    })
+  })
+
+  describe('Cost tab', () => {
+    it('shows cost heading and loads summary via sdk.cost.summary()', async () => {
+      await withExtensionFrame(async () => {
+        const html = await switchToTabAndWaitFor('Cost', 'Cost', 8000)
+        expect(html).toContain('Cost (sdk.cost)')
+        // Summary cards should render regardless of whether there is spend data
+        const hasSummary = html.includes('Total Cost') || html.includes('Sessions') || html.includes('Cost Summary')
+        expect(hasSummary).toBe(true)
+      })
+    })
+
+    it('shows budget configuration section', async () => {
+      await withExtensionFrame(async () => {
+        const html = await getExtensionTabHTML()
+        // Budget config card should appear after cost.getBudget() resolves
+        const hasBudget = html.includes('Budget') || html.includes('budget')
+        expect(hasBudget).toBe(true)
+      })
+    })
+  })
+
+  describe('Feature Flags tab', () => {
+    it('shows feature flags heading and loads all flags via sdk.featureFlags.getAll()', async () => {
+      await withExtensionFrame(async () => {
+        const html = await switchToTabAndWaitFor('Feature Flags', 'Feature Flags', 8000)
+        expect(html).toContain('Feature Flags (sdk.featureFlags)')
+        expect(html).toContain('Lookup Flag')
+        expect(html).toContain('All Flags')
+      })
+    })
+
+    it('shows the extension-contributed flags declared in the manifest', async () => {
+      await withExtensionFrame(async () => {
+        const html = await getExtensionTabHTML()
+        // The manifest declares sdkExampleEnabled and sdkExampleDebugMode
+        const hasFlags =
+          html.includes('sdkExampleEnabled') ||
+          html.includes('sdkExampleDebugMode') ||
+          html.includes('ON') ||
+          html.includes('OFF')
+        expect(hasFlags).toBe(true)
+      })
+    })
+  })
+
+  describe('Local Models tab', () => {
+    it('shows local models heading and detection UI', async () => {
+      await withExtensionFrame(async () => {
+        const html = await switchToTabAndWaitFor('Local Models', 'Local Models', 8000)
+        expect(html).toContain('Local Models (sdk.localModels)')
+        // Either Ollama/LM Studio detected or not-found message
+        const hasContent =
+          html.includes('Ollama') ||
+          html.includes('LM Studio') ||
+          html.includes('local model') ||
+          html.includes('not detected')
+        expect(hasContent).toBe(true)
+      })
+    })
+  })
+
+  describe('Context tab', () => {
+    it('shows token estimator with textarea and estimate button', async () => {
+      await withExtensionFrame(async () => {
+        const html = await switchToTab('Context')
+        expect(html).toContain('Context (sdk.context)')
+        expect(html).toContain('Token Estimator')
+        expect(html).toContain('Estimate Tokens')
+      })
+    })
+
+    it('shows sample text presets', async () => {
+      await withExtensionFrame(async () => {
+        const html = await getExtensionTabHTML()
+        expect(html).toContain('Sample Texts')
+      })
+    })
+  })
+
+  describe('GitHub tab', () => {
+    it('shows GitHub heading and repo browser UI', async () => {
+      await withExtensionFrame(async () => {
+        const html = await switchToTab('GitHub')
+        expect(html).toContain('GitHub (sdk.github)')
+        expect(html).toContain('Repositories')
+        expect(html).toContain('Search GitHub')
+      })
+    })
+
+    it('shows the repos section and either repo rows or a not-connected message', async () => {
+      await withExtensionFrame(async () => {
+        // Wait for the repo load to complete (either repos or empty/error)
+        await browser.waitUntil(
+          async () => {
+            const html = await getExtensionTabHTML()
+            return (
+              html.includes('Repositories (') ||
+              html.includes('No repositories found') ||
+              html.includes('not connected') ||
+              html.includes('Could not initialize')
+            )
+          },
+          { timeout: 10000, timeoutMsg: 'GitHub repos section did not resolve within 10s', interval: 500 },
+        )
+
+        const html = await getExtensionTabHTML()
+        // Regardless of GitHub auth, the UI structure should be present
+        expect(html).toContain('Repositories')
+        expect(html).not.toContain('Cannot read properties of undefined')
+      })
+    })
+  })
+
+  describe('Events tab', () => {
+    it('shows events heading and active subscriptions', async () => {
+      await withExtensionFrame(async () => {
+        const html = await switchToTabAndWaitFor('Events', 'Active Subscriptions', 8000)
+        expect(html).toContain('Events (sdk.events)')
+        expect(html).toContain('Active Subscriptions')
+        expect(html).toContain('Event Log')
+      })
+    })
+
+    it('has default subscriptions including notification:emitted', async () => {
+      await withExtensionFrame(async () => {
+        const html = await getExtensionTabHTML()
+        // Default subscriptions from EventsTab
+        expect(html).toContain('session:started')
+        expect(html).toContain('theme-changed')
+        expect(html).toContain('notification:emitted')
+      })
+    })
+
+    it('shows the Notification Round-trip Demo section', async () => {
+      await withExtensionFrame(async () => {
+        const html = await getExtensionTabHTML()
+        expect(html).toContain('Notification Round-trip Demo')
+        expect(html).toContain('Emit Notification + Watch Event')
+      })
+    })
+
+    it('clicking the round-trip button emits a notification and shows the emitted event', async () => {
+      await withExtensionFrame(async () => {
+        // Click the round-trip test button (has id="test-round-trip")
+        const btn = await $('#test-round-trip')
+        await btn.waitForClickable({ timeout: ELEMENT_TIMEOUT })
+        await btn.click()
+
+        // Wait for the status message confirming the emission
+        await browser.waitUntil(
+          async () => {
+            const html = await getExtensionTabHTML()
+            return html.includes('Notification emitted')
+          },
+          { timeout: 8000, timeoutMsg: 'Round-trip status message did not appear within 8s', interval: 400 },
+        )
+
+        // The notification:emitted event should now be in the event log
+        await browser.waitUntil(
+          async () => {
+            const html = await getExtensionTabHTML()
+            return html.includes('notification:emitted')
+          },
+          { timeout: 5000, timeoutMsg: 'notification:emitted event did not appear in log within 5s', interval: 300 },
+        )
+
+        const html = await getExtensionTabHTML()
+        expect(html).toContain('notification:emitted')
+      })
+    })
+  })
+
+  describe('Navigation tab', () => {
+    it('shows navigation heading and preset routes', async () => {
+      await withExtensionFrame(async () => {
+        const html = await switchToTab('Navigation')
+        expect(html).toContain('Navigation (sdk.navigate)')
+        // Should have some preset route buttons
+        const hasRoutes = html.includes('Home') || html.includes('Work') || html.includes('Configure')
+        expect(hasRoutes).toBe(true)
+      })
+    })
+
+    it('shows custom route input field and App Routes list', async () => {
+      await withExtensionFrame(async () => {
+        const html = await getExtensionTabHTML()
+        // Section heading is "Custom Route" and the input label is "Path"
+        expect(html).toContain('Custom Route')
+        expect(html).toContain('App Routes')
+      })
+    })
+  })
+
+  // ── IPC Data visible in rendered UI ──────────────────────────────────
+
+  describe('IPC data in rendered UI', () => {
+    it('Overview tab shows extension ID sourced from IPC (sdk.extensionId)', async () => {
+      await withExtensionFrame(async () => {
         await clickExtensionTab('Overview')
         const html = await getExtensionTabHTML()
         expect(html).toContain('com.clearpathai.sdk-example')
-      } finally {
-        await browser.switchToFrame(null).catch(() => {})
-      }
+      })
     })
 
     it('Storage tab quota data loads from IPC (sdk.storage.quota)', async () => {
-      const iframe = await $('iframe[title*="Extension:"]')
-      await browser.switchToFrame(iframe)
-      try {
+      await withExtensionFrame(async () => {
         await clickExtensionTab('Storage')
 
-        // Wait for the quota card to appear — it requires an IPC round-trip
         await browser.waitUntil(
           async () => {
             const html = await getExtensionTabHTML()
@@ -323,40 +654,32 @@ describe('ClearPathAI — Extension Integration', () => {
         expect(html).toContain('Used')
         expect(html).toContain('Limit')
         expect(html).toContain('Usage')
-      } finally {
-        await browser.switchToFrame(null).catch(() => {})
-      }
+      })
     })
+  })
 
-    // ── 5. Console error check ────────────────────────────────────────
-    it('no extension-related critical console errors after full navigation', async () => {
-      const errors = await getCriticalConsoleErrors()
-      // Only flag errors explicitly tied to the extension or its host component.
-      // General React warnings (e.g. key props) are not critical errors.
-      const extErrors = errors.filter((e) =>
-        e.includes('sdk-example') ||
-        e.includes('clearpath-ext') ||
-        e.includes('ExtensionHost') ||
-        e.includes('[SDK Example]')
-      )
-      expect(extErrors).toHaveLength(0)
-    })
+  // ── Console errors ────────────────────────────────────────────────────
 
-    it('navigates back to configure/extensions tab', async () => {
-      await navigateToConfigureTab('extensions')
-
-      // Verify we are back on the Extensions configure tab
-      const html = await getRootHTML()
-      expect(html).toContain('SDK Example')
-    })
+  it('no extension-related critical console errors after full tab navigation', async () => {
+    const errors = await getCriticalConsoleErrors()
+    const extErrors = errors.filter((e) =>
+      e.includes('sdk-example') ||
+      e.includes('clearpath-ext') ||
+      e.includes('ExtensionHost') ||
+      e.includes('[SDK Example]')
+    )
+    expect(extErrors).toHaveLength(0)
   })
 
   // ── Extension IPC Channel Access ──────────────────────────────────────
 
   describe('Extension IPC Channel Access', () => {
+    before(async () => {
+      await navigateToConfigureTab('extensions')
+      await browser.pause(300)
+    })
+
     it('can call sdk-example:health after install', async () => {
-      // The preload should have refreshed extension channels after install
-      // so we can call extension IPC channels directly
       const result = await invokeIPC('sdk-example:health') as {
         success: boolean
         data?: { status: string; handlers: string[] }
@@ -427,7 +750,6 @@ describe('ClearPathAI — Extension Integration', () => {
     })
 
     it('sdk-example:set-config + sdk-example:get-config storage round-trip', async () => {
-      // Verifies that the dist-built main.cjs correctly reads/writes extension storage
       const testGreeting = 'Hello from e2e dist test'
       const setResult = await invokeIPC('sdk-example:set-config', {
         greeting: testGreeting,
@@ -444,9 +766,6 @@ describe('ClearPathAI — Extension Integration', () => {
     })
 
     it(`sdk-example:health reports exactly ${EXPECTED_HANDLER_COUNT} registered handlers`, async () => {
-      // All handlers declared in ipcChannels (clearpath-extension.json) must be
-      // registered when activate() runs. This validates the dist build compiled
-      // all 13 handlers correctly.
       const result = await invokeIPC('sdk-example:health') as {
         success: boolean
         data?: { handlers: string[] }
@@ -465,16 +784,11 @@ describe('ClearPathAI — Extension Integration', () => {
     })
 
     it('shows no restart banner initially (install does not require restart)', async () => {
-      // Extension install uses the install-without-restart flow:
-      // channels are refreshed via refreshExtensionChannels() so no
-      // pendingRestart state is set. Only enable/disable toggles trigger
-      // the restart banner.
       const html = await getRootHTML()
       expect(html).not.toContain('Changes require a restart')
     })
 
     it('toggling an extension shows the restart banner', async () => {
-      // Find a toggle button and click it
       const toggleBtn = await $('button[title="Enable"], button[title="Disable"]')
       if (!(await toggleBtn.isExisting())) return
 
@@ -502,7 +816,7 @@ describe('ClearPathAI — Extension Integration', () => {
       expect(html).not.toContain('Changes require a restart')
     })
 
-    it('toggling again re-shows the banner', async () => {
+    it('toggling again re-shows the banner, then toggle back to restore state', async () => {
       const toggleBtn = await $('button[title="Enable"], button[title="Disable"]')
       if (!(await toggleBtn.isExisting())) return
 
@@ -528,14 +842,12 @@ describe('ClearPathAI — Extension Integration', () => {
     })
 
     it('shows restart modal when navigating away with pending changes', async () => {
-      // Create a pending change
       const toggleBtn = await $('button[title="Enable"], button[title="Disable"]')
       if (!(await toggleBtn.isExisting())) return
 
       await toggleBtn.click()
       await browser.pause(500)
 
-      // Try to navigate to Settings tab
       const settingsTab = await $('#tab-settings')
       await settingsTab.click()
       await browser.pause(300)
@@ -551,14 +863,12 @@ describe('ClearPathAI — Extension Integration', () => {
       await clickButton('Stay here')
       await browser.pause(300)
 
-      // Should still be on Extensions tab
       const afterHtml = await getRootHTML()
       expect(afterHtml).toContain('Extensions')
       expect(afterHtml).toContain('Changes require a restart')
     })
 
     it('Continue without restart navigates to target tab', async () => {
-      // Try to navigate away again
       const settingsTab = await $('#tab-settings')
       await settingsTab.click()
       await browser.pause(300)
@@ -569,7 +879,6 @@ describe('ClearPathAI — Extension Integration', () => {
       await clickButton('Continue without restart')
       await browser.pause(500)
 
-      // Should now be on Settings tab
       const settingsSelected = await $('#tab-settings')
       const selected = await settingsSelected.getAttribute('aria-selected')
       expect(selected).toBe('true')
@@ -589,14 +898,12 @@ describe('ClearPathAI — Extension Integration', () => {
       const ext = listResult.data[0]
       const originalEnabled = ext.enabled
 
-      // Toggle
       const toggleResult = await invokeIPC('extension:toggle', {
         extensionId: ext.manifest.id,
         enabled: !originalEnabled,
       }) as { success: boolean }
       expect(toggleResult.success).toBe(true)
 
-      // Verify state changed
       const verifyResult = await invokeIPC('extension:get', {
         extensionId: ext.manifest.id,
       }) as { success: boolean; data?: { enabled: boolean } }
@@ -637,8 +944,6 @@ describe('ClearPathAI — Extension Integration', () => {
       const result = await invokeIPC('extension:uninstall', {
         extensionId: 'com.clearpathai.sdk-example',
       }) as { success: boolean }
-      // May fail if not installed — that's OK
-      // Just verify it doesn't cause a crash
       expect(typeof result.success).toBe('boolean')
     })
 

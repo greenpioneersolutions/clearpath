@@ -9,7 +9,7 @@ import React, { useEffect, useState, useRef, useCallback } from 'react'
 import { useSDK } from '@clearpath/extension-sdk'
 import {
   cardStyle, headingStyle, buttonStyle, buttonSecondaryStyle, buttonDangerStyle,
-  inputStyle, labelStyle, errorStyle, loadingStyle,
+  inputStyle, labelStyle, errorStyle, loadingStyle, successStyle,
 } from './shared-styles'
 
 interface EventEntry {
@@ -25,6 +25,7 @@ const DEFAULT_SUBSCRIPTIONS = [
   'turn:started',
   'turn:ended',
   'theme-changed',
+  'notification:emitted',
 ]
 
 export function EventsTab(): React.ReactElement {
@@ -34,6 +35,8 @@ export function EventsTab(): React.ReactElement {
   const [subscriptions, setSubscriptions] = useState<string[]>([])
   const [newEvent, setNewEvent] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [roundTripStatus, setRoundTripStatus] = useState<string | null>(null)
+  const [roundTripSending, setRoundTripSending] = useState(false)
   const unsubFns = useRef<Map<string, () => void>>(new Map())
   const eventIdRef = useRef(0)
 
@@ -95,6 +98,23 @@ export function EventsTab(): React.ReactElement {
 
   const clearLog = () => setEvents([])
 
+  const handleRoundTrip = async () => {
+    try {
+      setRoundTripSending(true)
+      setRoundTripStatus(null)
+      await sdk.notifications.emit({
+        title: 'Events Round-trip Test',
+        message: 'Emitted from EventsTab — watch for notification:emitted below.',
+        severity: 'info',
+      })
+      setRoundTripStatus('Notification emitted — notification:emitted event should appear in the log.')
+    } catch (err) {
+      setRoundTripStatus(`Error: ${(err as Error).message}`)
+    } finally {
+      setRoundTripSending(false)
+    }
+  }
+
   return (
     <div>
       <h2 style={headingStyle}>Events (sdk.events)</h2>
@@ -104,6 +124,29 @@ export function EventsTab(): React.ReactElement {
       </p>
 
       {error && <div style={errorStyle}>{error}</div>}
+
+      {/* Round-trip demo */}
+      <div style={{ ...cardStyle, marginBottom: '16px' }}>
+        <h3 style={{ ...headingStyle, fontSize: '14px' }}>Notification Round-trip Demo</h3>
+        <p style={{ color: '#94a3b8', fontSize: '12px', marginBottom: '10px' }}>
+          Click the button to emit a notification via <code>sdk.notifications.emit()</code>.
+          The host fires a <code>notification:emitted</code> event back — watch it appear in
+          the Event Log below. Make sure <code>notification:emitted</code> is subscribed.
+        </p>
+        <button
+          id="test-round-trip"
+          style={buttonStyle}
+          onClick={handleRoundTrip}
+          disabled={roundTripSending}
+        >
+          {roundTripSending ? 'Sending...' : 'Emit Notification + Watch Event'}
+        </button>
+        {roundTripStatus && (
+          <div style={{ ...successStyle, marginTop: '10px', fontSize: '12px' }}>
+            {roundTripStatus}
+          </div>
+        )}
+      </div>
 
       {/* Active subscriptions */}
       <div style={{ ...cardStyle, marginBottom: '16px' }}>

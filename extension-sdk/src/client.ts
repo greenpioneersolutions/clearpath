@@ -166,8 +166,18 @@ export function createSDKClient(port: MessagePort, extensionId: string): Extensi
     theme: {
       get: async () => unwrapResult(await request('theme.get')) as ClearPathTheme,
       onChange: (callback) => {
+        // Subscribe to host theme-changed events on the first listener
+        if (themeListeners.size === 0) {
+          void request('events.subscribe', { event: 'theme-changed' })
+        }
         themeListeners.add(callback)
-        return () => themeListeners.delete(callback)
+        return () => {
+          themeListeners.delete(callback)
+          // Unsubscribe when the last listener is removed
+          if (themeListeners.size === 0) {
+            void request('events.unsubscribe', { event: 'theme-changed' })
+          }
+        }
       },
     },
 

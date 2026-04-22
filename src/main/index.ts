@@ -692,14 +692,11 @@ app.whenReady().then(async () => {
         mainWindow.webContents.reload()
       }
     } else {
-      // In production, do a full process restart
+      // In production, schedule a relaunch then exit immediately.
+      // app.exit(0) forcefully terminates the process (no before-quit / will-quit),
+      // so there is no need to manually close windows first — doing so races with the
+      // window-all-closed → app.quit() lifecycle and causes hangs.
       log.info('[app] Production restart: relaunching app')
-      const windows = BrowserWindow.getAllWindows()
-      for (const win of windows) {
-        win.removeAllListeners('close')
-        win.close()
-      }
-      await new Promise((resolve) => setTimeout(resolve, 200))
       app.relaunch()
       app.exit(0)
     }

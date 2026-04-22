@@ -9,7 +9,9 @@ const EVENT_PERMISSION_MAP: Record<string, string> = {
   'turn:ended': 'sessions:lifecycle',
   'cost:recorded': 'cost:read',
   'budget:alert': 'cost:read',
-  'slot:data-changed': '', // no permission needed — it's slot context
+  'slot:data-changed': '',   // no permission needed — it's slot context
+  'theme-changed': '',       // no permission needed — theme is public
+  'notification:emitted': '', // fired back to the extension that called notifications.emit
 }
 
 interface ExtensionHostProps {
@@ -229,48 +231,56 @@ export default function ExtensionHost({ extension, className, slotData }: Extens
           break
 
         // ── Notifications ───────────────────────────────────────────────
-        case 'notifications.emit':
+        case 'notifications.emit': {
           result = await window.electronAPI.invoke('extension:notify', {
             extensionId: extId,
             ...(request.params as { title: string; message: string; severity?: string }),
           })
+          // Fire notification:emitted back so event subscribers (EventsTab) can observe the round-trip
+          if (portRef.current && subscribedEventsRef.current.has('notification:emitted')) {
+            portRef.current.postMessage({
+              type: 'ext:event',
+              event: 'notification:emitted',
+              data: request.params,
+            })
+          }
           break
+        }
 
         // ── GitHub integration proxy ────────────────────────────────────
-        case 'github.listRepos':
-          result = await window.electronAPI.invoke(
-            'integration:github-repos',
-            request.params ?? {},
-          )
+        // The IPC handlers return domain-specific keys (repos, pulls, etc.) but the
+        // SDK client's unwrapResult() always reads `data`. Normalize here so the SDK
+        // client receives { success, data } without changing the IPC handler shapes
+        // (which contextProviderRegistry.ts also reads using the original keys).
+        case 'github.listRepos': {
+          const raw = await window.electronAPI.invoke('integration:github-repos', request.params ?? {}) as { success: boolean; repos?: unknown[]; error?: string }
+          result = raw.success ? { success: true, data: raw.repos ?? [] } : raw
           break
+        }
 
-        case 'github.listPulls':
-          result = await window.electronAPI.invoke(
-            'integration:github-pulls',
-            request.params ?? {},
-          )
+        case 'github.listPulls': {
+          const raw = await window.electronAPI.invoke('integration:github-pulls', request.params ?? {}) as { success: boolean; pulls?: unknown[]; error?: string }
+          result = raw.success ? { success: true, data: raw.pulls ?? [] } : raw
           break
+        }
 
-        case 'github.getPull':
-          result = await window.electronAPI.invoke(
-            'integration:github-pull-detail',
-            request.params ?? {},
-          )
+        case 'github.getPull': {
+          const raw = await window.electronAPI.invoke('integration:github-pull-detail', request.params ?? {}) as { success: boolean; pull?: unknown; files?: unknown[]; reviews?: unknown[]; error?: string }
+          result = raw.success ? { success: true, data: { pull: raw.pull, files: raw.files ?? [], reviews: raw.reviews ?? [] } } : raw
           break
+        }
 
-        case 'github.listIssues':
-          result = await window.electronAPI.invoke(
-            'integration:github-issues',
-            request.params ?? {},
-          )
+        case 'github.listIssues': {
+          const raw = await window.electronAPI.invoke('integration:github-issues', request.params ?? {}) as { success: boolean; issues?: unknown[]; error?: string }
+          result = raw.success ? { success: true, data: raw.issues ?? [] } : raw
           break
+        }
 
-        case 'github.search':
-          result = await window.electronAPI.invoke(
-            'integration:github-search',
-            request.params ?? {},
-          )
+        case 'github.search': {
+          const raw = await window.electronAPI.invoke('integration:github-search', request.params ?? {}) as { success: boolean; results?: unknown[]; error?: string }
+          result = raw.success ? { success: true, data: raw.results ?? [] } : raw
           break
+        }
 
         // ── Sessions ────────────────────────────────────────────────────
         case 'sessions.list':
