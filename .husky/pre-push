@@ -1,0 +1,3 @@
+#!/usr/bin/env sh
+# Upload Git LFS objects before pushing commits
+git lfs pre-push "$@"
