@@ -35,6 +35,11 @@ export const config: Options.Testrunner = {
         appEntryPoint: path.join(__dirname, 'out/main/index.js'),
         appArgs: [],
       },
+      // Required for CI environments (Ubuntu/Docker) where Chromium's sandbox
+      // is unavailable. Without --no-sandbox the Electron process exits immediately.
+      'goog:chromeOptions': {
+        args: ['--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage'],
+      },
     },
   ],
 

@@ -42,28 +42,25 @@ jobs:
         run: npm run build
 
   # ── Screenshot regression tests ──────────────────────────────────────────────
-  # Runs after the main test job. Compares rendered UI screenshots against
-  # baselines stored in e2e/screenshots/baseline/ (tracked via Git LFS).
+  # Always runs after the main test job (on every push and PR).
+  # Captures rendered UI screenshots, compares them against the baselines in
+  # e2e/screenshots/baseline/ (tracked via Git LFS), and — if any differ —
+  # automatically commits the updated baselines back to the branch.
   #
-  # On mismatch the diff images are uploaded as artifacts so reviewers can
-  # inspect them in the GitHub Actions UI without needing to check out locally.
-  #
-  # To update baselines: push a commit with the message containing
-  # [update-screenshots], or trigger the "Update Screenshot Baselines" workflow
-  # manually from the Actions tab.
+  # Requires the repo to allow Actions to create commits:
+  #   Settings → Actions → Workflow permissions → "Read and write permissions"
   screenshot-regression:
     needs: test
     runs-on: ubuntu-latest
-    # Only run on PRs so baseline comparisons are always against main
-    if: github.event_name == 'pull_request'
 
     permissions:
-      contents: read  # read baseline screenshots from LFS
+      contents: write  # needed to commit updated baseline PNGs back via LFS
 
     steps:
       - uses: actions/checkout@v5
         with:
           lfs: true  # pull baseline PNG files from LFS storage
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: actions/setup-node@v5
         with:
@@ -93,78 +90,26 @@ jobs:
           DISPLAY: ':99'
           SCREENSHOT_DIR: e2e/screenshots/actual
 
-      - name: Upload screenshots as artifact
-        if: always()
-        uses: actions/upload-artifact@v5
-        with:
-          name: screenshots-actual
-          path: e2e/screenshots/actual/
-          if-no-files-found: warn
-          retention-days: 30
-
-      - name: Upload screenshot diffs on failure
-        if: always()
-        uses: actions/upload-artifact@v5
-        with:
-          name: screenshots-diff
-          path: e2e/screenshots/diff/
-          if-no-files-found: ignore
-          retention-days: 14
-
-  # ── Update screenshot baselines ───────────────────────────────────────────────
-  # Triggered manually from the Actions tab (workflow_dispatch) or automatically
-  # when a commit on dev contains "[update-screenshots]" in its message.
-  #
-  # Captures fresh screenshots and commits them back to the branch via LFS.
-  # Requires the GITHUB_TOKEN to have write access (granted by the permissions
-  # block below) and the repo must allow Actions to create commits
-  # (Settings → Actions → Workflow permissions → "Read and write permissions").
-  update-screenshots:
-    runs-on: ubuntu-latest
-    if: |
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'push' && contains(github.event.head_commit.message, '[update-screenshots]'))
-
-    permissions:
-      contents: write  # needed to commit updated baseline PNGs back via LFS
-
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          lfs: true
-          # Use a token with write access so the commit push is allowed
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build app
-        run: npm run build
-
-      - name: Install system dependencies (Xvfb for headless Electron)
+      - name: Compare actual screenshots against baselines
+        id: compare
         run: |
-          sudo apt-get update -q
-          sudo apt-get install -y --no-install-recommends xvfb libgbm-dev libasound2-dev
+          changed=false
+          shopt -s nullglob
+          mkdir -p e2e/screenshots/baseline
+          for actual in e2e/screenshots/actual/*.png; do
+            name=$(basename "$actual")
+            baseline="e2e/screenshots/baseline/$name"
+            if [ ! -f "$baseline" ] || ! cmp -s "$actual" "$baseline"; then
+              echo "Changed: $name"
+              changed=true
+            fi
+          done
+          echo "changed=$changed" >> "$GITHUB_OUTPUT"
 
-      - name: Start virtual display
+      - name: Update baselines with new screenshots
+        if: steps.compare.outputs.changed == 'true'
         run: |
-          Xvfb :99 -screen 0 1280x800x24 &
-          echo "DISPLAY=:99" >> $GITHUB_ENV
-          sleep 2
-
-      - name: Capture fresh baseline screenshots
-        run: SCREENSHOT_DIR=e2e/screenshots/baseline npx wdio run wdio.screenshots.conf.ts
-        env:
-          DISPLAY: ':99'
-          SCREENSHOT_DIR: e2e/screenshots/baseline
-
-      - name: Commit updated baselines
-        run: |
+          cp e2e/screenshots/actual/*.png e2e/screenshots/baseline/
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git lfs install --local
@@ -172,3 +117,12 @@ jobs:
           git diff --cached --quiet || git commit -m "chore: update screenshot baselines [skip ci]"
           git lfs push origin HEAD
           git push
+
+      - name: Upload actual screenshots as artifact
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: screenshots-actual
+          path: e2e/screenshots/actual/
+          if-no-files-found: warn
+          retention-days: 30
