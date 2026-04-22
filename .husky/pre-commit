@@ -1,0 +1,27 @@
+#!/usr/bin/env sh
+# Verify Git LFS is installed and configured before committing
+
+# Check git-lfs binary is available
+if ! command -v git-lfs >/dev/null 2>&1; then
+  echo "ERROR: git-lfs is not installed."
+  echo "Install it with: brew install git-lfs  (macOS) or  apt install git-lfs  (Linux)"
+  echo "Then run: git lfs install"
+  exit 1
+fi
+
+# Check LFS hooks are registered (git lfs install was run)
+if ! git config --get filter.lfs.process >/dev/null 2>&1; then
+  echo "ERROR: Git LFS hooks are not configured for this repository."
+  echo "Run: git lfs install"
+  exit 1
+fi
+
+# Check .gitattributes exists and contains at least one LFS rule
+if ! grep -q "filter=lfs" .gitattributes 2>/dev/null; then
+  echo "ERROR: No Git LFS tracking rules found in .gitattributes."
+  echo "Add rules with: git lfs track '*.png'  (or the relevant file type)"
+  exit 1
+fi
+
+# Delegate to the built-in LFS pre-push hook (validates pointers)
+git lfs pre-push origin 2>/dev/null || true

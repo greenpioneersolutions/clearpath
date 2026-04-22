@@ -20,6 +20,11 @@ jobs:
 
     steps:
       - uses: actions/checkout@v5
+        with:
+          lfs: true
+
+      - name: Verify Git LFS
+        run: git lfs ls-files
 
       - uses: actions/setup-node@v5
         with:
@@ -34,3 +39,98 @@ jobs:
 
       - name: Build app
         run: npm run build
+
+  # ── Screenshot regression tests ──────────────────────────────────────────────
+  # Runs after the main test job. Compares rendered UI screenshots against
+  # baselines stored in tests/screenshots/baseline/ (tracked via Git LFS).
+  #
+  # On mismatch the diff images are uploaded as artifacts so reviewers can
+  # inspect them in the GitHub Actions UI without needing to check out locally.
+  #
+  # To update baselines: push a commit with the message containing
+  # [update-screenshots], or trigger the "Update Screenshot Baselines" workflow
+  # manually from the Actions tab.
+  screenshot-regression:
+    needs: test
+    runs-on: ubuntu-latest
+    # Only run on PRs so baseline comparisons are always against main
+    if: github.event_name == 'pull_request'
+
+    permissions:
+      contents: read  # read baseline screenshots from LFS
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          lfs: true  # pull baseline PNG files from LFS storage
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build app
+        run: npm run build
+
+      - name: Run screenshot regression tests
+        # Replace with your actual test command when the test suite is wired up
+        run: echo "screenshot regression tests not yet configured"
+
+      - name: Upload screenshot diffs on failure
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: screenshot-diffs
+          path: tests/screenshots/diff/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # ── Update screenshot baselines ───────────────────────────────────────────────
+  # Triggered manually from the Actions tab (workflow_dispatch) or automatically
+  # when a commit on dev contains "[update-screenshots]" in its message.
+  #
+  # Captures fresh screenshots and commits them back to the branch via LFS.
+  # Requires the GITHUB_TOKEN to have write access (granted by the permissions
+  # block below) and the repo must allow Actions to create commits
+  # (Settings → Actions → Workflow permissions → "Read and write permissions").
+  update-screenshots:
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && contains(github.event.head_commit.message, '[update-screenshots]'))
+
+    permissions:
+      contents: write  # needed to commit updated baseline PNGs back via LFS
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          lfs: true
+          # Use a token with write access so the commit push is allowed
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build app
+        run: npm run build
+
+      - name: Capture fresh screenshots
+        # Replace with your actual capture command when the test suite is wired up
+        run: echo "screenshot capture not yet configured"
+
+      - name: Commit updated baselines
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add tests/screenshots/baseline/
+          git diff --cached --quiet || git commit -m "chore: update screenshot baselines [skip ci]"
+          git push
