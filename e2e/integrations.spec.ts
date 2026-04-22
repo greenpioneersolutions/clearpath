@@ -19,6 +19,7 @@ import {
   waitForSelector,
   ELEMENT_TIMEOUT,
 } from './helpers/app.js'
+import { captureScreenshot } from './helpers/screenshots.js'
 
 describe('ClearPathAI — Integrations', () => {
   before(async () => {
@@ -49,6 +50,8 @@ describe('ClearPathAI — Integrations', () => {
     before(async () => {
       await navigateToConfigureTab('integrations')
       await browser.pause(500)
+      // Capture the fully-loaded integration cards grid
+      await captureScreenshot('integrations/cards-initial')
     })
 
     it('shows GitHub integration', async () => {
@@ -184,6 +187,9 @@ describe('ClearPathAI — Integrations', () => {
         await connectBtn.click()
         // Wait for the IPC round-trip to complete
         await browser.pause(2000)
+
+        // Capture the error / rejected-credentials state
+        await captureScreenshot('integrations/github-connect-error')
 
         // After a failed connection, should show an error message or the form stays
         const html = await getRootHTML()

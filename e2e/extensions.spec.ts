@@ -19,6 +19,7 @@ import {
   invokeIPC,
   ELEMENT_TIMEOUT,
 } from './helpers/app.js'
+import { captureScreenshot } from './helpers/screenshots.js'
 
 /**
  * Dismiss any restart banner or modal overlay that may be blocking the UI.
@@ -95,6 +96,9 @@ describe('ClearPathAI — Extensions', () => {
       const bannerHtml = await getRootHTML()
       expect(bannerHtml).toContain('Changes require a restart')
 
+      // Capture the restart-required banner state
+      await captureScreenshot('extensions/restart-banner')
+
       // Toggle back to restore original state (pendingRestart stays true, which is fine)
       await toggleBtn.click()
       await browser.pause(500)
@@ -156,6 +160,9 @@ describe('ClearPathAI — Extensions', () => {
       if (await firstCard.isExisting()) {
         await firstCard.click()
         await browser.pause(300)
+
+        // Capture the expanded detail panel
+        await captureScreenshot('extensions/card-expanded')
 
         const expandedHtml = await getRootHTML()
         // Detail panel shows metadata
@@ -296,6 +303,9 @@ describe('ClearPathAI — Extensions', () => {
       // Click the Dismiss button in the banner
       await clickButton('Dismiss')
       await browser.pause(300)
+
+      // Capture the clean state after the banner is dismissed
+      await captureScreenshot('extensions/banner-dismissed')
 
       // Verify the banner is no longer visible
       bannerHtml = await getRootHTML()

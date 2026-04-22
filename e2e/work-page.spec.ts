@@ -17,6 +17,7 @@ import {
   getInputValue,
   ELEMENT_TIMEOUT,
 } from './helpers/app.js'
+import { captureScreenshot } from './helpers/screenshots.js'
 
 /**
  * Navigate to a hash route within the Electron app.
@@ -210,6 +211,9 @@ describe('ClearPathAI — Work Page', () => {
       const listbox = await $('[role="listbox"]')
       const hasListbox = await listbox.isExisting()
 
+      // Capture the autocomplete dropdown while it's visible
+      if (hasListbox) await captureScreenshot('work/slash-autocomplete')
+
       await setInputValue(selector, '')
       await browser.pause(300)
 
@@ -273,6 +277,8 @@ describe('ClearPathAI — Work Page', () => {
         if (await btn.isExisting()) {
           await btn.click()
           await browser.pause(300)
+          // Capture each mode's active state
+          await captureScreenshot(`work/mode-${label.toLowerCase()}`)
           const root = await $('#root')
           expect(await root.isExisting()).toBe(true)
         }

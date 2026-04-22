@@ -49,6 +49,11 @@ yarn-error.log*
 # Testing
 coverage/
 
+# Generated E2E screenshots (baseline is committed via Git LFS; these are generated)
+e2e/screenshots/actual/
+e2e/screenshots/failures/
+e2e/screenshots/diff/
+
 # Extension build artifacts
 dist-extensions/
 *.clear.ext

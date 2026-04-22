@@ -22,6 +22,7 @@ import {
   invokeIPC,
   ELEMENT_TIMEOUT,
 } from './helpers/app.js'
+import { captureScreenshot } from './helpers/screenshots.js'
 
 describe('ClearPathAI — Configure Page', () => {
   before(async () => {
@@ -273,6 +274,9 @@ describe('ClearPathAI — Configure Page', () => {
       })
       await browser.pause(300)
 
+      // Capture font-scale state (label now shows 120%)
+      await captureScreenshot('configure/accessibility-font-scale-120')
+
       // The label should show 120%
       const html = await getRootHTML()
       expect(html).toContain('120%')
@@ -306,6 +310,9 @@ describe('ClearPathAI — Configure Page', () => {
       await clickToggle('a11y-high-contrast')
       const after = await getToggleState('a11y-high-contrast')
       expect(after).toBe(!initial)
+
+      // Capture high-contrast toggled-on state
+      await captureScreenshot('configure/accessibility-high-contrast-on')
 
       // Verify IPC persistence
       const result = await invokeIPC('accessibility:get') as Record<string, unknown>
@@ -351,6 +358,9 @@ describe('ClearPathAI — Configure Page', () => {
       // Click Reset to Defaults
       await clickButton('Reset')
       await browser.pause(500)
+
+      // Capture post-reset state (all controls back to defaults)
+      await captureScreenshot('configure/accessibility-after-reset')
 
       // Verify IPC state is reset
       const result = await invokeIPC('accessibility:get') as Record<string, unknown>

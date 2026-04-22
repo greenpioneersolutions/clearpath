@@ -17,6 +17,7 @@ import {
   clickButton,
   ELEMENT_TIMEOUT,
 } from './helpers/app.js'
+import { captureScreenshot } from './helpers/screenshots.js'
 
 describe('ClearPathAI — White Label Branding', () => {
   before(async () => {
@@ -39,7 +40,7 @@ describe('ClearPathAI — White Label Branding', () => {
     })
 
     it('can click through all section tabs without crash', async () => {
-      const tabs = ['Identity', 'Brand Colors', 'Surfaces']
+      const tabs = ['Identity', 'Brand Colors', 'UI Colors', 'Surfaces & Mode', 'Preview']
       for (const label of tabs) {
         const btn = await $(`//button[contains(., '${label}')]`)
         if (await btn.isExisting()) {
@@ -61,6 +62,7 @@ describe('ClearPathAI — White Label Branding', () => {
       if (await btn.isExisting()) {
         await btn.click()
         await browser.pause(300)
+        await captureScreenshot('white-label/identity')
       }
     })
 
@@ -98,6 +100,7 @@ describe('ClearPathAI — White Label Branding', () => {
       if (await btn.isExisting()) {
         await btn.click()
         await browser.pause(300)
+        await captureScreenshot('white-label/brand-colors')
       }
     })
 
@@ -125,6 +128,8 @@ describe('ClearPathAI — White Label Branding', () => {
       if (await presetsBtn.isExisting()) {
         await presetsBtn.click()
         await browser.pause(300)
+        // Capture the theme presets gallery with the Reset button visible
+        await captureScreenshot('white-label/theme-presets')
       }
 
       const html = await getRootHTML()
