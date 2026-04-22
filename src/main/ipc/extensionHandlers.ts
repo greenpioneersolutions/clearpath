@@ -11,6 +11,7 @@ import type { ExtensionMainLoader } from '../extensions/ExtensionMainLoader'
 import type { ExtensionStoreFactory } from '../extensions/ExtensionStore'
 import type { NotificationManager } from '../notifications/NotificationManager'
 import type { ExtensionPermission } from '../extensions/types'
+import { getSystemFetch } from '../utils/electronFetch'
 
 /**
  * IPC handlers for the extension system.
@@ -400,6 +401,49 @@ export function registerExtensionHandlers(
       event.returnValue = { success: false, data: [] }
     }
   })
+
+  // ── HTTP fetch proxy (for extensions calling sdk.http.fetch) ─────────────
+
+  ipcMain.handle(
+    'extension:http-fetch',
+    async (_e, args: { extensionId: string; url: string; method?: string; headers?: Record<string, string>; body?: string }) => {
+      try {
+        if (!registry.hasPermission(args.extensionId, 'http:fetch' as ExtensionPermission)) {
+          return { success: false, error: 'http:fetch permission not granted' }
+        }
+
+        const ext = registry.get(args.extensionId)
+        const allowedDomains = ext?.manifest.allowedDomains ?? []
+
+        let hostname: string
+        try {
+          hostname = new URL(args.url).hostname
+        } catch {
+          return { success: false, error: 'Invalid URL' }
+        }
+
+        if (!allowedDomains.includes(hostname)) {
+          return { success: false, error: `Domain "${hostname}" is not in allowedDomains for this extension` }
+        }
+
+        const fetchFn = getSystemFetch()
+        const response = await fetchFn(args.url, {
+          method: args.method ?? 'GET',
+          headers: args.headers,
+          body: args.body,
+        })
+
+        const body = await response.text()
+        const headers: Record<string, string> = {}
+        response.headers.forEach((value: string, key: string) => { headers[key] = value })
+
+        return { success: true, data: { status: response.status, headers, body } }
+      } catch (err) {
+        log.error('[ext-handlers] http-fetch failed for "%s": %s', args.extensionId, err)
+        return { success: false, error: String(err) }
+      }
+    },
+  )
 
   // ── Error recording (from renderer when iframe errors are caught) ─────────
 

@@ -163,8 +163,8 @@ export function GitHubTab(): React.ReactElement {
             <tbody>
               {repos.slice(0, 20).map((repo: unknown, i) => {
                 const r = repo as Record<string, unknown>
-                const owner = r.owner as string ?? ''
-                const name = r.name as string ?? ''
+                const fullName = (r.fullName as string) || ''
+                const [owner = '', name = ''] = fullName.split('/')
                 return (
                   <tr key={i}>
                     <td style={{ ...tdStyle, fontSize: '12px' }}>

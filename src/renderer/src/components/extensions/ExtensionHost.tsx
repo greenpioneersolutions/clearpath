@@ -12,6 +12,7 @@ const EVENT_PERMISSION_MAP: Record<string, string> = {
   'slot:data-changed': '',   // no permission needed — it's slot context
   'theme-changed': '',       // no permission needed — theme is public
   'notification:emitted': '', // fired back to the extension that called notifications.emit
+  'feature-flags-changed': 'feature-flags:read',
 }
 
 interface ExtensionHostProps {
@@ -341,9 +342,18 @@ export default function ExtensionHost({ extension, className, slotData }: Extens
         }
 
         // ── Theme ───────────────────────────────────────────────────────
-        case 'theme.get':
-          result = { primary: '#5B4FC4', sidebar: '#1e1b4b', accent: '#1D9E75', isDark: true }
+        case 'theme.get': {
+          const branding = await window.electronAPI.invoke('branding:get') as {
+            colorPrimary: string; colorSidebarBg: string; colorAccent: string; colorMode: string
+          }
+          result = {
+            primary: branding.colorPrimary,
+            sidebar: branding.colorSidebarBg,
+            accent: branding.colorAccent,
+            isDark: branding.colorMode !== 'light',
+          }
           break
+        }
 
         // ── Navigation ──────────────────────────────────────────────────
         case 'navigate':
@@ -361,9 +371,14 @@ export default function ExtensionHost({ extension, className, slotData }: Extens
           break
 
         // ── HTTP fetch ──────────────────────────────────────────────────
-        case 'http.fetch':
-          result = { success: false, error: 'HTTP fetch not available in renderer context' }
+        case 'http.fetch': {
+          const params = request.params as { url: string; method?: string; headers?: Record<string, string>; body?: string }
+          result = await window.electronAPI.invoke('extension:http-fetch', {
+            extensionId: extId,
+            ...params,
+          })
           break
+        }
 
         // ── Events ──────────────────────────────────────────────────────
         case 'events.subscribe': {

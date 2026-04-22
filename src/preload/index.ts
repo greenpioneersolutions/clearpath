@@ -219,7 +219,7 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   'extension:check-requirements',
   'extension:storage-get', 'extension:storage-set', 'extension:storage-delete',
   'extension:storage-keys', 'extension:storage-quota',
-  'extension:notify', 'extension:record-error',
+  'extension:notify', 'extension:record-error', 'extension:http-fetch',
 ])
 
 // ── Dynamic Extension Channels ─────────────────────────────────────────────────

@@ -37,7 +37,12 @@ export function FeatureFlagsTab(): React.ReactElement {
 
   useEffect(() => {
     refresh()
-  }, [refresh])
+    // Subscribe to external flag changes (e.g. from the main app's Settings page)
+    const unsub = sdk.events.on('feature-flags-changed', (data) => {
+      setFlags(data as Record<string, boolean>)
+    })
+    return unsub
+  }, [refresh, sdk])
 
   const handleToggle = async (key: string, currentValue: boolean) => {
     try {
