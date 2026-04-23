@@ -5,9 +5,12 @@
  * Runs only e2e/screenshot-crawl.spec.ts — excluded from the default
  * wdio.conf.ts run so the visual crawl doesn't slow down functional tests.
  *
+ * Visual regression is handled by @wdio/visual-service, which does pixel-level
+ * comparison against committed baselines (e2e/screenshots/baseline/).
+ *
  * Usage:
- *   npm run e2e:screenshots          — write to e2e/screenshots/baseline/
- *   npm run e2e:screenshots:ci       — write to e2e/screenshots/actual/ (CI)
+ *   npm run e2e:screenshots          — compare against baselines (auto-creates missing)
+ *   npm run e2e:screenshots:update   — force-update all baselines with current UI
  */
 
 import type { Options } from '@wdio/types'
@@ -47,7 +50,28 @@ export const config: Options.Testrunner = {
   connectionRetryTimeout: 120000,
   connectionRetryCount: 3,
 
-  services: ['electron'],
+  services: [
+    'electron',
+    [
+      'visual',
+      {
+        // Baseline images — committed to Git LFS, compared on every run
+        baselineFolder: path.join(__dirname, 'e2e/screenshots/baseline'),
+        // Actual + diff images — ephemeral, gitignored, uploaded as CI artifacts
+        screenshotPath: path.join(__dirname, '.tmp/visual'),
+        // Use the raw tag name as the filename so naming matches existing baselines.
+        // Without this the service appends browser/resolution: home--initial-electron-1280x800-dpr-1
+        formatImageName: '{tag}',
+        // Auto-create a baseline when none exists for a given tag so the first
+        // run on a new page doesn't fail — it just saves the initial baseline.
+        autoSaveBaseline: true,
+        // Save actual screenshots on every run (even when they match) so CI
+        // artifacts always contain the full set for manual inspection.
+        alwaysSaveActualImage: true,
+      },
+    ],
+  ],
+
   framework: 'mocha',
   reporters: ['spec'],
 

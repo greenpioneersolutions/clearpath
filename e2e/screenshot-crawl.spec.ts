@@ -1,47 +1,74 @@
+/// <reference types="@wdio/globals/types" />
+/// <reference types="@wdio/visual-service" />
+/// <reference types="mocha" />
+
 /**
  * e2e/screenshot-crawl.spec.ts
  *
- * Visual coverage spec — crawls every page and tab in the app and captures
- * a screenshot at each rendered state. This is NOT a functional test; it
- * exists to build and maintain a baseline image set for visual regression
- * comparisons and to surface obvious rendering regressions on the spot.
+ * Visual coverage spec — crawls every page and tab in the app and performs a
+ * pixel-level comparison against committed baseline images via @wdio/visual-service.
  *
- * Assertions are intentionally minimal: we only verify that the page has
- * rendered some content before snapping. Pixel-level diffing happens in a
- * separate visual regression stage that compares these images against the
- * committed baseline in e2e/screenshots/baseline/.
+ * On first run (no baseline) the service auto-saves the screenshot as the
+ * baseline (autoSaveBaseline: true) so the test always passes.  On subsequent
+ * runs it compares pixel-by-pixel; the test fails only when the mismatch
+ * percentage exceeds MISMATCH_THRESHOLD.
  *
- * Run in isolation:
+ * To update baselines after an intentional UI change:
+ *   npm run e2e:screenshots:update
+ *
+ * Run in isolation (compare mode):
  *   npm run e2e:screenshots
  */
 
 import { waitForAppReady, navigateSidebarTo, invokeIPC, ELEMENT_TIMEOUT } from './helpers/app.js'
-import { captureScreenshot } from './helpers/screenshots.js'
+
+// ── Threshold ─────────────────────────────────────────────────────────────────
+
+/**
+ * Maximum allowed pixel-mismatch percentage before a screenshot test fails.
+ * 2 % accommodates minor sub-pixel / anti-aliasing differences across
+ * platforms and GPU drivers without masking real regressions.
+ */
+const MISMATCH_THRESHOLD = 2
 
 // ── Data tables ──────────────────────────────────────────────────────────────
 
-interface SidebarPage {
+/**
+ * Per-entry visual options that override the global MISMATCH_THRESHOLD.
+ * Use when a view has known dynamic content (timestamps, live counters, activity
+ * feeds) that will legitimately differ between runs but shouldn't cause failures.
+ *
+ * tolerance    — max allowed mismatch %; defaults to MISMATCH_THRESHOLD (2 %).
+ * blockOut     — pixel rectangles masked before comparison (e.g. a live clock).
+ *                Coordinates are in CSS pixels relative to the screenshot top-left.
+ */
+interface VisualOptions {
+  tolerance?: number
+  blockOut?: Array<{ x: number; y: number; width: number; height: number }>
+}
+
+interface SidebarPage extends VisualOptions {
   nav: string
   screenshot: string
   optional?: boolean  // true for extension-contributed routes that may not always be installed
 }
 
-interface WorkTab {
+interface WorkTab extends VisualOptions {
   key: string
   screenshot: string
 }
 
-interface WorkPanel {
+interface WorkPanel extends VisualOptions {
   key: string
   screenshot: string
 }
 
-interface InsightsTab {
+interface InsightsTab extends VisualOptions {
   label: string
   screenshot: string
 }
 
-interface ConfigureTab {
+interface ConfigureTab extends VisualOptions {
   key: string
   label: string
   screenshot: string
@@ -51,9 +78,9 @@ interface ConfigureTab {
  * Inner sub-tabs that live within a Configure sidenav section.
  * configureTab  — the Configure sidenav key (e.g. 'settings')
  * subLabel      — visible button text of the inner sub-tab
- * screenshot    — output filename (flat, under SCREENSHOT_DIR)
+ * screenshot    — output filename (flat, under baselineFolder)
  */
-interface ConfigureSubTab {
+interface ConfigureSubTab extends VisualOptions {
   configureTab: string
   subLabel: string
   screenshot: string
@@ -161,7 +188,8 @@ const CONFIGURE_SUB_TABS: ConfigureSubTab[] = [
   { configureTab: 'team', subLabel: 'Shared Folder', screenshot: 'configure--tab-team--sub-sync' },
   { configureTab: 'team', subLabel: 'Setup Wizard',  screenshot: 'configure--tab-team--sub-wizard' },
   { configureTab: 'team', subLabel: 'Marketplace',   screenshot: 'configure--tab-team--sub-marketplace' },
-  { configureTab: 'team', subLabel: 'Activity',      screenshot: 'configure--tab-team--sub-activity' },
+  // Activity feed shows relative timestamps ("X minutes ago") that change between runs
+  { configureTab: 'team', subLabel: 'Activity', screenshot: 'configure--tab-team--sub-activity', tolerance: 6 },
 
   // ── White Label / Branding (6 inner sections) ───────────────────────────
   // 'Theme Presets' is the default — captured by configure--tab-branding above.
@@ -175,6 +203,35 @@ const CONFIGURE_SUB_TABS: ConfigureSubTab[] = [
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /**
+ * Normalise the return value of browser.checkScreen() to a plain mismatch %.
+ * The visual service returns `Result` which is a union of number, ImageCompareResult,
+ * or MultiResult.  For single-screen checks we always get a number or an object
+ * with a `misMatchPercentage` field.
+ */
+function toMismatchPct(result: unknown): number {
+  if (typeof result === 'number') return result
+  if (result !== null && typeof result === 'object' && 'misMatchPercentage' in result) {
+    return (result as { misMatchPercentage: number }).misMatchPercentage
+  }
+  return 0
+}
+
+/**
+ * Capture and compare a screenshot against its baseline.
+ * - If no baseline exists: auto-saves one (test always passes on first run).
+ * - If a baseline exists: compares pixel-by-pixel and fails if mismatch > threshold.
+ * - With --update-visual-baseline flag: overwrites the baseline unconditionally.
+ *
+ * @param name      Screenshot tag (= baseline filename without extension)
+ * @param options   Per-shot visual options: tolerance override, blockOutAreas, etc.
+ */
+async function checkScreenshot(name: string, options: VisualOptions = {}): Promise<void> {
+  const { tolerance = MISMATCH_THRESHOLD, blockOut } = options
+  const result = await browser.checkScreen(name, blockOut ? { blockOut } : {})
+  expect(toMismatchPct(result)).toBeLessThanOrEqual(tolerance)
+}
+
+/**
  * Attempt to scroll the primary scrollable container one viewport-height down
  * and capture a second screenshot with a `--scrolled` suffix.  Scrolls back
  * to the top afterwards.  Best-effort: any error is caught and ignored so it
@@ -185,6 +242,7 @@ const CONFIGURE_SUB_TABS: ConfigureSubTab[] = [
  * actually has hidden content.
  */
 async function tryScrollCapture(baseName: string): Promise<void> {
+  let capturedPct: number | null = null
   try {
     const scrolled = await browser.execute(() => {
       // 1. Try document-level scroll
@@ -203,7 +261,7 @@ async function tryScrollCapture(baseName: string): Promise<void> {
 
     if (scrolled) {
       await browser.pause(300)
-      await captureScreenshot(`${baseName}--scrolled`)
+      capturedPct = toMismatchPct(await browser.checkScreen(`${baseName}--scrolled`))
       // Restore scroll position so subsequent tests start clean
       await browser.execute(() => {
         document.documentElement.scrollTo(0, 0)
@@ -213,6 +271,10 @@ async function tryScrollCapture(baseName: string): Promise<void> {
     }
   } catch {
     // Best-effort — scroll failures never block the test
+  }
+  // Assert outside try/catch so a real mismatch still fails the test
+  if (capturedPct !== null) {
+    expect(capturedPct).toBeLessThanOrEqual(MISMATCH_THRESHOLD)
   }
 }
 
@@ -265,7 +327,7 @@ describe('ClearPathAI — Screenshot Crawl', () => {
 
         const root = await $('#root')
         expect(await root.isExisting()).toBe(true)
-        await captureScreenshot(page.screenshot)
+        await checkScreenshot(page.screenshot)
       })
     }
   })
@@ -289,7 +351,7 @@ describe('ClearPathAI — Screenshot Crawl', () => {
 
         const root = await $('#root')
         expect(await root.isExisting()).toBe(true)
-        await captureScreenshot(tab.screenshot)
+        await checkScreenshot(tab.screenshot)
       })
     }
   })
@@ -311,7 +373,7 @@ describe('ClearPathAI — Screenshot Crawl', () => {
 
         const root = await $('#root')
         expect(await root.isExisting()).toBe(true)
-        await captureScreenshot(panel.screenshot)
+        await checkScreenshot(panel.screenshot)
       })
     }
   })
@@ -341,7 +403,7 @@ describe('ClearPathAI — Screenshot Crawl', () => {
 
         const root = await $('#root')
         expect(await root.isExisting()).toBe(true)
-        await captureScreenshot(tab.screenshot)
+        await checkScreenshot(tab.screenshot)
       })
     }
   })
@@ -370,7 +432,7 @@ describe('ClearPathAI — Screenshot Crawl', () => {
 
         const root = await $('#root')
         expect(await root.isExisting()).toBe(true)
-        await captureScreenshot(tab.screenshot)
+        await checkScreenshot(tab.screenshot)
       })
     }
   })
@@ -432,7 +494,7 @@ describe('ClearPathAI — Screenshot Crawl', () => {
         const root = await $('#root')
         expect(await root.isExisting()).toBe(true)
 
-        await captureScreenshot(sub.screenshot)
+        await checkScreenshot(sub.screenshot, sub)
         // Capture a second screenshot if the content overflows the viewport
         await tryScrollCapture(sub.screenshot)
       })
@@ -499,7 +561,7 @@ describe('ClearPathAI — Screenshot Crawl', () => {
         const root = await $('#root')
         expect(await root.isExisting()).toBe(true)
 
-        await captureScreenshot(sub.screenshot)
+        await checkScreenshot(sub.screenshot)
         await tryScrollCapture(sub.screenshot)
       })
     }

@@ -9,9 +9,9 @@
     "resolveJsonModule": true,
     "outDir": "out/e2e",
     "baseUrl": ".",
-    "types": ["@wdio/globals/types", "node", "mocha"],
+    "types": ["@wdio/globals/types", "@wdio/visual-service", "node", "mocha"],
     "skipLibCheck": true
   },
-  "include": ["e2e/**/*.ts", "wdio.conf.ts"],
+  "include": ["e2e/**/*.ts", "wdio.conf.ts", "wdio.screenshots.conf.ts"],
   "exclude": ["node_modules", "out", "src"]
 }

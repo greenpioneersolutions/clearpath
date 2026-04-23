@@ -84,45 +84,19 @@ jobs:
           echo "DISPLAY=:99" >> $GITHUB_ENV
           sleep 2
 
-      - name: Capture screenshots (actual)
-        run: SCREENSHOT_DIR=e2e/screenshots/actual npx wdio run wdio.screenshots.conf.ts
+      - name: Run visual regression tests
+        run: npx wdio run wdio.screenshots.conf.ts
         env:
           DISPLAY: ':99'
-          SCREENSHOT_DIR: e2e/screenshots/actual
 
-      - name: Compare actual screenshots against baselines
-        id: compare
-        run: |
-          changed=false
-          shopt -s nullglob
-          mkdir -p e2e/screenshots/baseline
-          for actual in e2e/screenshots/actual/*.png; do
-            name=$(basename "$actual")
-            baseline="e2e/screenshots/baseline/$name"
-            if [ ! -f "$baseline" ] || ! cmp -s "$actual" "$baseline"; then
-              echo "Changed: $name"
-              changed=true
-            fi
-          done
-          echo "changed=$changed" >> "$GITHUB_OUTPUT"
-
-      - name: Update baselines with new screenshots
-        if: steps.compare.outputs.changed == 'true'
-        run: |
-          cp e2e/screenshots/actual/*.png e2e/screenshots/baseline/
-          git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git lfs install --local
-          git add e2e/screenshots/baseline/
-          git diff --cached --quiet || git commit -m "chore: update screenshot baselines [skip ci]"
-          git lfs push origin HEAD
-          git push
-
-      - name: Upload actual screenshots as artifact
+      - name: Upload screenshots artifact
         if: always()
         uses: actions/upload-artifact@v5
         with:
-          name: screenshots-actual
-          path: e2e/screenshots/actual/
+          name: screenshots
+          path: |
+            .tmp/visual/actual/
+            .tmp/visual/diff/
+            e2e/screenshots/baseline/
           if-no-files-found: warn
           retention-days: 30

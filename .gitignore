@@ -63,3 +63,6 @@ com.clearpathai.sdk-example-v1.0.0.clear.ext
 # Misc
 .cache/
 .temp/
+
+# Visual regression — actual + diff images generated during test runs (ephemeral)
+.tmp/
