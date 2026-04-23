@@ -33,7 +33,11 @@ export const config: Options.Testrunner = {
       browserName: 'electron',
       'wdio:electronServiceOptions': {
         appEntryPoint: path.join(__dirname, 'out/main/index.js'),
-        appArgs: [],
+        // Force device pixel ratio to 1 so screenshots are always captured at
+        // 1280×800 logical pixels regardless of the host display (macOS Retina
+        // = DPR 2 by default; Linux CI Xvfb = DPR 1). Without this, Mac
+        // baselines are 2560×1600 and CI actuals are 1280×800 → 50%+ mismatch.
+        appArgs: ['--force-device-scale-factor=1'],
       },
       // Required for CI environments (Ubuntu/Docker) where Chromium's sandbox
       // is unavailable. Without --no-sandbox the Electron process exits immediately.
@@ -68,6 +72,12 @@ export const config: Options.Testrunner = {
         // Save actual screenshots on every run (even when they match) so CI
         // artifacts always contain the full set for manual inspection.
         alwaysSaveActualImage: true,
+        // Ignore sub-pixel anti-aliasing differences that occur when comparing
+        // macOS (CoreText) vs Linux (FreeType) font rendering. Real layout and
+        // colour regressions still register as clearly distinct mismatch.
+        compareOptions: {
+          ignoreAntialiasing: true,
+        },
       },
     ],
   ],
