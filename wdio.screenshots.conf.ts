@@ -57,14 +57,6 @@ export const config: Options.Testrunner = {
     timeout: 120000,
   },
 
-  after: async function () {
-    try {
-      await browser.execute(() => { window.close() })
-    } catch {
-      // Browser session may already be gone
-    }
-  },
-
   onComplete: async function () {
     try {
       const { execSync } = await import('child_process')
