@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import type { SessionInfo } from '../types/ipc'
 import type { SubAgentInfo } from '../types/subagent'
+import { providerOf } from '../../../shared/backends'
 import ProcessCard from '../components/subagent/ProcessCard'
 import ProcessOutputViewer from '../components/subagent/ProcessOutputViewer'
 import DelegateTaskForm from '../components/subagent/DelegateTaskForm'
@@ -35,7 +36,7 @@ export default function SubAgents(): JSX.Element {
   useEffect(() => {
     void loadAgents()
     void (window.electronAPI.invoke('cli:list-sessions') as Promise<SessionInfo[]>).then((s) => {
-      setCopilotSessions(s.filter((x) => x.cli === 'copilot'))
+      setCopilotSessions(s.filter((x) => providerOf(x.cli) === 'copilot'))
     })
   }, [loadAgents])
 

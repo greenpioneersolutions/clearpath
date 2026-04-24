@@ -4,6 +4,8 @@ import OutputDisplay, { type OutputMessage } from '../components/OutputDisplay'
 import CommandInput from '../components/CommandInput'
 import ModeIndicator, { type SessionMode, MODE_CYCLE } from '../components/ModeIndicator'
 import NewSessionModal from '../components/NewSessionModal'
+import type { BackendId, BackendProvider } from '../../../shared/backends'
+import { providerOf } from '../../../shared/backends'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -28,12 +30,12 @@ function formatRelativeTime(ts: number): string {
   return 'just now'
 }
 
-function cliBadge(cli: 'copilot' | 'claude'): string {
-  return cli === 'copilot' ? 'Copilot' : 'Claude'
+function cliBadge(cli: BackendId): string {
+  return providerOf(cli) === 'copilot' ? 'Copilot' : 'Claude'
 }
 
-function cliBadgeColor(cli: 'copilot' | 'claude'): string {
-  return cli === 'copilot'
+function cliBadgeColor(cli: BackendId): string {
+  return providerOf(cli) === 'copilot'
     ? 'bg-purple-900/50 text-purple-300 border border-purple-700/50'
     : 'bg-orange-900/50 text-orange-300 border border-orange-700/50'
 }
@@ -196,7 +198,7 @@ export default function Sessions(): JSX.Element {
   // ── Start a new session ───────────────────────────────────────────────────
   const startSession = useCallback(
     async (opts: {
-      cli: 'copilot' | 'claude'
+      cli: BackendId
       name?: string
       workingDirectory?: string
       initialPrompt?: string
@@ -562,7 +564,7 @@ function SessionListItem({
 }: {
   sessionId: string
   name: string
-  cli: 'copilot' | 'claude'
+  cli: BackendId
   timestamp: number
   status: 'running' | 'stopped'
   subtitle?: string

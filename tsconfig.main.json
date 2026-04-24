@@ -7,10 +7,15 @@
     "strict": true,
     "skipLibCheck": true,
     "outDir": "out/main",
-    "rootDir": "src/main",
+    // `rootDirs` (plural) virtually merges the listed directories. We keep
+    // `rootDir` pointing at `src/main` but allow type-only files from
+    // `src/shared` to be imported via relative paths — both main and renderer
+    // share the same `src/shared/clearmemory/types.ts` this way.
+    "rootDir": "src",
+    "rootDirs": ["src/main", "src/shared"],
     "resolveJsonModule": true,
     "esModuleInterop": true,
     "types": ["vitest/globals"]
   },
-  "include": ["src/main/**/*"]
+  "include": ["src/main/**/*", "src/shared/**/*"]
 }

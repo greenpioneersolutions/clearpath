@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import type { PromptTemplate } from '../types/template'
+import type { BackendId } from '../../../shared/backends'
+import { providerOf } from '../../../shared/backends'
 
 // ── Types (mirror backend) ──────────────────────────────────────────────────
 
@@ -10,7 +12,7 @@ interface JobExecution {
 
 interface ScheduledJob {
   id: string; name: string; description: string; prompt: string; cronExpression: string
-  cli: 'copilot' | 'claude'; model?: string; permissionMode?: string; workingDirectory?: string
+  cli: BackendId; model?: string; permissionMode?: string; workingDirectory?: string
   flags: Record<string, string | boolean>; enabled: boolean; maxBudget?: number; maxTurns?: number
   createdAt: number; lastRunAt?: number; executions: JobExecution[]
 }
@@ -36,7 +38,7 @@ function cronToHuman(expr: string): string {
 // ── Component ───────────────────────────────────────────────────────────────
 
 interface Props {
-  cli: 'copilot' | 'claude'
+  cli: BackendId
 }
 
 export default function SchedulePanel({ cli }: Props): JSX.Element {
@@ -50,9 +52,12 @@ export default function SchedulePanel({ cli }: Props): JSX.Element {
   const [message, setMessage] = useState('')
 
   // Form state
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<{
+    name: string; description: string; prompt: string; cronExpression: string
+    cli: BackendId; model: string; maxBudget: string; maxTurns: string
+  }>({
     name: '', description: '', prompt: '', cronExpression: '0 9 * * *',
-    cli: cli as 'copilot' | 'claude', model: '', maxBudget: '', maxTurns: '',
+    cli, model: '', maxBudget: '', maxTurns: '',
   })
 
   const flash = (msg: string) => { setMessage(msg); setTimeout(() => setMessage(''), 2500) }
@@ -125,7 +130,7 @@ export default function SchedulePanel({ cli }: Props): JSX.Element {
       name: `Scheduled: ${t.name}`,
       description: t.description,
       prompt: t.body,
-      cli: t.recommendedModel?.includes('copilot') ? 'copilot' : cli,
+      cli: t.recommendedModel?.includes('copilot') ? 'copilot-cli' : cli,
     })
     setView('create-from-template')
   }
@@ -207,7 +212,7 @@ export default function SchedulePanel({ cli }: Props): JSX.Element {
                         <button onClick={() => { setDetailJob(job); setView('detail') }} className="flex-1 text-left min-w-0">
                           <div className="flex items-center gap-2">
                             <span className="text-gray-200 text-sm font-medium truncate">{job.name}</span>
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded ${job.cli === 'copilot' ? 'bg-purple-900/40 text-purple-300' : 'bg-orange-900/40 text-orange-300'}`}>{job.cli}</span>
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded ${providerOf(job.cli) === 'copilot' ? 'bg-purple-900/40 text-purple-300' : 'bg-orange-900/40 text-orange-300'}`}>{job.cli}</span>
                           </div>
                           <span className="text-gray-600 text-xs">{cronToHuman(job.cronExpression)}</span>
                         </button>
@@ -331,10 +336,10 @@ export default function SchedulePanel({ cli }: Props): JSX.Element {
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-400 mb-1.5">CLI</label>
-                  <select value={form.cli} onChange={(e) => setForm({ ...form, cli: e.target.value as 'copilot' | 'claude' })}
+                  <select value={form.cli} onChange={(e) => setForm({ ...form, cli: e.target.value as BackendId })}
                     className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-indigo-500">
-                    <option value="copilot">Copilot</option>
-                    <option value="claude">Claude Code</option>
+                    <option value="copilot-cli">Copilot CLI</option>
+                    <option value="claude-cli">Claude CLI</option>
                   </select>
                 </div>
               </div>

@@ -91,6 +91,10 @@ All user data is stored via electron-store in `~/Library/Application Support/cle
 | `clear-path-notifications.json` | Notification history, webhooks, preferences (max 500) |
 | `clear-path-cost.json` | Cost records, budget config, fired alerts (max 10k records) |
 | `clear-path-history.json` | Session history metadata (max 100) |
+| `clear-path-plugins.json` | CLI plugin custom paths and per-CLI enable lists |
+| `clear-path-mcps.json` | MCP registry entries (source of truth for MCP servers) |
+
+MCP secrets (API tokens, DB URLs) are stored separately in `<userData>/mcp-secrets.json`, encrypted via Electron `safeStorage` when available.
 
 Knowledge base files are stored in the project directory at `.clear-path/knowledge-base/`.
 
@@ -442,7 +446,11 @@ Knowledge base files are stored in the project directory at `.clear-path/knowled
 ### Slice 3: Authentication Flow
 - CLI installation detection via `which` / shell resolution (`src/main/auth/AuthManager.ts`)
 - Auth status checking with TTL-based caching (5 min auth, 10 min install)
-- Login modal with real-time output streaming
+- **One-click install** for both CLIs via `npm install -g` spawned from main (`installCopilot()`, `installClaude()` in AuthManager), streamed to renderer through `auth:install-output` / `auth:install-complete` IPC events
+- **Managed Node.js install** when Node < 22 detected: `winget install OpenJS.NodeJS.LTS` on Windows, official `.pkg` download+`open` on macOS (`installNodeManaged()`); falls back to opening `nodejs.org`
+- Error classification for install failures: `EACCES` / `NETWORK` / `NODE_MISSING` / `UNKNOWN` with friendly UI hints (`src/renderer/src/types/install.ts`)
+- Login modal with real-time output streaming AND browser auto-open: URL detection via `src/main/auth/urlDetector.ts` triggers `shell.openExternal()` once per session, renderer shows friendly "We opened your browser" panel with parsed device code
+- `AuthStatusCard` hides install + connect CTAs entirely when CLI is already installed + authenticated
 - Auth state stored in electron-store
 - Support for GH_TOKEN / GITHUB_TOKEN / ANTHROPIC_API_KEY env vars
 - Config file detection (~/.copilot/config.json, ~/.claude/.credentials.json)
@@ -482,7 +490,7 @@ Knowledge base files are stored in the project directory at `.clear-path/knowled
 - Visual toggles for tool permissions (`src/renderer/src/components/tools/`)
 - Permission mode selector (default, plan, acceptEdits, auto, yolo for Copilot)
 - --allowedTools / --disallowedTools configuration
-- MCP server management UI (add, remove, configure)
+- MCP server management moved to Slice 26 (Connections page)
 - Permission request handler (intercept CLI permission prompts with Allow/Deny)
 - Flag preview generation for CLI command export
 
@@ -548,6 +556,7 @@ Knowledge base files are stored in the project directory at `.clear-path/knowled
 
 ### Slice 15: Onboarding & Learning
 - First-run wizard for new users (`src/renderer/src/components/onboarding/`)
+- CLI setup step uses **Install Now** buttons (opens `InstallModal`) in place of manual `npm install -g` instructions — chains install → login → authed without the user ever touching a terminal
 - Guided tasks with step-by-step instructions
 - Skill progression tracking
 - Training tooltips and contextual help
@@ -611,6 +620,49 @@ Knowledge base files are stored in the project directory at `.clear-path/knowled
 - Speech-to-text input
 - Voice command mapping to app actions
 - Audio notifications
+
+### Slice 25: CLI Plugins Management
+- `PluginManager` service auto-discovers plugins from each CLI's default install dir (`src/main/plugins/PluginManager.ts`)
+  - Copilot: `~/.copilot/installed-plugins/<MARKETPLACE>/<PLUGIN>/plugin.json` (honors `COPILOT_HOME`)
+  - Claude: `~/.claude/plugins/<PLUGIN>/.claude-plugin/plugin.json` (honors `CLAUDE_CODE_PLUGIN_CACHE_DIR`)
+- Manifest formats differ per CLI; each plugin entry is locked to one CLI to avoid silent no-ops
+- Custom local plugin paths supported with `auto` / `copilot` / `claude` classification (auto prefers Copilot if both manifests exist)
+- Per-CLI enable/disable toggles persisted in `clear-path-plugins.json`
+- IPC handlers (`src/main/ipc/pluginHandlers.ts`): `plugins:list`, `plugins:rescan`, `plugins:add-custom`, `plugins:remove-custom`, `plugins:set-enabled`, `plugins:open-folder`
+- `CLIManager.startSession` and `spawnSubAgent` auto-inject `pluginDirs` from `pluginManager.getEnabledPaths(cli)` so every spawned session inherits the user's enabled plugins (caller-supplied `pluginDirs` always wins)
+- Both adapters loop `options.pluginDirs ?? []` and emit one `--plugin-dir <path>` per entry (Claude formally repeatable; Copilot accepts the same shape)
+- `PluginsManagement` page (`src/renderer/src/pages/PluginsManagement.tsx`) registered as Configure → Advanced → Plugins; two sections (Copilot, Claude), search, Rescan, Add Custom Path, per-row toggle, Open folder, Remove (custom only)
+- Out of scope: running install commands from inside the app, marketplace browser, plugin authoring — users install via `copilot plugin install` or `/plugin install` then click Rescan
+- Distinct from the in-app Extensions feature (`src/renderer/src/components/extensions/ExtensionManager.tsx`) which sandboxes UI add-ons in iframes
+
+### Slice 26: Connections & MCP Management
+- Dedicated `Connections` page with Catalog / Installed / Advanced tabs (`src/renderer/src/pages/Connections.tsx`)
+- Registry + sync architecture: ClearPath owns `clear-path-mcps.json` (source of truth); `McpSyncService` renders to `~/.copilot/mcp-config.json`, `~/.claude/mcp-config.json`, and project-level variants (`.github/copilot/mcp-config.json`, `.claude/mcp-config.json`)
+- Bundled curated catalog of 10 servers (filesystem, github, postgres, sqlite, slack, brave-search, puppeteer, fetch, google-drive, memory) at `src/main/mcp/catalog.json`
+- OS-keychain-backed secrets via `McpSecretsVault` (Electron `safeStorage`), stored at `<userData>/mcp-secrets.json`; falls back to `unsafeMode` plaintext persistence when `safeStorage.isEncryptionAvailable()` is false (e.g., Linux without libsecret)
+- Registry stores only `secretRefs` (env-var-name → vault-key pointers) — plaintext tokens never touch `clear-path-mcps.json`
+- IPC surface (`src/main/ipc/mcpHandlers.ts`): `mcp:registry-list`, `mcp:registry-add`, `mcp:registry-update`, `mcp:registry-remove`, `mcp:registry-toggle`, `mcp:catalog-list`, `mcp:secrets-get-meta`, `mcp:sync-now`, `mcp:test-server`
+- `mcp:test-server` spawns the MCP binary with a JSON-RPC `initialize` request on stdin, waits up to 5s for a valid response, reports success or stderr snippet, then SIGTERM/SIGKILLs the child
+- External-changes detection compares rendered file mtimes against the last sync; on window focus a banner lets the user adopt the external edits (re-import) or overwrite them (re-sync)
+- First-run `importExisting` walks the four native CLI paths and imports any pre-existing servers into the registry as `source: 'imported'` — idempotent, safe to re-run
+- `McpManager.tsx` under Tools & Permissions remains as a thin redirect card pointing to Connections until the Tools tab entry is removed in a follow-up sweep
+
+### Slice 27: ClearMemory Integration (opt-in, default OFF)
+- Integrates [Clear Memory](https://github.com/greenpioneersolutions/clearmemory) — local Rust memory engine (HTTP REST on 8080 + MCP on 9700) — as an opt-in cross-session memory store. Gated behind feature flag `showClearMemory` (default `false` in [FeatureFlagContext.tsx](src/renderer/src/contexts/FeatureFlagContext.tsx))
+- **Lifecycle owned by main process**: `ClearMemoryService` ([src/main/clearmemory/ClearMemoryService.ts](src/main/clearmemory/ClearMemoryService.ts)) — EventEmitter singleton, spawns `clearmemory serve --both --port 8080`, polls `/v1/health` every 500ms, auto-restarts up to 3× with 1s/3s/9s backoff, emits `state-change` / `init-progress` / `log` / `crashed` events. Binary resolved via [binaryResolver.ts](src/main/clearmemory/binaryResolver.ts) (bundled → PATH fallback → `missing` status)
+- **Upstream CLI quirks to remember** (verified against `main.rs`, do NOT invent flags):
+  - `serve` accepts ONLY `--http`, `--both`, `--port` — no `--mcp-port` (hardcoded to 9700) and no `--config-dir` (hardcoded to `~/.clearmemory/`)
+  - **No `config set` subcommand** — mutations happen via direct TOML write in [configFile.ts](src/main/clearmemory/configFile.ts) with round-trip preservation of unknown keys + comments + atomic `.tmp` + `rename`
+  - `reflect` is a placeholder upstream (prints `Reflect: <query>` or "Tier 2+ required"); UI is wired but synthesis improves when upstream lands it
+  - Streams have no `delete` or `rename` — UI shows "coming soon" tooltips
+  - `auth create` output is plain text with a `Raw:   <token>` line (NOT JSON); `extractTokenFromStdout` tolerates both
+- **UI surface** ([src/renderer/src/pages/ClearMemory.tsx](src/renderer/src/pages/ClearMemory.tsx) + [src/renderer/src/components/clearmemory/](src/renderer/src/components/clearmemory/)): 8 tabs — Browse · Tags · Streams · Import · Reflect · Status · Config · Backup — plus a page-header "+ New memory" button. `EnableGate` wraps every tab; flipping the flag triggers `clearmemory:enable` → `ensureInitialized(tier)` → `start()` and streams model-download progress
+- **IPC surface** ([src/main/ipc/clearMemoryHandlers.ts](src/main/ipc/clearMemoryHandlers.ts)) — 33 channels, every one real (no stubs). CRUD handlers return `Result<T>` envelope (`{ok:true, data}` or `{ok:false, error, state}`); service-not-ready short-circuits gracefully, never throws to the renderer. Namespace: `clearmemory:*`
+- **MCP auto-registration** ([mcpIntegration.ts](src/main/clearmemory/mcpIntegration.ts)): on enable, merges `clearmemory` entry into `~/.claude/mcp.json` and `~/.copilot/mcp-config.json` without clobbering other servers or top-level keys; on disable, removes only that entry. Atomic `.tmp` + `rename`; tolerant of corrupted JSON (rewrites from scratch)
+- **Security**: HTTP calls pinned to `127.0.0.1:8080`; bearer token lives only in main process; memory IDs validated (no `..`/`/`/`\0`/whitespace/>256 chars) AND URL-encoded before interpolation; import paths pass through `expandTilde` → `isSensitiveSystemPath` → `assertPathWithinRoots(getImportAllowedRoots())` (home / cwd / tmpdir). Restore requires typing "RESTORE"
+- **Shared types** at [src/shared/clearmemory/types.ts](src/shared/clearmemory/types.ts) — reachable from both main and renderer via `rootDirs` in `tsconfig.main.json` / `tsconfig.renderer.json`. Client helpers live at [src/renderer/src/lib/clearmemoryClient.ts](src/renderer/src/lib/clearmemoryClient.ts)
+- **Tests**: [ClearMemoryService.test.ts](src/main/clearmemory/ClearMemoryService.test.ts), [configFile.test.ts](src/main/clearmemory/configFile.test.ts), [mcpIntegration.test.ts](src/main/clearmemory/mcpIntegration.test.ts), [clearMemoryHandlers.test.ts](src/main/ipc/clearMemoryHandlers.test.ts) — 69 tests covering parsers, TOML round-trip, MCP merge-don't-clobber, service-not-ready envelopes, ID/path/format/stream validation, tilde expansion
+- **Binary bundling (Slice F)** — BLOCKED: upstream repo has 0 GitHub Releases. PATH fallback + `missing-binary` status banner + install CTA (`cargo install clearmemory`) cover today. When upstream publishes releases, drop in `scripts/fetch-clearmemory-binary.ts` (postinstall) and add `extraResources` to `package.json`'s `build` block
 
 ---
 

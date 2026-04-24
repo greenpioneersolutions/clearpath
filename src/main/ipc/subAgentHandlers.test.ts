@@ -108,7 +108,8 @@ describe('subAgentHandlers', () => {
       const handler = getHandler('subagent:spawn')
       const result = await handler(mockEvent, args)
 
-      expect(mockCLI.spawnSubAgent).toHaveBeenCalledWith(args)
+      // Handler migrates the legacy backend id before delegating.
+      expect(mockCLI.spawnSubAgent).toHaveBeenCalledWith({ ...args, cli: 'copilot-cli' })
       expect(result).toEqual({ id: 'sa-1', name: 'test', status: 'running' })
     })
 
@@ -175,7 +176,8 @@ describe('subAgentHandlers', () => {
       const handler = getHandler('subagent:spawn')
       await handler(mockEvent, args)
 
-      expect(mockCLI.spawnSubAgent).toHaveBeenCalledWith(args)
+      // Handler migrates the legacy backend id before delegating.
+      expect(mockCLI.spawnSubAgent).toHaveBeenCalledWith({ ...args, cli: 'claude-cli' })
     })
   })
 

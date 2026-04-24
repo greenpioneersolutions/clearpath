@@ -3,27 +3,22 @@ import type { AppSettings } from '../types/settings'
 import { DEFAULT_SETTINGS } from '../types/settings'
 import FlagBuilder from '../components/settings/FlagBuilder'
 import ModelSelector from '../components/settings/ModelSelector'
-import BudgetLimits from '../components/settings/BudgetLimits'
-import PluginManager from '../components/settings/PluginManager'
+import { DefaultBackendSelector } from '../components/settings/DefaultBackendSelector'
+import SessionLimits from '../components/settings/SessionLimits'
 import ConfigProfiles from '../components/settings/ConfigProfiles'
 import LaunchCommandPreview from '../components/settings/LaunchCommandPreview'
-import EnvVarsEditor from '../components/settings/EnvVarsEditor'
 import NotificationPreferences from '../components/notifications/NotificationPreferences'
-import WebhookManager from '../components/notifications/WebhookManager'
 import DataManagement from '../components/settings/DataManagement'
 import FeatureFlagSettings from '../components/settings/FeatureFlagSettings'
 
-type Tab = 'flags' | 'model' | 'budget' | 'plugins' | 'profiles' | 'env' | 'notifications' | 'webhooks' | 'data' | 'features'
+type Tab = 'flags' | 'model' | 'limits' | 'profiles' | 'notifications' | 'data' | 'features'
 
 const TABS: { key: Tab; label: string }[] = [
   { key: 'flags', label: 'CLI Flags' },
   { key: 'model', label: 'Model' },
-  { key: 'budget', label: 'Budget & Limits' },
-  { key: 'plugins', label: 'Plugins' },
+  { key: 'limits', label: 'Session Limits' },
   { key: 'profiles', label: 'Profiles' },
-  { key: 'env', label: 'Environment' },
   { key: 'notifications', label: 'Notifications' },
-  { key: 'webhooks', label: 'Webhooks' },
   { key: 'data', label: 'Data Management' },
   { key: 'features', label: 'Feature Flags' },
 ]
@@ -68,9 +63,12 @@ export default function Settings(): JSX.Element {
     setSettings(result)
   }
 
-  const setBudget = async (updates: Partial<Pick<AppSettings, 'maxBudgetUsd' | 'maxTurns' | 'verbose'>>) => {
+  const setLimits = async (updates: Partial<Pick<AppSettings, 'maxTurns' | 'verbose'>>) => {
+    // maxBudgetUsd is no longer surfaced in the UI; always keep it null so the
+    // dormant main-process `settings:set-budget` handler still receives a
+    // well-formed payload without any cost-related controls in the renderer.
     const merged = {
-      maxBudgetUsd: updates.maxBudgetUsd !== undefined ? updates.maxBudgetUsd : settings.maxBudgetUsd,
+      maxBudgetUsd: null,
       maxTurns: updates.maxTurns !== undefined ? updates.maxTurns : settings.maxTurns,
       verbose: updates.verbose !== undefined ? updates.verbose : settings.verbose,
     }
@@ -148,33 +146,28 @@ export default function Settings(): JSX.Element {
         )}
 
         {tab === 'model' && (
-          <ModelSelector
-            cli={cli}
-            selectedModel={settings.model[cli]}
-            onModelChange={(m) => void setModel(m)}
-          />
+          <div className="space-y-4">
+            <DefaultBackendSelector />
+            <ModelSelector
+              cli={cli}
+              selectedModel={settings.model[cli]}
+              onModelChange={(m) => void setModel(m)}
+            />
+          </div>
         )}
 
-        {tab === 'budget' && (
-          <BudgetLimits
-            maxBudgetUsd={settings.maxBudgetUsd}
+        {tab === 'limits' && (
+          <SessionLimits
             maxTurns={settings.maxTurns}
             verbose={settings.verbose}
-            onBudgetChange={(v) => void setBudget({ maxBudgetUsd: v })}
-            onTurnsChange={(v) => void setBudget({ maxTurns: v })}
-            onVerboseChange={(v) => void setBudget({ verbose: v })}
+            onTurnsChange={(v) => void setLimits({ maxTurns: v })}
+            onVerboseChange={(v) => void setLimits({ verbose: v })}
           />
         )}
-
-        {tab === 'plugins' && <PluginManager cli={cli} />}
 
         {tab === 'profiles' && <ConfigProfiles onApply={() => void loadSettings()} />}
 
-        {tab === 'env' && <EnvVarsEditor cli={cli} />}
-
         {tab === 'notifications' && <NotificationPreferences />}
-
-        {tab === 'webhooks' && <WebhookManager />}
 
         {tab === 'data' && <DataManagement />}
 

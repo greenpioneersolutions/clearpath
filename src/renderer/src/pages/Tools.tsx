@@ -1,16 +1,14 @@
 import { useState, useCallback } from 'react'
 import PermissionModeSelector from '../components/tools/PermissionModeSelector'
 import ToolToggles from '../components/tools/ToolToggles'
-import McpManager from '../components/tools/McpManager'
 import PermissionRequestHandler from '../components/tools/PermissionRequestHandler'
 import type { ClaudePermissionMode, CopilotPermissionPreset } from '../types/tools'
 
-type Tab = 'permissions' | 'tools' | 'mcp' | 'requests'
+type Tab = 'permissions' | 'tools' | 'requests'
 
 const TABS: { key: Tab; label: string }[] = [
   { key: 'permissions', label: 'Permission Mode' },
   { key: 'tools', label: 'Tool Toggles' },
-  { key: 'mcp', label: 'MCP Servers' },
   { key: 'requests', label: 'Requests' },
 ]
 
@@ -59,7 +57,7 @@ export default function Tools(): JSX.Element {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Tools & Permissions</h1>
           <p className="text-sm text-gray-500 mt-0.5">
-            Configure tool permissions, MCP servers, and handle permission requests
+            Configure tool permissions and handle permission requests
           </p>
         </div>
 
@@ -125,8 +123,6 @@ export default function Tools(): JSX.Element {
             onAvailableChange={setAvailableTools}
             onExcludedChange={setExcludedTools}
           />
-        ) : tab === 'mcp' ? (
-          <McpManager cli={cli} />
         ) : (
           <PermissionRequestHandler />
         )}

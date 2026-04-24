@@ -9,11 +9,13 @@ describe('AuthStatusCard', () => {
     status: null,
     loading: false,
     onConnect: vi.fn(),
+    onInstall: vi.fn(),
     onRefresh: vi.fn(),
   }
 
   beforeEach(() => {
     baseProps.onConnect.mockReset()
+    baseProps.onInstall.mockReset()
     baseProps.onRefresh.mockReset()
   })
 
@@ -27,40 +29,63 @@ describe('AuthStatusCard', () => {
     expect(screen.getByText('Claude Code CLI')).toBeInTheDocument()
   })
 
-  it('shows Not Installed when status is null', () => {
+  it('shows Install Now when status is null', () => {
     render(<AuthStatusCard {...baseProps} />)
-    expect(screen.getByText('Not Installed')).toBeInTheDocument()
+    expect(screen.getByText('Install Now')).toBeInTheDocument()
   })
 
   it('shows Connected when authenticated', () => {
     render(
       <AuthStatusCard
         {...baseProps}
-        status={{ installed: true, authenticated: true }}
+        status={{ installed: true, authenticated: true, checkedAt: 1 }}
       />,
     )
     expect(screen.getByText('Connected')).toBeInTheDocument()
+  })
+
+  it('does NOT render Install or Connect buttons when installed + authenticated', () => {
+    render(
+      <AuthStatusCard
+        {...baseProps}
+        status={{ installed: true, authenticated: true, checkedAt: 1 }}
+      />,
+    )
+    expect(screen.queryByText('Install Now')).not.toBeInTheDocument()
+    expect(screen.queryByText('Connect')).not.toBeInTheDocument()
   })
 
   it('shows Connect button when installed but not authenticated', () => {
     render(
       <AuthStatusCard
         {...baseProps}
-        status={{ installed: true, authenticated: false }}
+        status={{ installed: true, authenticated: false, checkedAt: 1 }}
       />,
     )
     expect(screen.getByText('Connect')).toBeInTheDocument()
+    expect(screen.queryByText('Install Now')).not.toBeInTheDocument()
   })
 
   it('calls onConnect when Connect button is clicked', () => {
     render(
       <AuthStatusCard
         {...baseProps}
-        status={{ installed: true, authenticated: false }}
+        status={{ installed: true, authenticated: false, checkedAt: 1 }}
       />,
     )
     fireEvent.click(screen.getByText('Connect'))
     expect(baseProps.onConnect).toHaveBeenCalledOnce()
+  })
+
+  it('calls onInstall when Install Now button is clicked', () => {
+    render(
+      <AuthStatusCard
+        {...baseProps}
+        status={{ installed: false, authenticated: false, checkedAt: 1 }}
+      />,
+    )
+    fireEvent.click(screen.getByText('Install Now'))
+    expect(baseProps.onInstall).toHaveBeenCalledOnce()
   })
 
   it('calls onRefresh when refresh button is clicked', () => {
@@ -69,25 +94,16 @@ describe('AuthStatusCard', () => {
     expect(baseProps.onRefresh).toHaveBeenCalledOnce()
   })
 
-  it('shows install hint when not installed', () => {
+  it('does NOT render any manual npm install hint', () => {
     render(
       <AuthStatusCard
         {...baseProps}
-        status={{ installed: false, authenticated: false }}
+        status={{ installed: false, authenticated: false, checkedAt: 1 }}
       />,
     )
-    expect(screen.getByText('npm install -g @github/copilot')).toBeInTheDocument()
-  })
-
-  it('shows claude install hint', () => {
-    render(
-      <AuthStatusCard
-        {...baseProps}
-        cli="claude"
-        status={{ installed: false, authenticated: false }}
-      />,
-    )
-    expect(screen.getByText('npm install -g @anthropic-ai/claude-code')).toBeInTheDocument()
+    // The old InstallHint subcomponent is gone — verify its literal strings no longer render
+    expect(screen.queryByText('npm install -g @github/copilot')).not.toBeInTheDocument()
+    expect(screen.queryByText('npm install -g @anthropic-ai/claude-code')).not.toBeInTheDocument()
   })
 
   it('shows Checking when loading', () => {
@@ -100,7 +116,7 @@ describe('AuthStatusCard', () => {
     render(
       <AuthStatusCard
         {...baseProps}
-        status={{ installed: true, authenticated: true, version: '1.2.3' }}
+        status={{ installed: true, authenticated: true, version: '1.2.3', checkedAt: 1 }}
       />,
     )
     expect(screen.getByText('1.2.3')).toBeInTheDocument()

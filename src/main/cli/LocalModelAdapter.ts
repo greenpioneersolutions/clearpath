@@ -1,9 +1,9 @@
 import http from 'http'
 import https from 'https'
-import type { ChildProcess } from 'child_process'
 import { EventEmitter } from 'events'
+import { PassThrough } from 'stream'
 import type { SessionOptions, ParsedOutput } from './types'
-import type { ICLIAdapter } from './types'
+import type { ICLIAdapter, SessionHandle } from './types'
 
 interface LocalModel {
   name: string
@@ -91,21 +91,25 @@ export class LocalModelAdapter implements ICLIAdapter {
     return { type: 'text', content: trimmed }
   }
 
-  startSession(options: SessionOptions): ChildProcess {
-    // Create a fake ChildProcess-like object that wraps HTTP streaming
+  startSession(options: SessionOptions): SessionHandle {
+    // Build a SessionHandle backed by real PassThrough streams + an EventEmitter.
+    // No ChildProcess cast — SessionHandle is structurally what CLIManager needs.
+    const stdout = new PassThrough()
+    const stderr = new PassThrough()
+    const stdin = new PassThrough()
     const emitter = new EventEmitter()
-    const fakeProcess = emitter as unknown as ChildProcess
 
-    // Set up readable streams
-    const stdoutEmitter = new EventEmitter()
-    const stderrEmitter = new EventEmitter();
-    (fakeProcess as unknown as Record<string, unknown>)['stdout'] = stdoutEmitter;
-    (fakeProcess as unknown as Record<string, unknown>)['stderr'] = stderrEmitter;
-    (fakeProcess as unknown as Record<string, unknown>)['stdin'] = {
-      write: () => {},
-      end: () => {},
-    };
-    (fakeProcess as unknown as Record<string, unknown>)['pid'] = -1
+    const handle: SessionHandle = {
+      pid: -1,
+      stdout,
+      stderr,
+      stdin,
+      kill: () => { emitter.emit('exit', 0, null); return true },
+      on: ((event: string, listener: (...args: unknown[]) => void) => {
+        emitter.on(event, listener)
+        return handle
+      }) as SessionHandle['on'],
+    }
 
     if (options.prompt) {
       this.conversationHistory.push({ role: 'user', content: options.prompt })
@@ -117,24 +121,26 @@ export class LocalModelAdapter implements ICLIAdapter {
       void this.streamChat(model, isLmStudio, this.conversationHistory)
         .then((response) => {
           this.conversationHistory.push({ role: 'assistant', content: response })
-          stdoutEmitter.emit('data', Buffer.from(response + '\n'))
+          stdout.write(Buffer.from(response + '\n'))
+          stdout.end()
           emitter.emit('exit', 0, null)
         })
         .catch((err) => {
-          stderrEmitter.emit('data', Buffer.from(String(err) + '\n'))
+          stderr.write(Buffer.from(String(err) + '\n'))
+          stderr.end()
           emitter.emit('exit', 1, null)
         })
     }
 
-    return fakeProcess
+    return handle
   }
 
-  sendInput(proc: ChildProcess, input: string): void {
+  sendInput(_proc: SessionHandle, input: string): void {
     // For local models, we manage conversation history internally
     this.conversationHistory.push({ role: 'user', content: input })
   }
 
-  sendSlashCommand(proc: ChildProcess, command: string): void {
+  sendSlashCommand(proc: SessionHandle, command: string): void {
     this.sendInput(proc, command)
   }
 

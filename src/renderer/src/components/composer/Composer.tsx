@@ -3,6 +3,7 @@ import type { PromptTemplate } from '../../types/template'
 import type { WorkflowStep } from './StepCard'
 import TemplateLauncher from './TemplateLauncher'
 import WorkflowCanvas, { createEmptyStep } from './WorkflowCanvas'
+import type { BackendId } from '../../../../shared/backends'
 
 interface StepExecution {
   stepId: string
@@ -15,7 +16,7 @@ interface StepExecution {
 interface SessionOption {
   id: string
   name: string
-  cli: 'copilot' | 'claude'
+  cli: BackendId
   status: string
 }
 
@@ -25,7 +26,7 @@ interface Props {
   /** Create a brand new session and send the prompt there */
   onSendToNewSession: (prompt: string) => void
   /** The active session's CLI backend */
-  cli: 'copilot' | 'claude'
+  cli: BackendId
   /** Active sessions available for targeting */
   sessions?: SessionOption[]
   /** Whether there's an active selected session */
