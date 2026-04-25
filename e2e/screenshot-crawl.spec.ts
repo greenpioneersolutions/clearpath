@@ -121,8 +121,9 @@ const WORK_PANELS: WorkPanel[] = [
 // Extension tabs are guarded: if the button isn't found the test skips gracefully.
 const INSIGHTS_TABS: InsightsTab[] = [
   { label: 'Analytics',        screenshot: 'insights--tab-analytics' },
-  { label: 'Compliance',       screenshot: 'insights--tab-compliance' },
-  { label: 'Usage',            screenshot: 'insights--tab-usage' },
+  // Compliance and Usage views may render current dates in charts/timestamps
+  { label: 'Compliance',       screenshot: 'insights--tab-compliance', tolerance: 4 },
+  { label: 'Usage',            screenshot: 'insights--tab-usage',      tolerance: 4 },
   { label: 'Catalog Insights', screenshot: 'insights--tab-catalog-insights' },
   { label: 'Efficiency',       screenshot: 'insights--tab-efficiency' },
   { label: 'PR Health',        screenshot: 'insights--tab-pr-health' },
@@ -143,7 +144,8 @@ const CONFIGURE_TABS: ConfigureTab[] = [
   { key: 'wizard',        label: 'Session Wizard', screenshot: 'configure--tab-wizard' },
   { key: 'workspaces',    label: 'Workspaces',    screenshot: 'configure--tab-workspaces' },
   { key: 'team',          label: 'Team Hub',      screenshot: 'configure--tab-team' },
-  { key: 'scheduler',     label: 'Scheduler',     screenshot: 'configure--tab-scheduler' },
+  // Scheduler tab may display current date/time in job listings
+  { key: 'scheduler',     label: 'Scheduler',     screenshot: 'configure--tab-scheduler', tolerance: 4 },
   { key: 'branding',      label: 'White Label',   screenshot: 'configure--tab-branding' },
 ]
 
@@ -539,7 +541,8 @@ describe('ClearPathAI — Screenshot Crawl', () => {
     const WORKSPACE_SUB_TABS = [
       { subLabel: 'Repos',      screenshot: 'configure--tab-workspaces--sub-repos' },
       { subLabel: 'Broadcast',  screenshot: 'configure--tab-workspaces--sub-broadcast' },
-      { subLabel: 'Activity',   screenshot: 'configure--tab-workspaces--sub-activity' },
+      // Activity feed shows relative timestamps ("X minutes ago") that change between runs
+      { subLabel: 'Activity',   screenshot: 'configure--tab-workspaces--sub-activity', tolerance: 6 },
       { subLabel: 'Settings',   screenshot: 'configure--tab-workspaces--sub-settings' },
     ]
 

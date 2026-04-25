@@ -11,6 +11,15 @@ on:
       - main
       - dev
   workflow_dispatch:
+    inputs:
+      update_baselines:
+        description: 'Force-update all screenshot baselines (intentional bulk update)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -43,9 +52,14 @@ jobs:
 
   # ── Screenshot regression tests ──────────────────────────────────────────────
   # Always runs after the main test job (on every push and PR).
-  # Captures rendered UI screenshots, compares them against the baselines in
-  # e2e/screenshots/baseline/ (tracked via Git LFS), and — if any differ —
-  # automatically commits the updated baselines back to the branch.
+  #
+  # Normal mode (default): runs in compare-only mode. autoSaveBaseline:true in
+  # wdio.screenshots.conf.ts handles first-run cases (auto-creates missing baselines).
+  # Tests fail if mismatch > 2% threshold. Only newly auto-saved baselines are
+  # committed back (changed files won't show a diff if comparison passed).
+  #
+  # Update mode: trigger via workflow_dispatch with update_baselines=true to
+  # force-overwrite all baselines after an intentional UI change.
   #
   # Requires the repo to allow Actions to create commits:
   #   Settings → Actions → Workflow permissions → "Read and write permissions"
@@ -87,18 +101,27 @@ jobs:
           echo "DISPLAY=:99" >> $GITHUB_ENV
           sleep 2
 
-      - name: Run visual regression tests (update baselines)
-        run: npx wdio run wdio.screenshots.conf.ts --update-visual-baseline
+      - name: Run visual regression tests
+        run: |
+          if [ "${{ github.event.inputs.update_baselines }}" = "true" ]; then
+            echo "Running in update-baseline mode (workflow_dispatch requested)"
+            npx wdio run wdio.screenshots.conf.ts --update-visual-baseline
+          else
+            echo "Running in compare mode (baselines must match within threshold)"
+            npx wdio run wdio.screenshots.conf.ts
+          fi
         env:
           DISPLAY: ':99'
 
-      - name: Commit updated baselines
+      - name: Commit new baselines
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add e2e/screenshots/baseline/
+          # Only commit when there are changes (new auto-saved baselines or explicit update).
+          # In compare mode only newly auto-saved baselines (untracked → added) will appear
+          # here; existing baselines that passed comparison won't show a diff.
           git diff --staged --quiet || git commit -m "Auto-update screenshot baselines [skip ci]"
-          # Force-push: this run's baselines are always authoritative.
           # --force-with-lease is safer than --force — it only overwrites if the
           # remote ref matches what we fetched at checkout, protecting against
           # unrelated pushes while still handling a prior CI baseline commit.
