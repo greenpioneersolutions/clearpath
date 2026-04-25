@@ -42,7 +42,17 @@ export const config: Options.Testrunner = {
       // Required for CI environments (Ubuntu/Docker) where Chromium's sandbox
       // is unavailable. Without --no-sandbox the Electron process exits immediately.
       'goog:chromeOptions': {
-        args: ['--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage'],
+        args: [
+          '--no-sandbox',
+          '--disable-gpu',
+          '--disable-dev-shm-usage',
+          // Force prefers-color-scheme: dark so the app's BrandingContext always
+          // toggles the Tailwind `dark` class — matches the macOS dev machine.
+          '--force-dark-mode',
+          // Hide OS scrollbars so they don't reduce the usable viewport width
+          // by 1px on Linux (causing 1279px actuals vs 1280px baselines).
+          '--hide-scrollbars',
+        ],
       },
     },
   ],
@@ -81,6 +91,23 @@ export const config: Options.Testrunner = {
       },
     ],
   ],
+
+  before: async function () {
+    // Pin the Electron window's content area to exactly 1280×800 on every
+    // platform. BrowserWindow is created with { width: 1280, height: 800 }
+    // but that is the *outer* size — the OS titlebar eats a different number
+    // of pixels per platform (macOS ~32 px → 768 px content; Linux ~28 px →
+    // 772 px content). setContentSize sets the *inner* viewport to a fixed
+    // size so screenshots are always 1280×800 regardless of host OS.
+    await browser.electron.execute((electron) => {
+      const win =
+        electron.BrowserWindow.getFocusedWindow() ??
+        electron.BrowserWindow.getAllWindows()[0]
+      win?.setContentSize(1280, 800)
+    })
+    // Brief pause for the window resize to propagate to the renderer
+    await browser.pause(300)
+  },
 
   framework: 'mocha',
   reporters: ['spec'],
