@@ -1,5 +1,5 @@
 import { app, safeStorage } from 'electron'
-import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync } from 'fs'
+import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync, unlinkSync } from 'fs'
 import { join, dirname } from 'path'
 import { log } from '../utils/logger'
 
@@ -70,6 +70,9 @@ export class McpSecretsVault {
       mkdirSync(dirname(this.filePath), { recursive: true })
       const tmp = this.filePath + '.tmp'
       writeFileSync(tmp, JSON.stringify(this.data, null, 2) + '\n', 'utf8')
+      // On Windows, renameSync over an existing file can fail (EPERM).
+      // Unlink first; ignore errors (file may not exist yet).
+      try { unlinkSync(this.filePath) } catch { /* ignore */ }
       renameSync(tmp, this.filePath)
     } catch (err) {
       log.error('[McpSecretsVault] Failed to persist vault: %s', err)
@@ -120,24 +123,29 @@ export class McpSecretsVault {
 
   /**
    * Retrieve the plaintext for `key`, or null if missing / decryption failed.
-   * When `unsafeMode` is set, values are returned as-is.
+   * Always attempts decryption when encryption is available; falls back to the
+   * raw stored string (plaintext) if decryption fails. This handles the
+   * mixed-mode case where a key was stored as plaintext before encryption
+   * became available, and avoids returning ciphertext when unsafeMode is true
+   * but encryption has since become available.
    */
   get(key: string): string | null {
     this.load()
     const stored = this.data.values[key]
     if (stored === undefined) return null
 
-    if (this.data.unsafeMode || !this.isEncryptionAvailable()) {
-      return stored
+    if (this.isEncryptionAvailable()) {
+      try {
+        const buf = Buffer.from(stored, 'base64')
+        return safeStorage.decryptString(buf)
+      } catch {
+        // Value may have been stored as plaintext (e.g. written before encryption
+        // was available, or via unsafeMode fallback). Return it as-is.
+        return stored
+      }
     }
-
-    try {
-      const buf = Buffer.from(stored, 'base64')
-      return safeStorage.decryptString(buf)
-    } catch (err) {
-      log.error('[McpSecretsVault] Decryption failed for key "%s": %s', key, err)
-      return null
-    }
+    // No encryption available — stored value is always plaintext.
+    return stored
   }
 
   /** Remove the secret at `key`. No-op if missing. */

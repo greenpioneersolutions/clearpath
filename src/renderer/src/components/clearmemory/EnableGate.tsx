@@ -51,6 +51,7 @@ export default function EnableGate({ children }: { children: ReactNode }): JSX.E
   const checkInstall = useCallback(async () => {
     setChecking(true)
     try {
+      setError(null)
       const result = (await window.electronAPI.invoke('clearmemory:install-status')) as InstallStatusPayload
       if (!mountedRef.current) return
       setInstall(result)

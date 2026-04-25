@@ -81,10 +81,12 @@ function groupMessages(messages: OutputMessage[]): OutputMessage[][] {
         shouldGroup = msgTurnId === lastTurnId
       } else {
         // Fallback for older sessions: 2-second timestamp window.
+        // If either side is missing a timestamp we cannot know the gap,
+        // so default to NOT grouping (Infinity > 2000).
         const timeDiff =
           msg.timestamp && lastMsg.timestamp
             ? msg.timestamp - lastMsg.timestamp
-            : 0
+            : Infinity
         shouldGroup = timeDiff < 2000
       }
 

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import type { PromptTemplate } from '../types/template'
 import type { BackendId } from '../../../shared/backends'
-import { providerOf } from '../../../shared/backends'
+import { providerOf, BACKEND_SHORT_LABELS } from '../../../shared/backends'
 
 // ── Types (mirror backend) ──────────────────────────────────────────────────
 
@@ -212,7 +212,7 @@ export default function SchedulePanel({ cli }: Props): JSX.Element {
                         <button onClick={() => { setDetailJob(job); setView('detail') }} className="flex-1 text-left min-w-0">
                           <div className="flex items-center gap-2">
                             <span className="text-gray-200 text-sm font-medium truncate">{job.name}</span>
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded ${providerOf(job.cli) === 'copilot' ? 'bg-purple-900/40 text-purple-300' : 'bg-orange-900/40 text-orange-300'}`}>{job.cli}</span>
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded ${providerOf(job.cli) === 'copilot' ? 'bg-purple-900/40 text-purple-300' : 'bg-orange-900/40 text-orange-300'}`}>{BACKEND_SHORT_LABELS[job.cli] ?? job.cli}</span>
                           </div>
                           <span className="text-gray-600 text-xs">{cronToHuman(job.cronExpression)}</span>
                         </button>

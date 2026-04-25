@@ -63,6 +63,10 @@ export default function ReflectPanel(): JSX.Element {
         return
       }
       setOutput(r.data.output || '(empty response from CLI)')
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      setOutputError(msg)
+      toast.error(msg)
     } finally {
       setBusy(false)
     }
