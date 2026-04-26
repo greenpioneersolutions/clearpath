@@ -151,7 +151,7 @@
     },
     "showCostTracking": {
       "description": "Per-turn cost estimates and badges.",
-      "experimental": false,
+      "experimental": true,
       "enabled": false,
       "addedIn": "1.0.0"
     },
