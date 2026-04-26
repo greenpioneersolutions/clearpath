@@ -21,8 +21,8 @@
     "package:extensions": "node extension-sdk/scripts/package-extension.js extensions/com.clearpathai.backstage-explorer --output dist-extensions/ && node extension-sdk/scripts/package-extension.js extensions/com.clearpathai.efficiency-coach --output dist-extensions/ && node extension-sdk/scripts/package-extension.js extensions/com.clearpathai.pr-scores --output dist-extensions/",
     "pretest:e2e:extensions": "node extension-sdk/scripts/package-extension.js extension-sdk/example/com.clearpathai.sdk-example --output ./",
     "e2e:extensions": "npm run pretest:e2e:extensions && npm run build && wdio run wdio.conf.ts --spec e2e/extensions-integration.spec.ts",
-    "e2e:screenshots": "npm run build && wdio run wdio.screenshots.conf.ts --update-visual-baseline",
-    "e2e:screenshots:compare": "npm run build && wdio run wdio.screenshots.conf.ts",
+    "e2e:screenshots": "npm run build && wdio run wdio.screenshots.conf.ts",
+    "e2e:screenshots:update": "npm run build && wdio run wdio.screenshots.conf.ts --update-visual-baseline",
     "prepare": "husky"
   },
   "dependencies": {

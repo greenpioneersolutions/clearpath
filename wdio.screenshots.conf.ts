@@ -5,15 +5,21 @@
  * Runs only e2e/screenshot-crawl.spec.ts — excluded from the default
  * wdio.conf.ts run so the visual crawl doesn't slow down functional tests.
  *
- * Visual capture is handled by @wdio/visual-service. CI's policy is to
- * always run with --update-visual-baseline (see .github/workflows/ci.yml)
- * so visual changes show up as PR-baseline-diff commits rather than as
- * test failures. The per-shot mismatch threshold below is informational —
- * the spec no longer asserts on it.
+ * Visual capture is handled by @wdio/visual-service. CI's policy
+ * (.github/workflows/ci.yml) is to run in *compare* mode and then
+ * promote the actual to the baseline only for tags that produced a diff
+ * PNG. This avoids the PNG-re-encode noise problem caused by running with
+ * --update-visual-baseline (which rewrites every baseline file even when
+ * the captured pixels are identical, since re-encoding can produce a
+ * 4-byte metadata diff).
  *
  * Usage:
- *   npm run e2e:screenshots          — capture + overwrite baselines (CI parity)
- *   npm run e2e:screenshots:compare  — compare-only (informational; never fails)
+ *   npm run e2e:screenshots          — compare against baselines (CI parity);
+ *                                      writes diffs to .tmp/visual/diff/{tag}.png
+ *                                      and actuals to .tmp/visual/actual/{tag}.png
+ *   npm run e2e:screenshots:update   — force-overwrite every baseline with the
+ *                                      current capture (use sparingly, e.g.
+ *                                      after an OS / font / scaling change)
  */
 
 import type { Options } from '@wdio/types'

@@ -10,8 +10,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 delete process.env.ELECTRON_RUN_AS_NODE
 
 // Screenshot capture: afterEach saves failure screenshots to e2e/screenshots/failures/
-// Full visual crawl: npm run e2e:screenshots (always updates baselines; CI parity)
-// Compare without updating: npm run e2e:screenshots:compare (informational; no-fail)
+// Full visual crawl: npm run e2e:screenshots (compare mode; CI parity)
+// Force-overwrite all baselines: npm run e2e:screenshots:update
 
 export const config: Options.Testrunner = {
   runner: 'local',

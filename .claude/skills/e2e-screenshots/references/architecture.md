@@ -60,22 +60,33 @@ afterEach: async function (test, _ctx, result) {
 
 ```
 npm run e2e:screenshots
-  → npm run build && wdio run wdio.screenshots.conf.ts --update-visual-baseline
-    → @wdio/visual-service captures every screen and overwrites the baseline
-
-npm run e2e:screenshots:compare
   → npm run build && wdio run wdio.screenshots.conf.ts
-    → captures + compares against baseline; mismatches log but don't fail
+    → captures every screen, compares against the committed baseline,
+      writes .tmp/visual/actual/{tag}.png for every tag and
+      .tmp/visual/diff/{tag}.png only for tags that changed beyond the
+      configured compareOptions (currently `ignoreAntialiasing: true`).
+      Does not modify e2e/screenshots/baseline/.
+
+npm run e2e:screenshots:update
+  → npm run build && wdio run wdio.screenshots.conf.ts --update-visual-baseline
+    → captures every screen and force-overwrites every baseline.
+      Use sparingly — see "Baseline-churn footgun" below.
 ```
 
 `wdio.screenshots.conf.ts` resolves `baselineFolder` to `e2e/screenshots/baseline/` and writes diff/actual artifacts to `.tmp/visual/` (gitignored).
 
+## Baseline-churn footgun
+
+`--update-visual-baseline` overwrites every baseline file on every run, even when the captured pixels are identical to the previous baseline. PNG re-encoding is non-deterministic at the byte level — encoders can rewrite metadata or zlib streams without changing a single pixel — so the LFS pointer hash changes, and unrelated commits (docs, package.json, …) end up dragging an `Auto-update screenshot baselines` commit behind them.
+
+Don't run CI with `--update-visual-baseline`. The CI workflow uses compare mode and promotes actuals to baselines only for tags that produced a diff PNG; that combination preserves the "capture changes that happened" property without churning unchanged baselines.
+
 ## Git LFS flow
 
 1. `e2e/screenshots/baseline/` is LFS-tracked (rule in `.gitattributes`).
-2. `npm run e2e:screenshots` (or the CI `screenshot-regression` job with `--update-visual-baseline`) writes PNGs there.
-3. `git add e2e/screenshots/baseline/ && git commit` → LFS stores binary, git stores pointer.
-4. CI's `screenshot-regression` job automates steps 2–3 and pushes back via `git push --force-with-lease`. The commit message contains `[skip ci]` so it doesn't loop.
+2. CI's `screenshot-regression` job runs the crawl in compare mode, then a follow-up step copies `.tmp/visual/actual/{tag}.png` over `e2e/screenshots/baseline/{tag}.png` for each `tag` that has a `.tmp/visual/diff/{tag}.png`.
+3. `git add e2e/screenshots/baseline/ && git commit` → LFS stores binary, git stores pointer. Commit is skipped when no baseline was promoted.
+4. `git push --force-with-lease`. The commit message contains `[skip ci]` so it doesn't loop.
 
 ## Why two wdio config files?
 

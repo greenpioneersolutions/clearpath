@@ -19,7 +19,15 @@ The system has three layers:
 
 ## Capture-first policy (CI)
 
-CI **always** runs the crawl with `--update-visual-baseline`, so the screenshot job never fails because of pixel mismatches. Instead, every PR carries an `Auto-update screenshot baselines` commit pushed back by the workflow — that commit's diff is how visual changes are surfaced and reviewed.
+CI runs the crawl in **compare mode** (no `--update-visual-baseline`), and the spec doesn't assert on pixel mismatch. Visual changes flow into PR diffs via an `Auto-update screenshot baselines` commit, but only baselines whose pixels actually changed are rewritten.
+
+How the workflow decides what to update:
+
+1. The visual service captures `.tmp/visual/actual/{tag}.png` for every shot, and writes `.tmp/visual/diff/{tag}.png` only for tags whose comparison reports a non-zero mismatch (within the configured `compareOptions`, which currently `ignoreAntialiasing`).
+2. A post-step iterates `.tmp/visual/diff/*.png` and copies the matching actual over the baseline. Tags without a diff PNG keep their existing baseline file untouched.
+3. The commit step picks up only the promoted baselines — so a docs- or config-only commit (e.g. `Update CLAUDE.md`) does not produce an `Auto-update` commit.
+
+> **Why this is necessary.** Running with `--update-visual-baseline` rewrites every baseline on every CI run, even when pixels are identical. PNG re-encoding produces non-identical bytes for identical pixels (~4-byte metadata difference), which ends up in LFS pointer churn — every unrelated commit then dragged a fake `Auto-update` commit behind it.
 
 What still fails the screenshot job:
 
@@ -28,16 +36,17 @@ What still fails the screenshot job:
 - Required Insights tabs missing (built-in tabs throw if not found)
 - `browser.checkScreen` errors (driver crash, screenshot couldn't be produced)
 
-So CI catches "page no longer loads" or "spec broke" while ignoring "the Settings tab moved 3 px to the right." If a PR's auto-baseline commit shows unexpected diffs, that is the regression signal — review the LFS-pointer hash changes and decide whether to keep them.
+If a PR carries an unexpected `Auto-update` commit, the LFS-pointer diff is the regression signal — open the artifact and decide whether to keep the change.
 
 ## How to run locally
 
 ```bash
-# CI parity: capture + overwrite baselines.
+# CI parity: compare against committed baselines, write diffs/actuals to .tmp/visual/.
 npm run e2e:screenshots
 
-# Compare-only against committed baselines (informational; never fails).
-npm run e2e:screenshots:compare
+# Force-overwrite every baseline with the current capture (rare —
+# typically only needed after an OS, font, or device-scale-factor change).
+npm run e2e:screenshots:update
 ```
 
 Both scripts run `npm run build` first. Generated output lands under `.tmp/visual/` (gitignored).
@@ -130,13 +139,14 @@ There is one screenshot job — `screenshot-regression` in `.github/workflows/ci
 
 1. Build the app
 2. Install Xvfb (`libgbm-dev libasound2-dev`) and set `DISPLAY=:99`
-3. Run `npx wdio run wdio.screenshots.conf.ts --update-visual-baseline` — captures every screen and overwrites the baseline
-4. `git add e2e/screenshots/baseline/`, commit `Auto-update screenshot baselines [skip ci]` if anything changed, `git push --force-with-lease`
-5. Upload `.tmp/visual/actual/`, `.tmp/visual/diff/`, and `e2e/screenshots/baseline/` as the `screenshots` artifact
+3. Run `npx wdio run wdio.screenshots.conf.ts` (compare mode) — captures every screen and writes diffs only for changed tags
+4. **Promote actuals to baselines for changed tags only** — for each `.tmp/visual/diff/{tag}.png`, copy `.tmp/visual/actual/{tag}.png` over `e2e/screenshots/baseline/{tag}.png`
+5. `git add e2e/screenshots/baseline/`, commit `Auto-update screenshot baselines [skip ci]` if anything was promoted, `git push --force-with-lease`
+6. Upload `.tmp/visual/actual/`, `.tmp/visual/diff/`, and `e2e/screenshots/baseline/` as the `screenshots` artifact
 
 The `[skip ci]` token on the auto-baseline commit prevents an infinite re-run loop.
 
-`workflow_dispatch:` is enabled for manual reruns; there is no longer an `update_baselines` input because update is the default.
+`workflow_dispatch:` is enabled for manual reruns.
 
 ---
 
