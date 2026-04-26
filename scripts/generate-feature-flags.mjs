@@ -112,9 +112,13 @@ export function isExperimentalFlag(key: FeatureFlagKey): boolean {
 }
 
 /**
- * Build-time experimental gate. \`__FEATURES__\` is a Vite \`define\` constant
- * (see electron.vite.config.ts) — it is replaced with a literal boolean at
- * build time so Rollup can tree-shake disabled experimental branches.
+ * Read the build-time default for a flag by key. \`__FEATURES__\` is a Vite
+ * \`define\` constant object (see electron.vite.config.ts), but this helper
+ * does a *computed* property lookup with a runtime key argument — Rollup
+ * can't constant-fold that, so this function does NOT participate in
+ * tree-shaking. Use direct property access (\`__FEATURES__.showPrScores\`)
+ * for tree-shaking-sensitive gates; reach for this helper only when the
+ * key isn't known until runtime (e.g. iterating EXPERIMENTAL_FLAG_KEYS).
  *
  * For non-experimental flags this returns the BUILD_FLAGS default; the
  * runtime FeatureFlagContext / featureFlagHandlers layer per-user
@@ -122,7 +126,6 @@ export function isExperimentalFlag(key: FeatureFlagKey): boolean {
  */
 declare const __FEATURES__: Readonly<FeatureFlags>;
 export function isExperimentalFlagEnabledAtBuild(key: FeatureFlagKey): boolean {
-  // Reading through __FEATURES__ keeps the lookup statically replaceable.
   // eslint-disable-next-line no-restricted-globals
   return Boolean(__FEATURES__[key]);
 }

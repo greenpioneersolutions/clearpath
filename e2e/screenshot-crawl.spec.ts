@@ -96,9 +96,15 @@ interface ConfigureSubTab extends VisualOptions {
 // labelled "Settings" (not "Configure"); /connect was added; /clear-memory
 // was added; the right-rail Work panels were removed.
 //
-// Extension-contributed sidebar entries (Backstage, PR Scores, Efficiency
-// Coach) are guarded with `optional: true` — the spec checks for the
-// anchor and skips the screenshot if it's not rendered.
+// Extension-contributed sidebar entries (Backstage, Efficiency Coach) are
+// guarded with `optional: true` — the spec checks for the anchor and skips
+// the screenshot if it's not rendered.
+//
+// PR Scores deliberately does NOT appear here. The extension pins a sidebar
+// link to `#/pr-scores`, which targets a build-time-gated experimental
+// route; with the flag off it redirects to /work, and with the flag on the
+// page is captured by screenshot-crawl-experimental.spec.ts. Either way the
+// regular crawl has nothing useful to capture for it.
 const SIDEBAR_PAGES: SidebarPage[] = [
   { nav: 'Home',             screenshot: 'home--initial' },
   { nav: 'Work',             screenshot: 'work--initial' },
@@ -110,7 +116,6 @@ const SIDEBAR_PAGES: SidebarPage[] = [
   // Extension-contributed routes — present when extensions are installed
   { nav: 'Backstage',        screenshot: 'ext--backstage',        optional: true },
   { nav: 'Efficiency Coach', screenshot: 'ext--efficiency-coach', optional: true },
-  { nav: 'PR Scores',        screenshot: 'ext--pr-scores',        optional: true },
 ]
 
 // Work page mode tabs (driven by ?tab= URL param, confirmed in work-page.spec.ts).

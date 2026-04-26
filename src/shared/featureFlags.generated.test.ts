@@ -25,15 +25,19 @@ describe('featureFlags.generated', () => {
     }
   })
 
-  it('disabled experimental flags resolve to false in BUILD_FLAGS at default build time', () => {
-    // CLEARPATH_E2E_EXPERIMENTAL was not set during this test run, so any
-    // experimental flag with enabled:false in features.json must surface as
-    // false here. If the generator regresses and inlines the wrong value,
-    // experimental code paths will leak into the production bundle.
+  it('disabled experimental flags resolve in BUILD_FLAGS according to the build environment', () => {
+    // `pretest` regenerates featureFlags.generated using the current process
+    // environment, so this assertion has to mirror what the generator
+    // observed: when CLEARPATH_E2E_EXPERIMENTAL is set the generator
+    // intentionally forces every experimental flag on regardless of
+    // features.json; otherwise disabled experimental flags must remain false.
+    const expected =
+      process.env.CLEARPATH_E2E_EXPERIMENTAL === '1' ||
+      process.env.CLEARPATH_E2E_EXPERIMENTAL === 'true'
     for (const key of EXPERIMENTAL_FLAG_KEYS) {
       const meta = FEATURE_FLAG_META[key]
       if (!meta.enabled) {
-        expect(BUILD_FLAGS[key]).toBe(false)
+        expect(BUILD_FLAGS[key]).toBe(expected)
       }
     }
   })
