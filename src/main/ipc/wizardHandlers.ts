@@ -58,7 +58,7 @@ interface WizardStoreSchema {
 
 const DEFAULT_CONFIG: WizardConfig = {
   title: 'Session Wizard',
-  subtitle: 'Let\'s set up your AI session for the best results. Answer a few questions and we\'ll build the perfect prompt.',
+  subtitle: 'Let\'s set up your AI session for the best results. Answer a few questions and we\'ll build the perfect prompt. asdf asdf asdf asdf asdf asdf asdf asdfasdfafasdf asdfasdf asdfa sdfa sdfas dfasdf asdfasdf asdf asdf',
   initialQuestion: 'What are you looking to do?',
   options: [
     {
