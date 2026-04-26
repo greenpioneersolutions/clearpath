@@ -169,3 +169,129 @@ jobs:
             e2e/screenshots/baseline/
           if-no-files-found: warn
           retention-days: 30
+
+  # ── Experimental-feature screenshot capture ─────────────────────────────────
+  # Captures pages that are tree-shaken out of the default build. The build
+  # step sets CLEARPATH_E2E_EXPERIMENTAL=1 so every experimental flag in
+  # features.json is forced ON, which restores the experimental page chunks
+  # to the bundle for visual coverage.
+  #
+  # Baselines for these screenshots live under
+  #   e2e/screenshots/baseline/experimental-features/
+  # so they don't pollute the normal baseline directory.
+  screenshot-regression-experimental:
+    # Run after the default screenshot job so any auto-baseline commit it
+    # produced is already on the branch — avoids a force-push race.
+    needs: screenshot-regression
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          lfs: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+          ref: ${{ github.head_ref || github.ref_name }}
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build app with experimental flags forced on
+        run: npm run build
+        env:
+          CLEARPATH_E2E_EXPERIMENTAL: '1'
+
+      - name: Install system dependencies (Xvfb for headless Electron)
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y --no-install-recommends xvfb libgbm-dev libasound2-dev
+
+      - name: Start virtual display
+        run: |
+          Xvfb :99 -screen 0 1440x900x24 &
+          echo "DISPLAY=:99" >> $GITHUB_ENV
+          sleep 2
+
+      - name: Run experimental screenshot crawl
+        run: npx wdio run wdio.screenshots.experimental.conf.ts
+        env:
+          DISPLAY: ':99'
+          CLEARPATH_E2E_EXPERIMENTAL: '1'
+
+      - name: Promote actuals to baselines for changed experimental tags
+        # Same compare+promote policy as the main screenshot job, but scoped
+        # to the experimental-features/ subfolder so we never overwrite a
+        # default baseline from this run.
+        run: |
+          set -e
+          diff_dir=".tmp/visual/diff/experimental-features"
+          actual_dir=".tmp/visual/actual/experimental-features"
+          baseline_dir="e2e/screenshots/baseline/experimental-features"
+          if [ ! -d "$diff_dir" ]; then
+            echo "No diff directory at $diff_dir — nothing to promote."
+            exit 0
+          fi
+          mkdir -p "$baseline_dir"
+          shopt -s nullglob
+          promoted=0
+          for diff in "$diff_dir"/*.png; do
+            tag="$(basename "$diff" .png)"
+            actual="$actual_dir/$tag.png"
+            baseline="$baseline_dir/$tag.png"
+            if [ -f "$actual" ]; then
+              cp "$actual" "$baseline"
+              echo "promoted: experimental-features/$tag"
+              promoted=$((promoted + 1))
+            else
+              echo "warn: actual missing for $tag (diff present)" >&2
+            fi
+          done
+          echo "promoted $promoted experimental baseline(s)"
+
+      - name: Commit updated experimental baselines
+        # The default screenshot-regression job may have already pushed an
+        # auto-baseline commit to this same branch — pull --rebase before
+        # pushing so we don't lose it. Both jobs use --force-with-lease for
+        # safety against unrelated concurrent pushes.
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add e2e/screenshots/baseline/experimental-features/ || true
+          if git diff --staged --quiet; then
+            echo "no experimental baseline changes to commit"
+            exit 0
+          fi
+          git commit -m "Auto-update experimental screenshot baselines [skip ci]"
+          # Try a few times in case the sibling job pushes between fetch and push.
+          for attempt in 1 2 3; do
+            git fetch origin "$BRANCH"
+            git rebase "origin/$BRANCH" || { git rebase --abort || true; exit 1; }
+            if git push --force-with-lease; then
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "failed to push experimental baselines after retries"
+          exit 1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: ${{ github.head_ref || github.ref_name }}
+
+      - name: Upload experimental screenshots artifact
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: screenshots-experimental
+          path: |
+            .tmp/visual/actual/
+            .tmp/visual/diff/
+            e2e/screenshots/baseline/experimental-features/
+          if-no-files-found: warn
+          retention-days: 30
