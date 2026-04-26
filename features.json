@@ -217,6 +217,12 @@
       "enabled": false,
       "addedIn": "1.6.0"
     },
+    "showMcpServers": {
+      "description": "MCP Servers tab on the Connect page (catalog, registry, secrets, sync).",
+      "experimental": true,
+      "enabled": false,
+      "addedIn": "1.9.0"
+    },
     "showBackstageExplorer": {
       "description": "Backstage entity explorer page.",
       "experimental": true,

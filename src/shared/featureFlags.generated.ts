@@ -23,6 +23,7 @@ export type FeatureFlagKey =
   | 'showIntegrations'
   | 'showKnowledgeBase'
   | 'showLearn'
+  | 'showMcpServers'
   | 'showMemory'
   | 'showPlugins'
   | 'showPolicies'
@@ -63,6 +64,7 @@ export type FeatureFlags = {
   showIntegrations: boolean;
   showKnowledgeBase: boolean;
   showLearn: boolean;
+  showMcpServers: boolean;
   showMemory: boolean;
   showPlugins: boolean;
   showPolicies: boolean;
@@ -115,6 +117,7 @@ export const BUILD_FLAGS: Readonly<FeatureFlags> = Object.freeze({
   showIntegrations: false,
   showKnowledgeBase: false,
   showLearn: true,
+  showMcpServers: false,
   showMemory: false,
   showPlugins: false,
   showPolicies: false,
@@ -156,7 +159,7 @@ export const FEATURE_FLAG_META: Readonly<Record<FeatureFlagKey, FeatureFlagMetad
   showComplianceLogs: { experimental: false, enabled: false, addedIn: "1.0.0" },
   showComposer: { experimental: false, enabled: false, addedIn: "1.0.0" },
   showConfigure: { experimental: false, enabled: true, addedIn: "1.0.0" },
-  showCostTracking: { experimental: true, enabled: false, addedIn: "1.0.0" },
+  showCostTracking: { experimental: false, enabled: false, addedIn: "1.0.0" },
   showDashboard: { experimental: false, enabled: true, addedIn: "1.0.0" },
   showDataManagement: { experimental: false, enabled: false, addedIn: "1.0.0" },
   showEfficiencyCoach: { experimental: true, enabled: false, addedIn: "1.6.0" },
@@ -166,6 +169,7 @@ export const FEATURE_FLAG_META: Readonly<Record<FeatureFlagKey, FeatureFlagMetad
   showIntegrations: { experimental: false, enabled: false, addedIn: "1.0.0" },
   showKnowledgeBase: { experimental: false, enabled: false, addedIn: "1.0.0" },
   showLearn: { experimental: false, enabled: true, addedIn: "1.0.0" },
+  showMcpServers: { experimental: true, enabled: false, addedIn: "1.9.0" },
   showMemory: { experimental: false, enabled: false, addedIn: "1.0.0" },
   showPlugins: { experimental: false, enabled: false, addedIn: "1.0.0" },
   showPolicies: { experimental: false, enabled: false, addedIn: "1.0.0" },
@@ -190,8 +194,8 @@ export const EXPERIMENTAL_FLAG_KEYS: readonly FeatureFlagKey[] = Object.freeze([
   'prScoresAiReview',
   'showBackstageExplorer',
   'showClearMemory',
-  'showCostTracking',
   'showEfficiencyCoach',
+  'showMcpServers',
   'showPrScores',
 ]);
 
@@ -217,6 +221,7 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = Object.freeze([
   'showIntegrations',
   'showKnowledgeBase',
   'showLearn',
+  'showMcpServers',
   'showMemory',
   'showPlugins',
   'showPolicies',

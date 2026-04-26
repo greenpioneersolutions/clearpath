@@ -83,6 +83,7 @@ const FLAG_GROUPS: FlagGroup[] = [
       { key: 'prScoresAiReview', label: 'PR Scores AI Review', description: 'Enable AI-powered PR code review via connected CLI' },
       { key: 'showEfficiencyCoach', label: 'Efficiency Coach', description: 'Cost and efficiency insights extension surface.' },
       { key: 'showBackstageExplorer', label: 'Backstage Explorer', description: 'Backstage entity browser experimental page.' },
+      { key: 'showMcpServers', label: 'MCP Servers', description: 'MCP server catalog, registry, secrets, and sync (under Connect).' },
     ],
   },
   {

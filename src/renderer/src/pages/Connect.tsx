@@ -1,11 +1,20 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { lazy, Suspense, useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useFeatureFlags } from '../contexts/FeatureFlagContext'
 import IntegrationsTab from '../components/integrations/IntegrationsTab'
 import ExtensionManager from '../components/extensions/ExtensionManager'
-import McpTab from '../components/mcp/McpTab'
 import EnvVarsTab from '../components/settings/EnvVarsTab'
 import PluginsManagement from './PluginsManagement'
 import WebhookManager from '../components/notifications/WebhookManager'
+
+// `__FEATURES__.showMcpServers` is statically replaced at build time. When
+// the flag is compiled out, the conditional becomes `false ? lazy(...) : null`
+// and Rollup drops the dynamic `import()` along with every transitive MCP
+// chunk (~2k LOC across catalog, registry, hooks, types).
+declare const __FEATURES__: import('../../../shared/featureFlags.generated').FeatureFlags
+const McpTab = __FEATURES__.showMcpServers
+  ? lazy(() => import('../components/mcp/McpTab'))
+  : null
 
 type SubTab = 'integrations' | 'extensions' | 'mcp' | 'environment' | 'plugins' | 'webhooks'
 
@@ -19,6 +28,7 @@ const SUB_TABS: { key: SubTab; label: string; description: string }[] = [
 ]
 
 export default function Connect(): JSX.Element {
+  const { flags } = useFeatureFlags()
   const [tab, setTab] = useState<SubTab>('integrations')
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -27,10 +37,27 @@ export default function Connect(): JSX.Element {
   const [showRestartModal, setShowRestartModal] = useState(false)
   const pendingTabRef = useRef<SubTab | null>(null)
 
+  // Hide tabs whose feature flag is off. `clampToCompiledIn` keeps
+  // flags.showMcpServers === false in builds where the chunk was tree-shaken,
+  // so this single check covers both compile-out and runtime-off cases.
+  const isTabVisible = useCallback(
+    (key: SubTab) => key !== 'mcp' || flags.showMcpServers,
+    [flags.showMcpServers],
+  )
+  const visibleTabs = SUB_TABS.filter((t) => isTabVisible(t.key))
+
   useEffect(() => {
     const urlTab = searchParams.get('tab') as SubTab | null
-    if (urlTab && SUB_TABS.some(t => t.key === urlTab)) setTab(urlTab)
-  }, [searchParams])
+    if (!urlTab) return
+    if (SUB_TABS.some((t) => t.key === urlTab) && isTabVisible(urlTab)) {
+      setTab(urlTab)
+    } else if (urlTab === 'mcp') {
+      // /connections still redirects here with ?tab=mcp; keep that link safe
+      // by falling back when the MCP tab isn't available in this build.
+      setTab('integrations')
+      setSearchParams({ tab: 'integrations' }, { replace: true })
+    }
+  }, [searchParams, isTabVisible, setSearchParams])
 
   const handlePendingRestartChange = useCallback((pending: boolean) => {
     setExtensionPendingRestart(pending)
@@ -108,7 +135,7 @@ export default function Connect(): JSX.Element {
         </div>
 
         <div className="flex gap-1 mt-4 bg-gray-800 rounded-lg p-1 w-fit" role="tablist" aria-label="Connect sections">
-          {SUB_TABS.map((t) => (
+          {visibleTabs.map((t) => (
             <button
               key={t.key}
               onClick={() => handleTabChange(t.key)}
@@ -133,7 +160,11 @@ export default function Connect(): JSX.Element {
         {tab === 'extensions' && (
           <ExtensionManager onPendingRestartChange={handlePendingRestartChange} />
         )}
-        {tab === 'mcp' && <McpTab />}
+        {tab === 'mcp' && McpTab && (
+          <Suspense fallback={null}>
+            <McpTab />
+          </Suspense>
+        )}
         {tab === 'environment' && <EnvVarsTab />}
         {tab === 'plugins' && <PluginsManagement />}
         {tab === 'webhooks' && <WebhookManager />}
