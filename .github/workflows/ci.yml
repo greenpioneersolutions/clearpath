@@ -260,6 +260,12 @@ jobs:
         # auto-baseline commit to this same branch — pull --rebase before
         # pushing so we don't lose it. Both jobs use --force-with-lease for
         # safety against unrelated concurrent pushes.
+        #
+        # The experimental build runs with CLEARPATH_E2E_EXPERIMENTAL=1, which
+        # makes the prebuild hook regenerate src/shared/featureFlags.generated.ts
+        # with experimental flags forced on. That diff is a build artifact we
+        # must not push, but `git rebase` refuses to run with a dirty tree —
+        # so we discard everything not staged before the rebase loop.
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -269,6 +275,10 @@ jobs:
             exit 0
           fi
           git commit -m "Auto-update experimental screenshot baselines [skip ci]"
+          # Drop unstaged build-artifact changes (e.g. featureFlags.generated.ts
+          # regenerated with experimental flags forced on) so `git rebase` can run.
+          git checkout -- .
+          git clean -fd
           # Try a few times in case the sibling job pushes between fetch and push.
           for attempt in 1 2 3; do
             git fetch origin "$BRANCH"
