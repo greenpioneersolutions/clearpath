@@ -27,7 +27,13 @@
  *                                      (informational; no longer fails the test)
  */
 
-import { waitForAppReady, navigateSidebarTo, invokeIPC, ELEMENT_TIMEOUT } from './helpers/app.js'
+import {
+  waitForAppReady,
+  navigateSidebarTo,
+  invokeIPC,
+  freezeDynamicContent,
+  ELEMENT_TIMEOUT,
+} from './helpers/app.js'
 
 // ── Data tables ──────────────────────────────────────────────────────────────
 
@@ -231,15 +237,17 @@ const CONFIGURE_SUB_TABS: ConfigureSubTab[] = [
 /**
  * Capture a screenshot for the given tag.
  *
- * Under the "always update baseline" CI policy this overwrites the baseline
- * with the current actual; locally without --update-visual-baseline it
- * compares against the committed baseline. Either way, a comparison
- * mismatch never fails the test — visual changes are surfaced via the PR
- * baseline-diff commit, not via test failures. browser.checkScreen will
- * still throw if the screenshot itself can't be produced, which keeps real
- * driver/page-load failures gated.
+ * Under CI's compare+promote policy, mismatches never fail the test —
+ * visual changes are surfaced via the auto-baseline-update commit, and
+ * only tags that produce a diff PNG get their baseline rewritten.
+ * browser.checkScreen will still throw if the screenshot itself can't be
+ * produced, which keeps real driver/page-load failures gated.
+ *
+ * Calls `freezeDynamicContent()` first to stabilize time-of-day greetings,
+ * relative timestamps, and locale dates so they don't drift between runs.
  */
 async function checkScreenshot(name: string, options: VisualOptions = {}): Promise<void> {
+  await freezeDynamicContent()
   const { blockOut } = options
   await browser.checkScreen(name, blockOut ? { blockOut } : {})
 }
@@ -273,6 +281,7 @@ async function tryScrollCapture(baseName: string): Promise<void> {
 
     if (scrolled) {
       await browser.pause(300)
+      await freezeDynamicContent()
       await browser.checkScreen(`${baseName}--scrolled`)
       // Restore scroll position so subsequent tests start clean
       await browser.execute(() => {

@@ -109,6 +109,31 @@ For the full inventory of inner sub-tabs and per-shot tolerances see
 
 ---
 
+## Handling dynamic content
+
+Screenshots include time-of-day greetings, "5 minutes ago" timestamps, locale-formatted dates, and similar dynamic text that would otherwise drift between CI runs and trigger spurious baseline updates. Right before every capture, the spec calls `freezeDynamicContent()` from [`e2e/helpers/app.ts`](../../../e2e/helpers/app.ts) which:
+
+1. Walks every `Text` node (including inside Recharts SVG `<text>`) and rewrites a small set of dynamic patterns to constants. Currently covered:
+   - `Good morning|afternoon|evening` → `Good day`
+   - `5m ago | 5 minutes ago | yesterday | just now | …` → `5 minutes ago`
+   - `2:45 PM | 12:34:56 PM` → `2:45 PM`
+   - `Apr 26, 2026, 2:45:30 PM` → `Apr 26, 2026, 2:45 PM`
+   - `4/26/2026` → `4/26/2026` (canonicalized)
+   - `2026-04-26` → `2026-04-26` (canonicalized)
+   - `2m 15s` → `2m 15s` (stopwatch durations)
+2. For dynamic content that doesn't fit a generic pattern (random IDs, percent badges, counters), use the **`data-screenshot-stub`** escape hatch:
+
+   ```tsx
+   <span data-screenshot-stub="0a1b2c3d">{session.id.slice(0, 8)}</span>
+   <span data-screenshot-stub="45%">{learnPct}%</span>
+   ```
+
+   `freezeDynamicContent()` overwrites the element's `textContent` with the attribute value just before capture. Keep the placeholder string the same length as a typical real value to preserve layout.
+
+If you find a tag still triggering an `Auto-update screenshot baselines` commit on a non-UI change, the most likely fix is one of:
+- A new dynamic format the regex doesn't match yet → extend `freezeDynamicContent()`
+- A specific element with no textual signal → mark it `data-screenshot-stub="…"` in the component
+
 ## Adding coverage
 
 ### New sidebar page

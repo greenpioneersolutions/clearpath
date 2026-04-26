@@ -41,6 +41,74 @@ export async function waitForAppReady(): Promise<void> {
 }
 
 /**
+ * Freeze dynamic content in the DOM to a deterministic placeholder so that
+ * screenshot baselines don't drift between runs because of time-of-day
+ * greetings, relative timestamps, locale-formatted dates, etc.
+ *
+ * Two complementary mechanisms run inside the same DOM walk:
+ *
+ * 1. **Pattern-based replacement** in every text node. Common dynamic
+ *    formats are matched by regex and overwritten with constants. This
+ *    catches Recharts SVG axis labels, UI badges, list rows, etc. without
+ *    requiring component-level changes. Patterns are conservative — they
+ *    only match shapes that look unambiguously like timestamps/dates.
+ *
+ * 2. **`data-screenshot-stub="…"`** per-element override. For dynamic
+ *    content that doesn't match a pattern (random IDs, percent badges,
+ *    counters), put `data-screenshot-stub="placeholder"` on the smallest
+ *    enclosing element in the React component; this helper sets that
+ *    element's textContent to the attribute value. Layout is preserved
+ *    because the same number of characters can be used as a placeholder.
+ *
+ * Call this immediately before `browser.checkScreen` — see usage in
+ * `e2e/screenshot-crawl.spec.ts`.
+ */
+export async function freezeDynamicContent(): Promise<void> {
+  await browser.execute(() => {
+    function replaceDynamic(text: string): string {
+      let next = text
+      // Time-of-day greetings (HomeHub, dashboard widgets)
+      next = next.replace(/Good (morning|afternoon|evening)/g, 'Good day')
+      // Relative phrases that don't carry a number
+      next = next.replace(/\b(just now|moments? ago|yesterday)\b/gi, '5 minutes ago')
+      // "5m ago", "5 minutes ago", "2h ago", "3 days ago", etc.
+      next = next.replace(
+        /\b\d+\s*(seconds?|secs?|s|minutes?|mins?|m|hours?|hrs?|h|days?|d|weeks?|w|months?|mo|years?|y)\s+ago\b/gi,
+        '5 minutes ago',
+      )
+      // Long-form locale date+time first (more specific) so the date-only
+      // pattern doesn't fire on the date half and leave stray punctuation.
+      next = next.replace(
+        /\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2},\s+\d{4}(,\s+\d{1,2}:\d{2}(:\d{2})?\s?(AM|PM))?/g,
+        'Apr 26, 2026, 2:45 PM',
+      )
+      // 12-hour clock "2:45 PM" / "12:34:56 PM"
+      next = next.replace(/\b\d{1,2}:\d{2}(:\d{2})?\s?(AM|PM)\b/g, '2:45 PM')
+      // Short locale date "4/26/2026"
+      next = next.replace(/\b\d{1,2}\/\d{1,2}\/\d{4}\b/g, '4/26/2026')
+      // ISO calendar date "2026-04-26"
+      next = next.replace(/\b\d{4}-\d{2}-\d{2}\b/g, '2026-04-26')
+      // Stopwatch durations like "2m 15s"
+      next = next.replace(/\b\d+m\s+\d+s\b/g, '2m 15s')
+      return next
+    }
+
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)
+    let node: Node | null
+    while ((node = walker.nextNode())) {
+      const textNode = node as Text
+      const replaced = replaceDynamic(textNode.data)
+      if (replaced !== textNode.data) textNode.data = replaced
+    }
+
+    document.querySelectorAll<HTMLElement>('[data-screenshot-stub]').forEach((el: HTMLElement) => {
+      const stub = el.getAttribute('data-screenshot-stub') ?? ''
+      if (el.textContent !== stub) el.textContent = stub
+    })
+  })
+}
+
+/**
  * Collect browser console logs and return an array of critical errors.
  * Warnings and info messages are filtered out — only errors are flagged.
  *
