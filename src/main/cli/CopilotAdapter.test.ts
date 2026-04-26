@@ -333,10 +333,18 @@ describe('CopilotAdapter', () => {
       expect(args).toContain('--enable-all-github-mcp-tools')
     })
 
-    it('adds --plugin-dir', () => {
-      const args = adapter.buildArgs({ mode: 'interactive', pluginDir: '/plugins' } as SessionOptions)
-      expect(args).toContain('--plugin-dir')
-      expect(args).toContain('/plugins')
+    it('adds --plugin-dir for each entry in pluginDirs', () => {
+      const args = adapter.buildArgs({ mode: 'interactive', pluginDirs: ['/plugins/a', '/plugins/b'] } as SessionOptions)
+      const flags = args.filter((a) => a === '--plugin-dir')
+      expect(flags.length).toBe(2)
+      expect(args).toContain('/plugins/a')
+      expect(args).toContain('/plugins/b')
+    })
+
+    it('omits --plugin-dir when pluginDirs is empty or undefined', () => {
+      expect(adapter.buildArgs({ mode: 'interactive' } as SessionOptions)).not.toContain('--plugin-dir')
+      const emptyDirs: string[] = []
+      expect(adapter.buildArgs({ mode: 'interactive', pluginDirs: emptyDirs } as SessionOptions)).not.toContain('--plugin-dir')
     })
 
     it('adds --stream false only when stream is false', () => {
@@ -658,7 +666,7 @@ describe('CopilotAdapter', () => {
   describe('static properties', () => {
     it('has cliName set to copilot', () => {
       const a = new CopilotAdapter()
-      expect(a.cliName).toBe('copilot')
+      expect(a.cliName).toBe('copilot-cli')
     })
 
     it('has default binaryPath set to copilot', () => {

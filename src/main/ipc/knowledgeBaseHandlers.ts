@@ -8,6 +8,8 @@ import { join, basename } from 'path'
 import type { CLIManager } from '../cli/CLIManager'
 import { assertPathWithinRoots, getWorkspaceAllowedRoots, isSensitiveSystemPath } from '../utils/pathSecurity'
 import { checkRateLimit } from '../utils/rateLimiter'
+import type { BackendId } from '../../shared/backends'
+import { migrateLegacyBackendId } from '../../shared/backends'
 
 interface KBFile {
   name: string
@@ -100,14 +102,15 @@ export function registerKnowledgeBaseHandlers(ipcMain: IpcMain, cliManager: CLIM
 
   ipcMain.handle('kb:get-sections', () => SECTIONS)
 
-  ipcMain.handle('kb:generate', async (_e, args: {
+  ipcMain.handle('kb:generate', async (_e, rawArgs: {
     cwd: string
     sectionIds: string[]
-    cli: 'copilot' | 'claude'
+    cli: BackendId | 'copilot' | 'claude'
     model?: string
     maxBudget?: number
     depth: 'quick' | 'standard' | 'deep'
   }) => {
+    const args = { ...rawArgs, cli: migrateLegacyBackendId(rawArgs.cli) }
     const rl = checkRateLimit('kb:generate')
     if (!rl.allowed) return { error: `Rate limited — try again in ${Math.ceil((rl.retryAfterMs ?? 0) / 1000)}s` }
 
@@ -166,7 +169,8 @@ export function registerKnowledgeBaseHandlers(ipcMain: IpcMain, cliManager: CLIM
     return { results, kbDir }
   })
 
-  ipcMain.handle('kb:update', async (_e, args: { cwd: string; cli: 'copilot' | 'claude'; model?: string }) => {
+  ipcMain.handle('kb:update', async (_e, rawArgs: { cwd: string; cli: BackendId | 'copilot' | 'claude'; model?: string }) => {
+    const args = { ...rawArgs, cli: migrateLegacyBackendId(rawArgs.cli) }
     const kbDir = getKBDir(args.cwd)
     if (!existsSync(kbDir)) return { error: 'No knowledge base found. Generate one first.' }
 
@@ -183,7 +187,8 @@ export function registerKnowledgeBaseHandlers(ipcMain: IpcMain, cliManager: CLIM
     return { agentId: info.id, status: 'started' }
   })
 
-  ipcMain.handle('kb:ask', async (_e, args: { cwd: string; question: string; cli: 'copilot' | 'claude' }) => {
+  ipcMain.handle('kb:ask', async (_e, rawArgs: { cwd: string; question: string; cli: BackendId | 'copilot' | 'claude' }) => {
+    const args = { ...rawArgs, cli: migrateLegacyBackendId(rawArgs.cli) }
     const kbDir = getKBDir(args.cwd)
     const context = existsSync(kbDir)
       ? `Use the knowledge base documentation in ${kbDir} as context. `

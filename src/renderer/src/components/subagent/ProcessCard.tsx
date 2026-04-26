@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import type { SubAgentInfo } from '../../types/subagent'
+import { providerOf } from '../../../../shared/backends'
 
 function formatDuration(startMs: number, endMs?: number): string {
   const elapsed = (endMs ?? Date.now()) - startMs
@@ -57,7 +58,8 @@ export default function ProcessCard({
   }, [agent.status, agent.startedAt, agent.endedAt])
 
   const style = STATUS_STYLES[agent.status] ?? STATUS_STYLES['killed']
-  const cliBadge = agent.cli === 'copilot'
+  const provider = providerOf(agent.cli)
+  const cliBadge = provider === 'copilot'
     ? 'bg-purple-900/50 text-purple-300 border-purple-700/50'
     : 'bg-orange-900/50 text-orange-300 border-orange-700/50'
 
@@ -82,7 +84,7 @@ export default function ProcessCard({
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium text-gray-100 truncate">{agent.name}</span>
               <span className={`text-xs px-1.5 py-0.5 rounded border ${cliBadge}`}>
-                {agent.cli === 'copilot' ? 'Copilot' : 'Claude'}
+                {provider === 'copilot' ? 'Copilot' : 'Claude'}
               </span>
               <span className={`text-xs px-1.5 py-0.5 rounded ${style.bg} ${style.text}`}>
                 {agent.status}

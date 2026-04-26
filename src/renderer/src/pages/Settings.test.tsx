@@ -76,15 +76,18 @@ describe('Settings', () => {
     await waitFor(() => {
       expect(screen.getByText('CLI Flags')).toBeInTheDocument()
       expect(screen.getByText('Model')).toBeInTheDocument()
-      expect(screen.getByText('Budget & Limits')).toBeInTheDocument()
-      expect(screen.getByText('Plugins')).toBeInTheDocument()
+      expect(screen.getByText('Session Limits')).toBeInTheDocument()
       expect(screen.getByText('Profiles')).toBeInTheDocument()
-      expect(screen.getByText('Environment')).toBeInTheDocument()
       expect(screen.getByText('Notifications')).toBeInTheDocument()
-      expect(screen.getByText('Webhooks')).toBeInTheDocument()
       expect(screen.getByText('Data Management')).toBeInTheDocument()
       expect(screen.getByText('Feature Flags')).toBeInTheDocument()
     })
+  })
+
+  it('does not render Budget & Limits tab', async () => {
+    render(<Settings />)
+    await waitFor(() => expect(screen.getByText('Settings')).toBeInTheDocument())
+    expect(screen.queryByText('Budget & Limits')).not.toBeInTheDocument()
   })
 
   it('calls settings:get on mount', () => {
@@ -92,16 +95,25 @@ describe('Settings', () => {
     expect(mockInvoke).toHaveBeenCalledWith('settings:get')
   })
 
-  it('switches to Budget tab', async () => {
+  it('switches to Session Limits tab and renders the SessionLimits component', async () => {
     render(<Settings />)
     await waitFor(() => {
-      expect(screen.getByText('Budget & Limits')).toBeInTheDocument()
+      expect(screen.getByText('Session Limits')).toBeInTheDocument()
     })
-    fireEvent.click(screen.getByText('Budget & Limits'))
+    fireEvent.click(screen.getByText('Session Limits'))
     await waitFor(() => {
-      // BudgetLimits component renders
-      expect(screen.getByText('Budget & Limits', { selector: 'h3' })).toBeInTheDocument()
+      // SessionLimits component renders its own <h3>Session Limits</h3>
+      expect(screen.getByText('Session Limits', { selector: 'h3' })).toBeInTheDocument()
     })
+  })
+
+  it('Session Limits panel does not show a Max Budget control', async () => {
+    render(<Settings />)
+    await waitFor(() => screen.getByText('Session Limits'))
+    fireEvent.click(screen.getByText('Session Limits'))
+    await waitFor(() => screen.getByText('Session Limits', { selector: 'h3' }))
+    expect(screen.queryByText(/Max Budget/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/--max-budget-usd/)).not.toBeInTheDocument()
   })
 
   it('switches to Model tab and renders model selector', async () => {
@@ -123,25 +135,6 @@ describe('Settings', () => {
     })
   })
 
-  it('switches to Plugins tab and calls settings:list-plugins', async () => {
-    mockInvoke.mockImplementation((channel: string) => {
-      if (channel === 'settings:get') return Promise.resolve(defaultSettings)
-      if (channel === 'settings:list-plugins') return Promise.resolve([])
-      if (channel === 'settings:list-profiles') return Promise.resolve([])
-      if (channel === 'settings:get-env-vars') return Promise.resolve([])
-      if (channel === 'notifications:get-prefs') return Promise.resolve(null)
-      if (channel === 'notifications:list-webhooks') return Promise.resolve([])
-      if (channel === 'feature-flags:get') return Promise.resolve(null)
-      return Promise.resolve(null)
-    })
-    render(<Settings />)
-    await waitFor(() => screen.getByText('Plugins'))
-    fireEvent.click(screen.getByText('Plugins'))
-    await waitFor(() => {
-      expect(mockInvoke).toHaveBeenCalledWith('settings:list-plugins', { cli: 'copilot' })
-    })
-  })
-
   it('switches to Profiles tab and calls settings:list-profiles', async () => {
     render(<Settings />)
     await waitFor(() => screen.getByText('Profiles'))
@@ -160,30 +153,12 @@ describe('Settings', () => {
     })
   })
 
-  it('switches to Environment tab and calls settings:get-env-vars', async () => {
-    render(<Settings />)
-    await waitFor(() => screen.getByText('Environment'))
-    fireEvent.click(screen.getByText('Environment'))
-    await waitFor(() => {
-      expect(mockInvoke).toHaveBeenCalledWith('settings:get-env-vars')
-    })
-  })
-
   it('switches to Notifications tab', async () => {
     render(<Settings />)
     await waitFor(() => screen.getByText('Notifications'))
     fireEvent.click(screen.getByText('Notifications'))
     await waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledWith('notifications:get-prefs')
-    })
-  })
-
-  it('switches to Webhooks tab and calls notifications:list-webhooks', async () => {
-    render(<Settings />)
-    await waitFor(() => screen.getByText('Webhooks'))
-    fireEvent.click(screen.getByText('Webhooks'))
-    await waitFor(() => {
-      expect(mockInvoke).toHaveBeenCalledWith('notifications:list-webhooks')
     })
   })
 

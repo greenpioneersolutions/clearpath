@@ -30,15 +30,14 @@ const PRESET_LAYOUTS: DashboardLayout[] = [
       { i: 'quick-prompt', type: 'quick-prompt', x: 0, y: 0, w: 8, h: 3, config: {} },
       { i: 'running-agents', type: 'running-agents', x: 8, y: 0, w: 4, h: 3, config: {} },
       { i: 'recent-sessions', type: 'recent-sessions', x: 0, y: 3, w: 4, h: 3, config: { limit: 5 } },
-      { i: 'token-usage', type: 'token-usage', x: 4, y: 3, w: 4, h: 3, config: {} },
-      { i: 'cost-summary', type: 'cost-summary', x: 8, y: 3, w: 4, h: 3, config: { range: 'today' } },
+      { i: 'token-usage', type: 'token-usage', x: 4, y: 3, w: 8, h: 3, config: {} },
     ],
   },
   {
     id: 'layout-manager', name: 'Manager',
     widgets: [
-      { i: 'cost-summary', type: 'cost-summary', x: 0, y: 0, w: 6, h: 3, config: { range: 'week' } },
-      { i: 'workspace-activity', type: 'workspace-activity', x: 6, y: 0, w: 6, h: 3, config: {} },
+      { i: 'workspace-activity', type: 'workspace-activity', x: 0, y: 0, w: 6, h: 3, config: {} },
+      { i: 'token-usage', type: 'token-usage', x: 6, y: 0, w: 6, h: 3, config: {} },
       { i: 'schedule-overview', type: 'schedule-overview', x: 0, y: 3, w: 4, h: 3, config: {} },
       { i: 'security-events', type: 'security-events', x: 4, y: 3, w: 4, h: 3, config: {} },
       { i: 'notification-feed', type: 'notification-feed', x: 8, y: 3, w: 4, h: 3, config: {} },

@@ -36,10 +36,18 @@ vi.mock('child_process', async (importOriginal) => {
 vi.mock('fs', () => ({
   existsSync: existsSyncMock,
   readFileSync: readFileSyncMock,
+  createWriteStream: vi.fn(),
+  mkdtempSync: vi.fn().mockReturnValue('/tmp/mock-download'),
+  unlinkSync: vi.fn(),
 }))
 
 vi.mock('os', () => ({
   homedir: homedirMock,
+  tmpdir: vi.fn().mockReturnValue('/tmp'),
+}))
+
+vi.mock('https', () => ({
+  request: vi.fn(),
 }))
 
 vi.mock('../utils/shellEnv', () => ({
@@ -48,6 +56,22 @@ vi.mock('../utils/shellEnv', () => ({
   getSpawnEnv: vi.fn().mockReturnValue({}),
   initShellEnv: vi.fn().mockResolvedValue(undefined),
   setCustomEnvVars: vi.fn(),
+}))
+
+// SDK probes: stub the HTTP/SDK checks so the CLI-focused tests don't hit the
+// network. Individual SDK-path tests can override these via mocked return values.
+vi.mock('./SdkAuthProbe', () => ({
+  canResolveClaudeSdk: vi.fn().mockReturnValue(false),
+  getAnthropicApiKey: vi.fn(() => process.env['ANTHROPIC_API_KEY']?.trim() || undefined),
+  getGitHubToken: vi.fn(
+    () => (process.env['GH_TOKEN']?.trim() || process.env['GITHUB_TOKEN']?.trim()) || undefined,
+  ),
+  probeAnthropicKey: vi.fn().mockResolvedValue(false),
+  probeGitHubToken: vi.fn().mockResolvedValue(false),
+}))
+
+vi.mock('electron', () => ({
+  shell: { openExternal: vi.fn().mockResolvedValue(undefined) },
 }))
 
 vi.mock('../utils/storeEncryption', () => ({
@@ -168,9 +192,11 @@ describe('AuthManager', () => {
   describe('getStatus()', () => {
     it('returns cached auth state when both entries are fresh', async () => {
       const now = Date.now()
+      const cliStatus = { installed: true, authenticated: true, checkedAt: now - 1000, tokenSource: 'env-var' as const }
+      const sdkStatus = { installed: false, authenticated: false, checkedAt: 0 }
       const cached = {
-        copilot: { installed: true, authenticated: true, checkedAt: now - 1000, tokenSource: 'env-var' as const },
-        claude: { installed: true, authenticated: true, checkedAt: now - 1000, tokenSource: 'env-var' as const },
+        copilot: { ...cliStatus, cli: cliStatus, sdk: sdkStatus },
+        claude: { ...cliStatus, cli: cliStatus, sdk: sdkStatus },
       }
       mockGet.mockReturnValue(cached)
 
@@ -1010,9 +1036,11 @@ describe('AuthManager', () => {
   describe('cache TTL behavior', () => {
     it('uses 5 min TTL for installed CLIs (AUTH_CACHE_TTL)', async () => {
       const fourMinAgo = Date.now() - 4 * 60 * 1000
+      const cliStatus = { installed: true, authenticated: true, checkedAt: fourMinAgo }
+      const sdkStatus = { installed: false, authenticated: false, checkedAt: 0 }
       const cached = {
-        copilot: { installed: true, authenticated: true, checkedAt: fourMinAgo },
-        claude: { installed: true, authenticated: true, checkedAt: fourMinAgo },
+        copilot: { ...cliStatus, cli: cliStatus, sdk: sdkStatus },
+        claude: { ...cliStatus, cli: cliStatus, sdk: sdkStatus },
       }
       mockGet.mockReturnValue(cached)
 
@@ -1026,9 +1054,11 @@ describe('AuthManager', () => {
 
     it('uses 10 min TTL for not-installed CLIs (INSTALL_CACHE_TTL)', async () => {
       const eightMinAgo = Date.now() - 8 * 60 * 1000
+      const cliStatus = { installed: false, authenticated: false, checkedAt: eightMinAgo }
+      const sdkStatus = { installed: false, authenticated: false, checkedAt: 0 }
       const cached = {
-        copilot: { installed: false, authenticated: false, checkedAt: eightMinAgo },
-        claude: { installed: false, authenticated: false, checkedAt: eightMinAgo },
+        copilot: { ...cliStatus, cli: cliStatus, sdk: sdkStatus },
+        claude: { ...cliStatus, cli: cliStatus, sdk: sdkStatus },
       }
       mockGet.mockReturnValue(cached)
 
@@ -1068,6 +1098,109 @@ describe('AuthManager', () => {
 
       // 11 min > 10 min INSTALL_CACHE_TTL, should refresh
       expect(resolveInShellMock).toHaveBeenCalled()
+    })
+  })
+
+  // ── classifyInstallError() ──────────────────────────────────────────────────
+
+  describe('classifyInstallError()', () => {
+    it('classifies EACCES permission errors', async () => {
+      const mgr = new AuthManager(() => mockWc as any)
+      const err = mgr.classifyInstallError('npm ERR! EACCES: permission denied, open \'/usr/local/lib/node_modules\'')
+      expect(err.code).toBe('EACCES')
+      expect(err.hint).toMatch(/permission|administrator|nvm|homebrew/i)
+    })
+
+    it('classifies "permission denied" as EACCES', async () => {
+      const mgr = new AuthManager(() => mockWc as any)
+      const err = mgr.classifyInstallError('', 'EPERM: operation not permitted')
+      expect(err.code).toBe('EACCES')
+    })
+
+    it('classifies ENOTFOUND as NETWORK', async () => {
+      const mgr = new AuthManager(() => mockWc as any)
+      const err = mgr.classifyInstallError('npm ERR! network', 'ENOTFOUND registry.npmjs.org')
+      expect(err.code).toBe('NETWORK')
+      expect(err.hint).toMatch(/internet|connection|proxy/i)
+    })
+
+    it('classifies ETIMEDOUT as NETWORK', async () => {
+      const mgr = new AuthManager(() => mockWc as any)
+      const err = mgr.classifyInstallError('ETIMEDOUT', '')
+      expect(err.code).toBe('NETWORK')
+    })
+
+    it('classifies ECONNRESET as NETWORK', async () => {
+      const mgr = new AuthManager(() => mockWc as any)
+      const err = mgr.classifyInstallError('', 'socket hang up ECONNRESET')
+      expect(err.code).toBe('NETWORK')
+    })
+
+    it('classifies "unsupported engine" as NODE_MISSING', async () => {
+      const mgr = new AuthManager(() => mockWc as any)
+      const err = mgr.classifyInstallError('', 'npm WARN EBADENGINE Unsupported engine')
+      expect(err.code).toBe('NODE_MISSING')
+      expect(err.hint).toMatch(/Node\.js/i)
+    })
+
+    it('classifies ENOENT for npm as NODE_MISSING', async () => {
+      const mgr = new AuthManager(() => mockWc as any)
+      const err = mgr.classifyInstallError('spawn npm ENOENT', '')
+      expect(err.code).toBe('NODE_MISSING')
+    })
+
+    it('returns UNKNOWN for unrecognized output', async () => {
+      const mgr = new AuthManager(() => mockWc as any)
+      const err = mgr.classifyInstallError('some weird error nobody has seen', '')
+      expect(err.code).toBe('UNKNOWN')
+      expect(err.hint).toBeTruthy()
+      expect(err.message).toBeTruthy()
+    })
+
+    it('every classification has a non-empty hint + message', async () => {
+      const mgr = new AuthManager(() => mockWc as any)
+      const cases = [
+        'EACCES',
+        'ENOTFOUND',
+        'ETIMEDOUT',
+        'unsupported engine',
+        'random unknown thing',
+      ]
+      for (const text of cases) {
+        const err = mgr.classifyInstallError(text, '')
+        expect(err.hint.length).toBeGreaterThan(0)
+        expect(err.message.length).toBeGreaterThan(0)
+      }
+    })
+  })
+
+  // ── openExternalUrl() ───────────────────────────────────────────────────────
+
+  describe('openExternalUrl()', () => {
+    it('accepts https:// URLs', () => {
+      const mgr = new AuthManager(() => mockWc as any)
+      expect(mgr.openExternalUrl('https://github.com/login/device')).toBe(true)
+    })
+
+    it('rejects http:// URLs', () => {
+      const mgr = new AuthManager(() => mockWc as any)
+      expect(mgr.openExternalUrl('http://example.com')).toBe(false)
+    })
+
+    it('rejects file:// URLs', () => {
+      const mgr = new AuthManager(() => mockWc as any)
+      expect(mgr.openExternalUrl('file:///etc/passwd')).toBe(false)
+    })
+
+    it('rejects javascript: URLs', () => {
+      const mgr = new AuthManager(() => mockWc as any)
+      expect(mgr.openExternalUrl('javascript:alert(1)')).toBe(false)
+    })
+
+    it('rejects non-string input', () => {
+      const mgr = new AuthManager(() => mockWc as any)
+      expect(mgr.openExternalUrl(null as unknown as string)).toBe(false)
+      expect(mgr.openExternalUrl(undefined as unknown as string)).toBe(false)
     })
   })
 

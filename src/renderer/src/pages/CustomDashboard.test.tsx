@@ -91,8 +91,16 @@ describe('CustomDashboard', () => {
     fireEvent.click(screen.getByText('+ Add Widget'))
     await waitFor(() => {
       expect(screen.getByText('Available Widgets')).toBeInTheDocument()
-      expect(screen.getByText('Cost Summary')).toBeInTheDocument()
+      expect(screen.getByText('Token Usage')).toBeInTheDocument()
     })
+  })
+
+  it('widget picker does not offer a Cost Summary widget', async () => {
+    renderDashboard()
+    await waitFor(() => expect(screen.getByText('+ Add Widget')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('+ Add Widget'))
+    await waitFor(() => expect(screen.getByText('Available Widgets')).toBeInTheDocument())
+    expect(screen.queryByText('Cost Summary')).not.toBeInTheDocument()
   })
 
   it('hides widget picker when + Add Widget clicked again', async () => {
@@ -166,32 +174,6 @@ describe('CustomDashboard', () => {
     await waitFor(() => {
       // quick-prompt is already in layout
       expect(screen.getByText('Added')).toBeInTheDocument()
-    })
-  })
-
-  it('renders cost-summary widget with correct IPC call', async () => {
-    setupDefault({
-      id: 'default', name: 'Default',
-      widgets: [{ i: 'cost-1', type: 'cost-summary', x: 0, y: 0, w: 4, h: 2, config: {} }],
-    })
-    renderDashboard()
-    await waitFor(() => {
-      expect(mockInvoke).toHaveBeenCalledWith('cost:summary')
-    })
-  })
-
-  it('renders cost-summary widget content when data is available', async () => {
-    setupElectronAPI({
-      'dashboard:get-active-layout': {
-        id: 'default', name: 'Default',
-        widgets: [{ i: 'cost-1', type: 'cost-summary', x: 0, y: 0, w: 4, h: 2, config: {} }],
-      },
-      'dashboard:list-layouts': [{ id: 'default', name: 'Default', widgets: [] }],
-      'cost:summary': { todaySpend: 0.05, weekSpend: 0.25, monthSpend: 1.20, totalTokens: 10000, todayTokens: 500 },
-    })
-    renderDashboard()
-    await waitFor(() => {
-      expect(screen.getByText('Today')).toBeInTheDocument()
     })
   })
 
@@ -754,21 +736,6 @@ describe('CustomDashboard', () => {
     renderDashboard()
     await waitFor(() => {
       expect(screen.getByText('Hourly')).toBeInTheDocument()
-    })
-  })
-
-  it('cost-summary shows No cost data yet when data is null', async () => {
-    setupElectronAPI({
-      'dashboard:get-active-layout': {
-        id: 'default', name: 'Default',
-        widgets: [{ i: 'cost-1', type: 'cost-summary', x: 0, y: 0, w: 4, h: 2, config: {} }],
-      },
-      'dashboard:list-layouts': [{ id: 'default', name: 'Default', widgets: [] }],
-      'cost:summary': null,
-    })
-    renderDashboard()
-    await waitFor(() => {
-      expect(screen.getByText('No cost data yet')).toBeInTheDocument()
     })
   })
 

@@ -284,7 +284,7 @@ describe('knowledgeBaseHandlers', () => {
       expect(result.status).toBe('started')
       expect(mockCLIManager.spawnSubAgent).toHaveBeenCalledWith(expect.objectContaining({
         name: 'KB: Update',
-        cli: 'claude',
+        cli: 'claude-cli',
         permissionMode: 'acceptEdits',
       }))
     })

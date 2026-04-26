@@ -5,6 +5,7 @@ import { AgentWizard } from '../components/AgentWizard'
 import { ProfileManager } from '../components/ProfileManager'
 import { StarterAgentWalkthrough } from '../components/StarterAgentWalkthrough'
 import type { ActiveAgents, AgentDef, AgentListResult, AgentProfile } from '../types/ipc'
+import { providerOf } from '../../../shared/backends'
 
 interface StarterAgent {
   id: string
@@ -292,9 +293,9 @@ export default function Agents(): JSX.Element {
                     key={agent.id}
                     agent={agent}
                     enabled={enabledIds.includes(agent.id)}
-                    isActive={activeAgents[agent.cli] === agent.id}
+                    isActive={activeAgents[providerOf(agent.cli)] === agent.id}
                     onToggle={handleToggle}
-                    onSetActive={(id) => handleSetActive(agent.cli, id)}
+                    onSetActive={(id) => handleSetActive(providerOf(agent.cli), id)}
                     onEdit={(a) => void handleEdit(a)}
                     onDelete={agent.source === 'file' ? handleDelete : undefined}
                   />
@@ -331,9 +332,10 @@ export default function Agents(): JSX.Element {
         defaultCli={wizardCli}
         onCreated={(agent) => {
           setWizardOpen(false)
+          const provider = providerOf(agent.cli)
           setAgentList((prev) => ({
             ...prev,
-            [agent.cli]: [...prev[agent.cli], agent],
+            [provider]: [...prev[provider], agent],
           }))
           setEnabledIds((prev) => [...prev, agent.id])
           void window.electronAPI.invoke('agent:set-enabled', {
@@ -349,9 +351,10 @@ export default function Agents(): JSX.Element {
           isOpen={walkthroughAgent !== null}
           onClose={() => setWalkthroughAgent(null)}
           onCreated={(agent) => {
+            const provider = providerOf(agent.cli)
             setAgentList((prev) => ({
               ...prev,
-              [agent.cli]: [...prev[agent.cli], agent],
+              [provider]: [...prev[provider], agent],
             }))
             setEnabledIds((prev) => {
               const next = [...prev, agent.id]

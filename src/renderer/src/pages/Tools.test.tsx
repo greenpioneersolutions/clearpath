@@ -14,8 +14,6 @@ beforeEach(() => {
   mockInvoke.mockReset()
   mockOn.mockReset().mockReturnValue(vi.fn())
   mockInvoke.mockImplementation((channel: string) => {
-    // McpManager calls
-    if (channel === 'tools:list-mcp-servers') return Promise.resolve([])
     if (channel === 'app:get-cwd') return Promise.resolve('/test')
     // PermissionRequestHandler calls
     if (channel === 'tools:get-pending-permissions') return Promise.resolve([])
@@ -35,7 +33,7 @@ describe('Tools', () => {
 
   it('renders subtitle', () => {
     render(<Tools />)
-    expect(screen.getByText(/Configure tool permissions, MCP servers/)).toBeInTheDocument()
+    expect(screen.getByText(/Configure tool permissions/)).toBeInTheDocument()
   })
 
   it('renders CLI selector buttons', () => {
@@ -49,8 +47,12 @@ describe('Tools', () => {
     // "Permission Mode" appears as both tab label and heading in PermissionModeSelector
     expect(screen.getAllByText('Permission Mode').length).toBeGreaterThanOrEqual(1)
     expect(screen.getByText('Tool Toggles')).toBeInTheDocument()
-    expect(screen.getByText('MCP Servers')).toBeInTheDocument()
     expect(screen.getByText('Requests')).toBeInTheDocument()
+  })
+
+  it('does not render the retired MCP Servers tab', () => {
+    render(<Tools />)
+    expect(screen.queryByText('MCP Servers')).toBeNull()
   })
 
   it('shows CLI flag preview section', () => {
@@ -70,11 +72,11 @@ describe('Tools', () => {
 
   it('switches between tabs', async () => {
     render(<Tools />)
-    // Click MCP Servers tab
-    fireEvent.click(screen.getByText('MCP Servers'))
+    // Click Tool Toggles tab
+    fireEvent.click(screen.getByText('Tool Toggles'))
     await waitFor(() => {
-      // McpManager loads and shows content
-      expect(mockInvoke).toHaveBeenCalledWith('tools:list-mcp-servers', expect.any(Object))
+      const btn = screen.getByText('Tool Toggles') as HTMLButtonElement
+      expect(btn.className).toContain('text-indigo-600')
     })
   })
 

@@ -1,49 +1,25 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { useNavigate, useLocation, useSearchParams } from 'react-router-dom'
+import { useLocation, useSearchParams } from 'react-router-dom'
 import type { ParsedOutput, SessionInfo, HistoricalSession } from '../types/ipc'
 import type { PromptTemplate } from '../types/template'
+import type { BackendId } from '../../../shared/backends'
+import { providerOf, migrateLegacyBackendId } from '../../../shared/backends'
 import OutputDisplay, { type OutputMessage, type UsageStats } from '../components/OutputDisplay'
-import CommandInput from '../components/CommandInput'
+import ChatInputArea, { type ChatContextConfig } from '../components/ChatInputArea'
 import ModeIndicator, { type SessionMode, MODE_CYCLE } from '../components/ModeIndicator'
-import NewSessionModal from '../components/NewSessionModal'
+import SessionSettingsModal, { type SessionSettingsEditChanges } from '../components/SessionSettingsModal'
 import Composer from '../components/composer/Composer'
-import QuickCompose, { type QuickComposeConfig } from '../components/composer/QuickCompose'
 import TemplateForm from '../components/templates/TemplateForm'
 import SessionManager from '../components/SessionManager'
 import SchedulePanel from '../components/SchedulePanel'
 import { useFeatureFlags } from '../contexts/FeatureFlagContext'
 
-// Lazy-load panel contents
-import Agents from './Agents'
-import Tools from './Tools'
-import Templates from './Templates'
-import SubAgents from './SubAgents'
-import SkillsPanel from '../components/skills/SkillsPanel'
-import SkillWizard from '../components/skills/SkillWizard'
 import SessionSummary from '../components/shared/SessionSummary'
 import WelcomeBack from '../components/shared/WelcomeBack'
-import GitHubPanel from '../components/integrations/GitHubPanel'
-import BackstageContextPanel from '../components/backstage/BackstageContextPanel'
 import SessionWizard from '../components/wizard/SessionWizard'
-// MemoryPicker is now integrated into QuickCompose
+// Notes picker is now integrated into ChatInputArea via ContextPicker
 import NotesManager from '../components/memory/NotesManager'
 import ExtensionSlot from '../components/extensions/ExtensionSlot'
-
-// ── Panel definitions ────────────────────────────────────────────────────────
-
-type PanelId = 'agents' | 'tools' | 'work-items' | 'templates' | 'skills' | 'subagents' | 'backstage'
-
-type FlagKey = import('../contexts/FeatureFlagContext').FeatureFlags
-
-const PANELS: Array<{ id: PanelId; icon: JSX.Element; label: string; flagKey?: keyof FlagKey }> = [
-  { id: 'agents', label: 'Agents', icon: <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" /></svg>, flagKey: 'showAgentSelection' },
-  { id: 'tools', label: 'Tools', icon: <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg> },
-  { id: 'work-items', label: 'Work Items', icon: <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" /></svg> },
-  { id: 'templates', label: 'Templates', icon: <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>, flagKey: 'showTemplates' },
-  { id: 'skills', label: 'Skills', icon: <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11 4a2 2 0 114 0v1a1 1 0 001 1h3a1 1 0 011 1v3a1 1 0 01-1 1h-1a2 2 0 100 4h1a1 1 0 011 1v3a1 1 0 01-1 1h-3a1 1 0 01-1-1v-1a2 2 0 10-4 0v1a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 00-1-1H4a2 2 0 110-4h1a1 1 0 001-1V7a1 1 0 011-1h3a1 1 0 001-1V4z" /></svg>, flagKey: 'showSkillsManagement' },
-  { id: 'subagents', label: 'Sub-Agents', icon: <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>, flagKey: 'showSubAgents' },
-  { id: 'backstage', label: 'Backstage', icon: <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" /></svg>, flagKey: 'showBackstageExplorer' },
-]
 
 // ── Session state ────────────────────────────────────────────────────────────
 
@@ -69,22 +45,22 @@ interface ActiveSessionState {
   msgIdCounter: number
   processing: boolean
   usageHistory: UsageStats[]
+  /** Currently active model — updated when the user picks one via the ModelChip. */
+  currentModel?: string
 }
 
 export default function Work(): JSX.Element {
-  const navigate = useNavigate()
   const location = useLocation()
   const [searchParams] = useSearchParams()
   const { flags } = useFeatureFlags()
-  const [activePanel, setActivePanel] = useState<PanelId | null>(null)
   const [sessions, setSessions] = useState<Map<string, ActiveSessionState>>(new Map())
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [showNewSession, setShowNewSession] = useState(false)
+  const [showEditSession, setShowEditSession] = useState(false)
   const [workMode, setWorkMode] = useState<'session' | 'wizard' | 'compose' | 'schedule' | 'memory'>('session')
   const [wizardChecked, setWizardChecked] = useState(false)
-  const [quickConfig, setQuickConfig] = useState<QuickComposeConfig>({})
+  const [quickConfig, setQuickConfig] = useState<ChatContextConfig>({})
   const [activeTemplate, setActiveTemplate] = useState<PromptTemplate | null>(null)
-  const [showSkillWizard, setShowSkillWizard] = useState(false)
   const [showSessionManager, setShowSessionManager] = useState(false)
   const [viewingStoppedSession, setViewingStoppedSession] = useState(false) // true = show conversation for a stopped session instead of welcome screen
   const [selectedNoteIds, setSelectedNoteIds] = useState<Set<string>>(new Set())
@@ -98,9 +74,6 @@ export default function Work(): JSX.Element {
 
   // ── Deep-link: parse URL params and location state ──────────────────────
   useEffect(() => {
-    const panel = searchParams.get('panel') as PanelId | null
-    if (panel && PANELS.some((p) => p.id === panel)) setActivePanel(panel)
-
     const tab = searchParams.get('tab') as typeof workMode | null
     if (tab && ['session', 'wizard', 'compose', 'schedule', 'memory'].includes(tab)) setWorkMode(tab)
 
@@ -125,7 +98,7 @@ export default function Work(): JSX.Element {
 
       // 2. Load persisted sessions from disk (survive app restart)
       const persisted = await window.electronAPI.invoke('cli:get-persisted-sessions') as
-        Array<{ sessionId: string; cli: 'copilot' | 'claude'; name?: string; firstPrompt?: string; startedAt: number; endedAt?: number; messageLog: Array<{ type: string; content: string; metadata?: unknown; sender?: string }> }>
+        Array<{ sessionId: string; cli: BackendId; name?: string; firstPrompt?: string; startedAt: number; endedAt?: number; messageLog: Array<{ type: string; content: string; metadata?: unknown; sender?: string }> }>
 
       // Build a set of active session IDs so we don't duplicate
       const activeIds = new Set(activeSessions.map((s) => s.sessionId))
@@ -237,7 +210,7 @@ export default function Work(): JSX.Element {
         const s = prev.get(sessionId)
         if (!s) return prev
         const updated = new Map(prev)
-        updated.set(sessionId, { ...s, messages: [...s.messages, { id: String(s.msgIdCounter), output, sender: 'ai' as const, timestamp: Date.now() }], msgIdCounter: s.msgIdCounter + 1 })
+        updated.set(sessionId, { ...s, messages: [...s.messages, { id: String(s.msgIdCounter), output, sender: 'ai' as const, timestamp: Date.now(), turnId: output.turnId }], msgIdCounter: s.msgIdCounter + 1 })
         return updated
       })
     }
@@ -312,7 +285,7 @@ export default function Work(): JSX.Element {
 
   // ── Session management ──────────────────────────────────────────────────
 
-  const startSession = useCallback(async (opts: { cli: 'copilot' | 'claude'; name?: string; workingDirectory?: string; initialPrompt?: string; displayPrompt?: string; agent?: string; model?: string; contextSummary?: { memories: string[]; agent?: string; skill?: string } }) => {
+  const startSession = useCallback(async (opts: { cli: BackendId; name?: string; workingDirectory?: string; initialPrompt?: string; displayPrompt?: string; agent?: string; model?: string; contextSummary?: { memories: string[]; agent?: string; skill?: string } }) => {
     const { sessionId } = (await window.electronAPI.invoke('cli:start-session', {
       cli: opts.cli, mode: 'interactive', name: opts.name, workingDirectory: opts.workingDirectory, prompt: opts.initialPrompt, displayPrompt: opts.displayPrompt, agent: opts.agent, model: opts.model,
     })) as { sessionId: string }
@@ -336,7 +309,7 @@ export default function Work(): JSX.Element {
       initial.push({ id: '0', output: { type: 'text', content: userMsg }, sender: 'user', timestamp: Date.now() })
     }
 
-    setSessions((prev) => { const u = new Map(prev); u.set(sessionId, { info, messages: initial, mode: 'normal', msgIdCounter: initial.length, processing: !!opts.initialPrompt, usageHistory: [] }); return u })
+    setSessions((prev) => { const u = new Map(prev); u.set(sessionId, { info, messages: initial, mode: 'normal', msgIdCounter: initial.length, processing: !!opts.initialPrompt, usageHistory: [], currentModel: opts.model }); return u })
     setSelectedId(sessionId)
 
     // Pre-populate the context bar with what was selected in the wizard
@@ -348,12 +321,70 @@ export default function Work(): JSX.Element {
     }
   }, [])
 
+  // ── Zero-click new session ─────────────────────────────────────────────
+  // Resolves CLI / model / working-dir from settings + active workspace and
+  // hands off to `startSession` without opening a modal. Any failure
+  // surfaces via the existing `cli:error` pipeline (chat bubble), so no
+  // special unauth handling here — matches the Sessions page behaviour.
+  const handleQuickStart = useCallback(async () => {
+    const settings = await window.electronAPI.invoke('settings:get') as {
+      preferredBackend?: BackendId
+      model?: { copilot?: string; claude?: string }
+    } | null
+
+    // 1. Resolve CLI: explicit default → last-used session's CLI → copilot-cli
+    let cli: BackendId = 'copilot-cli'
+    if (settings?.preferredBackend) {
+      cli = settings.preferredBackend
+    } else if (sessionsRef.current.size > 0) {
+      const lastUsed = Array.from(sessionsRef.current.values())
+        .sort((a, b) => b.info.startedAt - a.info.startedAt)[0]
+      if (lastUsed) cli = lastUsed.info.cli
+    }
+
+    // 2. Resolve model: settings.model[provider] for that CLI
+    const provider = providerOf(cli)
+    const model = settings?.model?.[provider] || undefined
+
+    // 3. Resolve working directory from the active workspace's first repo path
+    let workingDirectory: string | undefined
+    try {
+      const activeId = await window.electronAPI.invoke('workspace:get-active') as string | null
+      if (activeId) {
+        const workspaces = await window.electronAPI.invoke('workspace:list') as Array<{
+          id: string; repoPaths: string[]
+        }>
+        const active = workspaces.find((w) => w.id === activeId)
+        if (active && active.repoPaths.length > 0) workingDirectory = active.repoPaths[0]
+      }
+    } catch {
+      // Workspace lookup is best-effort; empty workingDirectory falls back to backend default.
+    }
+
+    await startSession({ cli, model, workingDirectory })
+  }, [startSession])
+
+  // ── Edit an existing session's settings ──────────────────────────────
+  const handleEditSessionSave = useCallback(async (changes: SessionSettingsEditChanges) => {
+    if (!selectedId) return
+    if (changes.model) handleModelChange(changes.model)
+    if (changes.name) {
+      await window.electronAPI.invoke('cli:rename-session', { sessionId: selectedId, name: changes.name })
+      setSessions((prev) => {
+        const s = prev.get(selectedId); if (!s) return prev
+        const u = new Map(prev)
+        u.set(selectedId, { ...s, info: { ...s.info, name: changes.name } })
+        return u
+      })
+    }
+  }, [selectedId])
+
   // ── Auto-start session from Home page quick prompt ─────────────────────
   useEffect(() => {
     if (pendingQuickPrompt.current) {
       const p = pendingQuickPrompt.current
       pendingQuickPrompt.current = null
-      void startSession({ cli: 'copilot', name: p.slice(0, 30), initialPrompt: p })
+      void startSession({ cli: 'copilot-cli', name: p.slice(0, 30), initialPrompt: p })
       setWorkMode('session')
     }
   }, [startSession])
@@ -480,20 +511,39 @@ export default function Work(): JSX.Element {
       window.electronAPI.invoke('cli:send-input', { sessionId: selectedId, input: actualInput })
     })()
 
-    // Show only the user's original message in the chat (not the prepended context)
+    // Show only the user's original message in the chat (not the prepended context).
+    // Build a "Sent with..." annotation that surfaces what context was actually attached
+    // — makes the invisible visible.
     setSessions((prev) => {
       const s = prev.get(selectedId); if (!s) return prev
       const u = new Map(prev)
       const noteCount = selectedNoteIds.size
       const ctxCount = selectedContextSources.length
-      const attachments: string[] = []
-      if (noteCount > 0) attachments.push(`${noteCount} memor${noteCount === 1 ? 'y' : 'ies'}`)
-      if (ctxCount > 0) attachments.push(`${ctxCount} source${ctxCount === 1 ? '' : 's'}`)
-      const displayContent = attachments.length > 0 ? `\ud83d\udcce ${attachments.join(', ')} attached\n\n${input}` : input
-      u.set(selectedId, { ...s, messages: [...s.messages, { id: String(s.msgIdCounter), output: { type: 'text', content: displayContent }, sender: 'user', timestamp: Date.now() }], msgIdCounter: s.msgIdCounter + 1, processing: true })
+      const parts: string[] = []
+      if (quickConfig.agent) parts.push(`Prompt: ${quickConfig.agent}`)
+      if (quickConfig.skill) parts.push(`Playbook: ${quickConfig.skill}`)
+      if (noteCount > 0) parts.push(`${noteCount} note${noteCount === 1 ? '' : 's'}`)
+      if (ctxCount > 0) parts.push(`${ctxCount} source${ctxCount === 1 ? '' : 's'}`)
+      if (quickConfig.fleet) parts.push('Parallel Mode')
+      const contextAnnotation = parts.length > 0 ? `Sent with ${parts.join(' + ')}` : undefined
+      u.set(selectedId, {
+        ...s,
+        messages: [
+          ...s.messages,
+          {
+            id: String(s.msgIdCounter),
+            output: { type: 'text', content: input },
+            sender: 'user',
+            timestamp: Date.now(),
+            contextAnnotation,
+          },
+        ],
+        msgIdCounter: s.msgIdCounter + 1,
+        processing: true,
+      })
       return u
     })
-  }, [selectedId, sessions, selectedNoteIds, selectedContextSources])
+  }, [selectedId, sessions, selectedNoteIds, selectedContextSources, quickConfig])
 
   const handleSlashCommand = useCallback((command: string) => {
     if (!selectedId) return
@@ -504,6 +554,34 @@ export default function Work(): JSX.Element {
     }
     window.electronAPI.invoke('cli:send-slash-command', { sessionId: selectedId, command })
   }, [selectedId, handleSend])
+
+  const handleModelChange = useCallback((model: string) => {
+    if (!selectedId || !model) return
+    // Send `/model <name>` to the running CLI session
+    void window.electronAPI.invoke('cli:send-slash-command', {
+      sessionId: selectedId,
+      command: `/model ${model}`,
+    })
+    setSessions((prev) => {
+      const s = prev.get(selectedId); if (!s) return prev
+      const u = new Map(prev)
+      u.set(selectedId, {
+        ...s,
+        currentModel: model,
+        messages: [
+          ...s.messages,
+          {
+            id: String(s.msgIdCounter),
+            output: { type: 'status', content: `Model switched to ${model}` },
+            sender: 'system',
+            timestamp: Date.now(),
+          },
+        ],
+        msgIdCounter: s.msgIdCounter + 1,
+      })
+      return u
+    })
+  }, [selectedId])
 
   const handlePermissionResponse = useCallback((response: 'y' | 'n') => {
     if (!selectedId) return
@@ -536,11 +614,6 @@ export default function Work(): JSX.Element {
     window.electronAPI.invoke('cli:send-input', { sessionId: selectedId, input: '\x1b[Z' })
   }, [selectedId])
 
-  const togglePanel = (id: PanelId) => {
-    setActivePanel(activePanel === id ? null : id)
-    if (id !== 'skills') setShowSkillWizard(false)
-  }
-
   const handleSessionManagerSelect = useCallback(async (sessionId: string) => {
     // If the session is already in our map, just select it
     if (sessions.has(sessionId)) {
@@ -551,7 +624,7 @@ export default function Work(): JSX.Element {
     const log = await window.electronAPI.invoke('cli:get-message-log', { sessionId }) as
       Array<{ type: string; content: string; metadata?: unknown; sender?: string }>
     const persisted = await window.electronAPI.invoke('cli:get-persisted-sessions') as
-      Array<{ sessionId: string; cli: 'copilot' | 'claude'; name?: string; startedAt: number }>
+      Array<{ sessionId: string; cli: BackendId; name?: string; startedAt: number }>
     const ps = persisted.find((s) => s.sessionId === sessionId)
     if (!ps) return
 
@@ -582,31 +655,12 @@ export default function Work(): JSX.Element {
     .sort((a, b) => b.info.startedAt - a.info.startedAt)
     .slice(0, 5)
   const selectedSession = selectedId ? sessions.get(selectedId) ?? null : null
-  // Derive a sensible CLI default from the most recent session (or fall back to copilot)
-  const lastUsedCli: 'copilot' | 'claude' = selectedSession?.info.cli ?? recentSessions[0]?.info.cli ?? 'copilot'
+  // Derive a sensible CLI default from the most recent session (or fall back to copilot-cli)
+  const lastUsedCli: BackendId = selectedSession?.info.cli ?? recentSessions[0]?.info.cli ?? 'copilot-cli'
 
   return (
     <div className="flex h-full overflow-hidden">
-      {/* Left: Panel Toolbar */}
-      <div className="w-12 flex flex-col items-center py-2 gap-1 flex-shrink-0" style={{ backgroundColor: 'var(--brand-dark-page)', borderRight: '1px solid var(--brand-dark-border)' }}>
-        {PANELS.filter((p) => !p.flagKey || flags[p.flagKey]).map((p) => (
-          <button
-            key={p.id}
-            onClick={() => togglePanel(p.id)}
-            className={`w-9 h-9 flex items-center justify-center rounded-lg transition-all ${
-              activePanel === p.id
-                ? 'text-white'
-                : 'text-gray-500 hover:text-gray-300'
-            }`}
-            style={activePanel === p.id ? { backgroundColor: 'var(--brand-btn-primary)' } : {}}
-            title={p.label}
-          >
-            {p.icon}
-          </button>
-        ))}
-      </div>
-
-      {/* Center: Session / Compose area */}
+      {/* Center: Session / Compose area (full-width) */}
       <div className="flex-1 flex flex-col min-w-0 min-h-0" style={{ backgroundColor: 'var(--brand-dark-page)' }}>
         {/* Header bar with mode toggle */}
         <div className="flex items-center gap-2 px-3 py-2 flex-shrink-0" style={{ backgroundColor: 'var(--brand-dark-page)', borderBottom: '1px solid var(--brand-dark-border)' }}>
@@ -655,35 +709,30 @@ export default function Work(): JSX.Element {
           {/* Session controls (only in session mode) */}
           {workMode === 'session' && (
             <>
-              <select
-                value={selectedId ?? ''}
-                onChange={(e) => { setSelectedId(e.target.value || null); setViewingStoppedSession(false) }}
-                className="bg-gray-800 border border-gray-700 text-gray-200 text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 max-w-[200px]"
-              >
-                <option value="">Select session...</option>
-                {recentSessions.map(({ info }) => (
-                  <option key={info.sessionId} value={info.sessionId}>
-                    {info.name ?? info.sessionId.slice(0, 8)} ({info.cli}){info.status === 'stopped' ? ' - ended' : ''}
-                  </option>
-                ))}
-              </select>
-
-              <button onClick={() => setShowSessionManager(true)}
-                className="text-xs text-gray-400 hover:text-gray-200 px-2 py-1 flex items-center gap-1 transition-colors"
-                title="View all sessions"
-              >
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
-                </svg>
-                All
-              </button>
-
-              <button onClick={() => setShowNewSession(true)}
-                className="text-xs text-indigo-400 hover:text-indigo-300 px-2 py-1">
-                + New
-              </button>
-
-              <div className="flex-1" />
+              <div className="flex-1 flex items-center justify-center min-w-0 gap-2">
+                {selectedId && selectedSession && (
+                  <>
+                    <span className="text-xs text-gray-400 truncate" title={`${selectedSession.info.name ?? 'Session'} · ${providerOf(selectedSession.info.cli) === 'copilot' ? 'Copilot' : 'Claude Code'} · ${selectedSession.currentModel ?? 'default model'}`}>
+                      {selectedSession.info.name ?? 'Session'}
+                      <span className="text-gray-600 mx-1.5">·</span>
+                      {providerOf(selectedSession.info.cli) === 'copilot' ? 'Copilot' : 'Claude Code'}
+                      <span className="text-gray-600 mx-1.5">·</span>
+                      {selectedSession.currentModel ?? 'default model'}
+                    </span>
+                    <button
+                      onClick={() => setShowEditSession(true)}
+                      className="text-gray-400 hover:text-gray-200 transition-colors flex-shrink-0"
+                      title="Edit session"
+                      aria-label="Edit session"
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      </svg>
+                    </button>
+                  </>
+                )}
+              </div>
 
               {selectedSession && (
                 <>
@@ -703,6 +752,21 @@ export default function Work(): JSX.Element {
                   )}
                 </>
               )}
+
+              <button onClick={() => setShowSessionManager(true)}
+                className="text-xs text-gray-400 hover:text-gray-200 px-2 py-1 flex items-center gap-1 transition-colors"
+                title="View all sessions"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+                </svg>
+                All
+              </button>
+
+              <button onClick={() => void handleQuickStart()}
+                className="text-xs text-indigo-400 hover:text-indigo-300 px-2 py-1">
+                + New
+              </button>
             </>
           )}
         </div>
@@ -728,33 +792,39 @@ export default function Work(): JSX.Element {
                     </div>
                   )}
                   <ExtensionSlot slotName="work:above-input" className="flex-shrink-0" />
-                  <div className="relative flex-shrink-0">
-                    <QuickCompose
-                      config={quickConfig}
-                      onConfigChange={setQuickConfig}
-                      cli={selectedSession.info.cli}
-                      onTemplateSelect={handleTemplateSelect}
-                      selectedNoteIds={selectedNoteIds}
-                      onToggleNote={(id) => setSelectedNoteIds((prev) => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next })}
-                      onClearNotes={() => setSelectedNoteIds(new Set())}
-                      selectedContextSources={selectedContextSources}
-                      onToggleContextSource={(source) => {
-                        setSelectedContextSources((prev) => {
-                          const exists = prev.find((s) => s.providerId === source.providerId)
-                          if (exists) return prev.filter((s) => s.providerId !== source.providerId)
-                          return [...prev, source]
-                        })
-                      }}
-                      onRemoveContextSource={(providerId) => setSelectedContextSources((prev) => prev.filter((s) => s.providerId !== providerId))}
-                      onClearContextSources={() => setSelectedContextSources([])}
-                    />
-                  </div>
-                  <CommandInput
+                  <ChatInputArea
                     cli={selectedSession.info.cli}
                     onSend={handleSend}
                     onSlashCommand={handleSlashCommand}
                     disabled={selectedSession.processing}
                     processing={selectedSession.processing}
+                    hasActiveSession={selectedSession.info.status === 'running'}
+                    config={quickConfig}
+                    onConfigChange={setQuickConfig}
+                    selectedNoteIds={selectedNoteIds}
+                    onToggleNote={(id) =>
+                      setSelectedNoteIds((prev) => {
+                        const next = new Set(prev)
+                        next.has(id) ? next.delete(id) : next.add(id)
+                        return next
+                      })
+                    }
+                    onClearNotes={() => setSelectedNoteIds(new Set())}
+                    selectedContextSources={selectedContextSources}
+                    onToggleContextSource={(source) => {
+                      setSelectedContextSources((prev) => {
+                        const exists = prev.find((s) => s.providerId === source.providerId)
+                        if (exists) return prev.filter((s) => s.providerId !== source.providerId)
+                        return [...prev, source]
+                      })
+                    }}
+                    onRemoveContextSource={(providerId) =>
+                      setSelectedContextSources((prev) => prev.filter((s) => s.providerId !== providerId))
+                    }
+                    onClearContextSources={() => setSelectedContextSources([])}
+                    onTemplateSelect={handleTemplateSelect}
+                    currentModel={selectedSession.currentModel}
+                    onModelChange={handleModelChange}
                   />
                 </>
               ) : (
@@ -785,12 +855,9 @@ export default function Work(): JSX.Element {
             /* Welcome back / no session screen — shown when no session is selected OR selected session is stopped */
             <WelcomeBack
               recentSessions={recentSessions.map((s) => ({ info: s.info, messages: s.messages }))}
-              onNewSession={() => setShowNewSession(true)}
+              onStartBlank={() => void handleQuickStart()}
               onContinueSession={(info) => void startSession({ cli: info.cli, name: info.name ? `${info.name} (cont)` : undefined })}
-              onViewSession={(sessionId) => { setSelectedId(sessionId); setViewingStoppedSession(true) }}
-              onStartWithPrompt={(prompt, _agentId) => {
-                void startSession({ cli: lastUsedCli, name: prompt.slice(0, 30), initialPrompt: prompt })
-              }}
+              onBrowseAll={() => setShowSessionManager(true)}
             />
           )
         )}
@@ -826,11 +893,11 @@ export default function Work(): JSX.Element {
               }}
               onSendToNewSession={(prompt) => {
                 void (async () => {
-                  await startSession({ cli: selectedSession?.info.cli ?? 'copilot', initialPrompt: prompt })
+                  await startSession({ cli: selectedSession?.info.cli ?? 'copilot-cli', initialPrompt: prompt })
                   setWorkMode('session')
                 })()
               }}
-              cli={selectedSession?.info.cli ?? 'copilot'}
+              cli={selectedSession?.info.cli ?? 'copilot-cli'}
               hasActiveSession={!!selectedSession && selectedSession.info.status === 'running'}
               activeSessionName={selectedSession?.info.name ?? selectedSession?.info.sessionId.slice(0, 8)}
               sessions={recentSessions.filter((s) => s.info.status === 'running').map((s) => ({
@@ -846,7 +913,7 @@ export default function Work(): JSX.Element {
         {/* Schedule mode content */}
         {workMode === 'schedule' && (
           <div className="flex-1 overflow-y-auto">
-            <SchedulePanel cli={selectedSession?.info.cli ?? 'copilot'} />
+            <SchedulePanel cli={selectedSession?.info.cli ?? 'copilot-cli'} />
           </div>
         )}
 
@@ -858,70 +925,25 @@ export default function Work(): JSX.Element {
         )}
       </div>
 
-      {/* Right: Contextual Panel (slides in) */}
-      <div className={`transition-all duration-200 ease-in-out overflow-hidden ${
-        activePanel ? 'w-[520px]' : 'w-0'
-      }`}>
-        <div className="w-[520px] h-full border-l border-gray-200 bg-white overflow-y-auto">
-          {/* Panel header */}
-          {activePanel && (
-            <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-200 bg-gray-50 sticky top-0 z-10">
-              <span className="text-sm font-semibold text-gray-800">
-                {PANELS.find((p) => p.id === activePanel)?.label}
-              </span>
-              <button onClick={() => setActivePanel(null)}
-                className="text-gray-400 hover:text-gray-600 text-xs">Close</button>
-            </div>
-          )}
-
-          {/* Panel content */}
-          <div className="p-4">
-            {activePanel === 'agents' && <Agents />}
-            {activePanel === 'tools' && <Tools />}
-            {activePanel === 'work-items' && (
-              <GitHubPanel onInjectContext={(text) => {
-                if (selectedId) {
-                  handleSend(`Here is GitHub context for reference:\n\n${text}\n\nPlease review and summarize the key details.`)
-                }
-              }} />
-            )}
-            {activePanel === 'templates' && <Templates />}
-            {activePanel === 'skills' && !showSkillWizard && (
-              <SkillsPanel
-                onInsertCommand={(cmd) => {
-                  if (selectedId) {
-                    handleSend(cmd)
-                    setActivePanel(null)
-                  }
-                }}
-                onCreateSkill={() => setShowSkillWizard(true)}
-                onManageSkills={() => navigate('/configure')}
-              />
-            )}
-            {activePanel === 'skills' && showSkillWizard && (
-              <SkillWizard
-                onSaved={() => { setShowSkillWizard(false) }}
-                onCancel={() => setShowSkillWizard(false)}
-              />
-            )}
-            {activePanel === 'subagents' && <SubAgents />}
-            {activePanel === 'backstage' && (
-              <BackstageContextPanel onInjectContext={(text) => {
-                if (selectedId) {
-                  handleSend(`Here is Backstage catalog context for reference:\n\n${text}\n\nPlease review and summarize the key details.`)
-                }
-              }} />
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* New session modal */}
+      {/* Create-mode fallback — retained for callers that still want the full
+          New Session dialog (e.g. starter prompts). "+ New" no longer opens it. */}
       {showNewSession && (
-        <NewSessionModal
+        <SessionSettingsModal
+          mode="create"
           onStart={(opts) => void startSession(opts)}
           onClose={() => setShowNewSession(false)}
           defaultCli={lastUsedCli}
+        />
+      )}
+
+      {/* Edit-mode modal — opened by the gear icon in the top bar. */}
+      {showEditSession && selectedSession && (
+        <SessionSettingsModal
+          mode="edit"
+          existingSession={selectedSession.info}
+          currentModel={selectedSession.currentModel}
+          onSave={(changes) => void handleEditSessionSave(changes)}
+          onClose={() => setShowEditSession(false)}
         />
       )}
 

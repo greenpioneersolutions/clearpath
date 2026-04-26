@@ -1,6 +1,7 @@
 import type { SessionInfo } from '../../types/ipc'
 import type { OutputMessage } from '../OutputDisplay'
 import ExtensionSlot from '../extensions/ExtensionSlot'
+import { providerOf } from '../../../../shared/backends'
 
 interface Props {
   session: SessionInfo
@@ -33,7 +34,7 @@ export default function SessionSummary({ session, messages, onContinue, onSaveAs
           <div className="text-2xl mb-2">{errorCount > 0 ? '⚠️' : '✓'}</div>
           <h3 className="text-white font-semibold text-base">Session Complete</h3>
           <p className="text-gray-400 text-sm mt-0.5">
-            {session.name ?? session.sessionId.slice(0, 8)} · {session.cli === 'copilot' ? 'Copilot' : 'Claude'}
+            {session.name ?? session.sessionId.slice(0, 8)} · {providerOf(session.cli) === 'copilot' ? 'Copilot' : 'Claude'}
           </p>
         </div>
 

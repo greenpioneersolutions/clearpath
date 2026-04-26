@@ -7,6 +7,7 @@ import { STARTER_AGENTS } from '../starter-pack/agents'
 import Store from 'electron-store'
 import { getStoreEncryptionKey } from '../utils/storeEncryption'
 import { existsSync, readFileSync } from 'fs'
+import { providerOf } from '../../shared/backends'
 
 export function registerIpcHandlers(
   ipcMain: IpcMain,
@@ -25,12 +26,13 @@ export function registerIpcHandlers(
 
     // Auto-inject the saved model from settings, or fall back to app defaults
     if (!resolved.model) {
-      const DEFAULT_MODELS: Record<string, string> = { copilot: 'gpt-5-mini', claude: 'sonnet' }
-      let modelToUse = DEFAULT_MODELS[options.cli] ?? ''
+      const provider = providerOf(options.cli)
+      const DEFAULT_MODELS: Record<'copilot' | 'claude', string> = { copilot: 'gpt-5-mini', claude: 'sonnet' }
+      let modelToUse = DEFAULT_MODELS[provider] ?? ''
       try {
         const settingsStore = new Store({ name: 'clear-path-settings', encryptionKey: getStoreEncryptionKey() })
         const settings = settingsStore.get('settings') as { model?: { copilot?: string; claude?: string } } | undefined
-        const savedModel = settings?.model?.[options.cli]
+        const savedModel = settings?.model?.[provider]
         if (savedModel) modelToUse = savedModel
       } catch { /* settings not available */ }
       if (modelToUse) resolved = { ...resolved, model: modelToUse }
@@ -41,7 +43,7 @@ export function registerIpcHandlers(
     let agentWasExplicit = !!resolved.agent
     if (!agentId && agentManager) {
       const active = agentManager.getActiveAgents()
-      agentId = active[options.cli] ?? null
+      agentId = active[providerOf(options.cli)] ?? null
     }
 
     if (agentId) {

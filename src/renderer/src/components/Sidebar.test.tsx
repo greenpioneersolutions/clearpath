@@ -76,7 +76,8 @@ describe('Sidebar', () => {
     renderSidebar()
     expect(screen.getByText('Work')).toBeInTheDocument()
     expect(screen.getByText('Insights')).toBeInTheDocument()
-    expect(screen.getByText('Configure')).toBeInTheDocument()
+    // The Configure nav entry now renders with the label "Settings".
+    expect(screen.getByText('Settings')).toBeInTheDocument()
   })
 
   it('renders notification bell', () => {

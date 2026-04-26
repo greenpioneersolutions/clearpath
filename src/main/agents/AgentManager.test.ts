@@ -144,7 +144,7 @@ describe('AgentManager', () => {
         id: 'copilot:file:test',
         name: 'Test Agent',
         description: 'A helper',
-        cli: 'copilot',
+        cli: 'copilot-cli',
         source: 'file',
       })
     })
@@ -834,9 +834,9 @@ describe('AgentManager', () => {
 
       const result = manager.listAgents()
       expect(result.copilot).toHaveLength(1)
-      expect(result.copilot[0].cli).toBe('copilot')
+      expect(result.copilot[0].cli).toBe('copilot-cli')
       expect(result.claude).toHaveLength(1)
-      expect(result.claude[0].cli).toBe('claude')
+      expect(result.claude[0].cli).toBe('claude-cli')
     })
 
     it('generates correct IDs from filenames', () => {

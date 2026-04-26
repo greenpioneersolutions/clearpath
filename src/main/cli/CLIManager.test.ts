@@ -7,6 +7,7 @@ const {
   mockSet,
   mockCopilotAdapter,
   mockClaudeAdapter,
+  mockPluginManager,
 } = vi.hoisted(() => {
   const mockCopilotAdapter = {
     cliName: 'copilot',
@@ -30,11 +31,15 @@ const {
     sendInput: vi.fn(),
     sendSlashCommand: vi.fn(),
   }
+  const mockPluginManager = {
+    getEnabledPaths: vi.fn(),
+  }
   return {
     mockGet: vi.fn(),
     mockSet: vi.fn(),
     mockCopilotAdapter,
     mockClaudeAdapter,
+    mockPluginManager,
   }
 })
 
@@ -80,6 +85,12 @@ vi.mock('./ClaudeCodeAdapter', () => ({
     startSession = mockClaudeAdapter.startSession
     sendInput = mockClaudeAdapter.sendInput
     sendSlashCommand = mockClaudeAdapter.sendSlashCommand
+  },
+}))
+
+vi.mock('../plugins/PluginManager', () => ({
+  PluginManager: class {
+    getEnabledPaths = mockPluginManager.getEnabledPaths
   },
 }))
 
@@ -172,6 +183,9 @@ describe('CLIManager', () => {
     mockClaudeAdapter.isAuthenticated.mockResolvedValue(true)
     mockClaudeAdapter.buildArgs.mockReturnValue([])
     mockClaudeAdapter.parseOutput.mockImplementation((data: string) => ({ type: 'text' as const, content: data }))
+
+    // Default: no enabled plugins for either CLI
+    mockPluginManager.getEnabledPaths.mockReturnValue([])
 
     // Default: empty session store
     setupStore([])
@@ -507,6 +521,67 @@ describe('CLIManager', () => {
   // Sub-agent listing and management
   // ═════════════════════════════════════════════════════════════════════════════
 
+  // ═════════════════════════════════════════════════════════════════════════════
+  // Plugin injection — wires the Plugins page through to spawned sessions
+  // ═════════════════════════════════════════════════════════════════════════════
+
+  describe('plugin injection', () => {
+    it('injects enabled Copilot plugin paths into the spawned session options', async () => {
+      mockPluginManager.getEnabledPaths.mockImplementation((cli: 'copilot' | 'claude') =>
+        cli === 'copilot' ? ['/p/one', '/p/two'] : []
+      )
+      const mockProc = createMockProcess()
+      mockCopilotAdapter.startSession.mockReturnValue(mockProc)
+
+      await makeManager().startSession({ cli: 'copilot', mode: 'prompt', prompt: 'hi' })
+
+      expect(mockPluginManager.getEnabledPaths).toHaveBeenCalledWith('copilot')
+      const optsPassed = mockCopilotAdapter.startSession.mock.calls[0][0]
+      expect(optsPassed.pluginDirs).toEqual(['/p/one', '/p/two'])
+    })
+
+    it('injects enabled Claude plugin paths into the spawned session options', async () => {
+      mockPluginManager.getEnabledPaths.mockImplementation((cli: 'copilot' | 'claude') =>
+        cli === 'claude' ? ['/cl/alpha'] : []
+      )
+      const mockProc = createMockProcess()
+      mockClaudeAdapter.startSession.mockReturnValue(mockProc)
+
+      await makeManager().startSession({ cli: 'claude', mode: 'prompt', prompt: 'hi' })
+
+      expect(mockPluginManager.getEnabledPaths).toHaveBeenCalledWith('claude')
+      const optsPassed = mockClaudeAdapter.startSession.mock.calls[0][0]
+      expect(optsPassed.pluginDirs).toEqual(['/cl/alpha'])
+    })
+
+    it('does not pass pluginDirs when no plugins are enabled', async () => {
+      // Default beforeEach already returns []
+      const mockProc = createMockProcess()
+      mockCopilotAdapter.startSession.mockReturnValue(mockProc)
+
+      await makeManager().startSession({ cli: 'copilot', mode: 'prompt', prompt: 'hi' })
+
+      const optsPassed = mockCopilotAdapter.startSession.mock.calls[0][0]
+      expect(optsPassed.pluginDirs).toBeUndefined()
+    })
+
+    it('respects explicit pluginDirs from caller — does not overwrite', async () => {
+      mockPluginManager.getEnabledPaths.mockReturnValue(['/should/not/win'])
+      const mockProc = createMockProcess()
+      mockCopilotAdapter.startSession.mockReturnValue(mockProc)
+
+      await makeManager().startSession({
+        cli: 'copilot',
+        mode: 'prompt',
+        prompt: 'hi',
+        pluginDirs: ['/explicit/from/caller'],
+      })
+
+      const optsPassed = mockCopilotAdapter.startSession.mock.calls[0][0]
+      expect(optsPassed.pluginDirs).toEqual(['/explicit/from/caller'])
+    })
+  })
+
   describe('sub-agent management', () => {
     it('listSubAgents returns empty array initially', () => {
       expect(makeManager().listSubAgents()).toEqual([])
@@ -819,6 +894,35 @@ describe('CLIManager', () => {
       expect(outputCalls.length).toBeGreaterThanOrEqual(1)
       const lastOutput = outputCalls[outputCalls.length - 1]
       expect(lastOutput[1].output.content).toBe('Hello world')
+    })
+
+    it('stamps each cli:output with the current turnId set by cli:turn-start', async () => {
+      const { mgr, mockWc } = makeManagerWithWc()
+      const mockProc = createMockProcess()
+      mockCopilotAdapter.startSession.mockReturnValue(mockProc)
+      mockCopilotAdapter.parseOutput.mockImplementation((line: string) => ({ type: 'text', content: line }))
+
+      await mgr.startSession({ cli: 'copilot', mode: 'prompt', prompt: 'test' })
+
+      // Grab the turnId emitted on cli:turn-start
+      const turnStartCall = mockWc.send.mock.calls.find((c: unknown[]) => c[0] === 'cli:turn-start')
+      expect(turnStartCall).toBeDefined()
+      const turnId = turnStartCall![1].turnId
+      expect(typeof turnId).toBe('string')
+      expect(turnId.length).toBeGreaterThan(0)
+
+      mockWc.send.mockClear()
+
+      for (const cb of mockProc._listeners['stdout:data'] ?? []) {
+        cb(Buffer.from('streamed chunk\n'))
+      }
+
+      const outputCalls = mockWc.send.mock.calls.filter((c: unknown[]) => c[0] === 'cli:output')
+      expect(outputCalls.length).toBeGreaterThanOrEqual(1)
+      // Every output event within the turn carries the same turnId
+      for (const call of outputCalls) {
+        expect(call[1].output.turnId).toBe(turnId)
+      }
     })
 
     it('sends permission-request type via cli:permission-request channel', async () => {

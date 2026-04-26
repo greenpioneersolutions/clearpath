@@ -17,6 +17,8 @@ import type {
   AgentListResult,
   ActiveAgents,
 } from '../../renderer/src/types/ipc'
+import type { BackendId, BackendProvider } from '../../shared/backends'
+import { providerOf } from '../../shared/backends'
 
 // Built-in CLI agents (explore, task, etc.) are no longer listed here.
 // Users create their own agents via the Starter Pack walkthrough instead.
@@ -116,7 +118,14 @@ function slugify(name: string): string {
 
 // ── File scanners ─────────────────────────────────────────────────────────────
 
-function scanDirectory(dir: string, cli: 'copilot' | 'claude', extFilter: string): AgentDef[] {
+/**
+ * Scan a directory for agent markdown files. `provider` is the provider
+ * family the agents belong to (copilot or claude). Each returned AgentDef is
+ * tagged with the CLI-transport BackendId for that provider — downstream
+ * session wizards can route the agent to the SDK backend of the same provider
+ * without rescanning.
+ */
+function scanDirectory(dir: string, provider: BackendProvider, extFilter: string): AgentDef[] {
   if (!existsSync(dir)) return []
 
   const agents: AgentDef[] = []
@@ -126,6 +135,8 @@ function scanDirectory(dir: string, cli: 'copilot' | 'claude', extFilter: string
   } catch {
     return []
   }
+
+  const cli: BackendId = provider === 'copilot' ? 'copilot-cli' : 'claude-cli'
 
   for (const entry of entries) {
     if (!entry.endsWith(extFilter)) continue
@@ -140,7 +151,7 @@ function scanDirectory(dir: string, cli: 'copilot' | 'claude', extFilter: string
 
     const { meta, body } = parseFrontmatter(content)
     const name = String(meta['name'] ?? basename(entry, extFilter)).trim()
-    const id = `${cli}:file:${basename(entry, extFilter)}`
+    const id = `${provider}:file:${basename(entry, extFilter)}`
 
     const tools = Array.isArray(meta['tools'])
       ? (meta['tools'] as string[])
@@ -233,7 +244,8 @@ export class AgentManager {
     const slug = slugify(def.name) || randomUUID().slice(0, 8)
     let filePath: string
 
-    if (def.cli === 'copilot') {
+    const provider = providerOf(def.cli)
+    if (provider === 'copilot') {
       const dir = join(workingDir ?? homedir(), '.github', 'agents')
       mkdirSync(dir, { recursive: true })
       filePath = join(dir, `${slug}.agent.md`)
@@ -246,7 +258,7 @@ export class AgentManager {
     const content = serializeToMarkdown(def)
     writeFileSync(filePath, content, 'utf8')
 
-    const id = `${def.cli}:file:${slug}`
+    const id = `${provider}:file:${slug}`
     const agentDef: AgentDef = { ...def, id, source: 'file', filePath }
     return { filePath, agentDef }
   }

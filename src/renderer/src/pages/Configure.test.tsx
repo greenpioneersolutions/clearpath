@@ -73,6 +73,7 @@ beforeEach(() => {
 })
 
 import Configure from './Configure'
+import Connect from './Connect'
 
 function renderConfigure() {
   return render(
@@ -80,6 +81,23 @@ function renderConfigure() {
       <Configure />
     </MemoryRouter>
   )
+}
+
+// Integrations live on the Connect page now, not Configure. Tests that exercise
+// the GitHub connect/disconnect flow render Connect instead.
+function renderConnect() {
+  return render(
+    <MemoryRouter>
+      <Connect />
+    </MemoryRouter>
+  )
+}
+
+// Advanced tabs (Policies, Workspaces, Team Hub, Scheduler, White Label) live
+// under a collapsible "Advanced" group that's collapsed by default. Tests for
+// those tabs must expand the group first.
+function expandAdvancedGroup() {
+  fireEvent.click(screen.getByRole('button', { name: /Advanced/i }))
 }
 
 describe('Configure', () => {
@@ -92,10 +110,11 @@ describe('Configure', () => {
     renderConfigure()
     expect(screen.getByText('Setup Wizard')).toBeInTheDocument()
     expect(screen.getByText('Accessibility')).toBeInTheDocument()
-    // "Settings" tab text — the tab label in the vertical nav
-    expect(screen.getByRole('tab', { name: 'Settings' })).toBeInTheDocument()
+    // Settings was renamed to General during the UX overhaul.
+    expect(screen.getByRole('tab', { name: 'General' })).toBeInTheDocument()
+    // Policies lives in the collapsible Advanced group.
+    expandAdvancedGroup()
     expect(screen.getByText('Policies')).toBeInTheDocument()
-    expect(screen.getByText('Integrations')).toBeInTheDocument()
   })
 
   it('shows Settings tab content by default', async () => {
@@ -107,17 +126,18 @@ describe('Configure', () => {
     })
   })
 
-  it('switches to Integrations tab', async () => {
-    renderConfigure()
+  it('switches to Integrations tab on Connect page', async () => {
+    renderConnect()
     fireEvent.click(screen.getByRole('tab', { name: 'Integrations' }))
     await waitFor(() => {
-      expect(screen.getByText('Integrations', { selector: 'h1' })).toBeInTheDocument()
+      // IntegrationsTab renders — its IPC calls fire on mount
+      expect(mockInvoke).toHaveBeenCalledWith('integration:get-status')
     })
   })
 
   it('has correct aria-selected attribute on active tab', () => {
     renderConfigure()
-    const settingsTab = screen.getByRole('tab', { name: 'Settings' })
+    const settingsTab = screen.getByRole('tab', { name: 'General' })
     expect(settingsTab).toHaveAttribute('aria-selected', 'true')
   })
 
@@ -128,7 +148,8 @@ describe('Configure', () => {
 
   it('updates aria-selected when switching tabs', () => {
     renderConfigure()
-    const settingsTab = screen.getByRole('tab', { name: 'Settings' })
+    const settingsTab = screen.getByRole('tab', { name: 'General' })
+    expandAdvancedGroup()
     const policiesTab = screen.getByRole('tab', { name: 'Policies' })
 
     expect(settingsTab).toHaveAttribute('aria-selected', 'true')
@@ -141,28 +162,30 @@ describe('Configure', () => {
 
   // ── Tab rendering ─────────────────────────────────────────────────────
 
-  it('renders Memory tab content when Memory tab is clicked', async () => {
+  it('renders Notes & Context tab content when clicked', async () => {
     renderConfigure()
-    fireEvent.click(screen.getByRole('tab', { name: 'Memory' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Notes & Context' }))
     // Memory & Context heading is rendered in Memory.tsx
     await waitFor(() => expect(screen.getByText('Memory & Context')).toBeInTheDocument())
   })
 
-  it('renders Agents tab content when Agents tab is clicked', async () => {
+  it('renders Prompts tab content when clicked', async () => {
     renderConfigure()
-    fireEvent.click(screen.getByRole('tab', { name: 'Agents' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Prompts' }))
     // Agents.tsx calls agent:list with an empty object as second arg
     await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith('agent:list', expect.anything()))
   })
 
   it('renders Workspaces tab content when Workspaces tab is clicked', async () => {
     renderConfigure()
+    expandAdvancedGroup()
     fireEvent.click(screen.getByRole('tab', { name: 'Workspaces' }))
     await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith('workspace:list'))
   })
 
   it('renders Scheduler tab content when Scheduler tab is clicked', async () => {
     renderConfigure()
+    expandAdvancedGroup()
     fireEvent.click(screen.getByRole('tab', { name: 'Scheduler' }))
     await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith('scheduler:list'))
   })
@@ -170,7 +193,7 @@ describe('Configure', () => {
   // ── IntegrationsTab: not connected ────────────────────────────────────
 
   it('shows Connect GitHub button when not connected', async () => {
-    renderConfigure()
+    renderConnect()
     fireEvent.click(screen.getByRole('tab', { name: 'Integrations' }))
     await waitFor(() => {
       expect(screen.getByText('Connect GitHub')).toBeInTheDocument()
@@ -178,7 +201,7 @@ describe('Configure', () => {
   })
 
   it('shows token input form when Connect GitHub is clicked', async () => {
-    renderConfigure()
+    renderConnect()
     fireEvent.click(screen.getByRole('tab', { name: 'Integrations' }))
     await waitFor(() => screen.getByText('Connect GitHub'))
     fireEvent.click(screen.getByText('Connect GitHub'))
@@ -189,7 +212,7 @@ describe('Configure', () => {
   })
 
   it('shows error when connecting with empty token', async () => {
-    renderConfigure()
+    renderConnect()
     fireEvent.click(screen.getByRole('tab', { name: 'Integrations' }))
     await waitFor(() => screen.getByText('Connect GitHub'))
     fireEvent.click(screen.getByText('Connect GitHub'))
@@ -209,7 +232,7 @@ describe('Configure', () => {
       if (channel === 'feature-flags:get') return Promise.resolve(null)
       return Promise.resolve(null)
     })
-    renderConfigure()
+    renderConnect()
     fireEvent.click(screen.getByRole('tab', { name: 'Integrations' }))
     await waitFor(() => screen.getByText('Connect GitHub'))
     fireEvent.click(screen.getByText('Connect GitHub'))
@@ -233,7 +256,7 @@ describe('Configure', () => {
       if (channel === 'feature-flags:get') return Promise.resolve(null)
       return Promise.resolve(null)
     })
-    renderConfigure()
+    renderConnect()
     fireEvent.click(screen.getByRole('tab', { name: 'Integrations' }))
     await waitFor(() => screen.getByText('Connect GitHub'))
     fireEvent.click(screen.getByText('Connect GitHub'))
@@ -247,7 +270,7 @@ describe('Configure', () => {
   })
 
   it('hides token form when Cancel is clicked', async () => {
-    renderConfigure()
+    renderConnect()
     fireEvent.click(screen.getByRole('tab', { name: 'Integrations' }))
     await waitFor(() => screen.getByText('Connect GitHub'))
     fireEvent.click(screen.getByText('Connect GitHub'))
@@ -269,7 +292,7 @@ describe('Configure', () => {
       if (channel === 'feature-flags:get') return Promise.resolve(null)
       return Promise.resolve(null)
     })
-    renderConfigure()
+    renderConnect()
     fireEvent.click(screen.getByRole('tab', { name: 'Integrations' }))
     await waitFor(() => {
       expect(screen.getByText(/Connected as/i)).toBeInTheDocument()
@@ -287,7 +310,7 @@ describe('Configure', () => {
       if (channel === 'feature-flags:get') return Promise.resolve(null)
       return Promise.resolve(null)
     })
-    renderConfigure()
+    renderConnect()
     fireEvent.click(screen.getByRole('tab', { name: 'Integrations' }))
     await waitFor(() => screen.getByText('Disconnect'))
     fireEvent.click(screen.getByText('Disconnect'))
@@ -305,7 +328,7 @@ describe('Configure', () => {
       if (channel === 'feature-flags:get') return Promise.resolve(null)
       return Promise.resolve(null)
     })
-    renderConfigure()
+    renderConnect()
     fireEvent.click(screen.getByRole('tab', { name: 'Integrations' }))
     await waitFor(() => screen.getByText('Connect GitHub'))
     fireEvent.click(screen.getByText('Connect GitHub'))
@@ -331,7 +354,7 @@ describe('Configure', () => {
       })
       return Promise.resolve(null)
     })
-    renderConfigure()
+    renderConnect()
     fireEvent.click(screen.getByRole('tab', { name: 'Integrations' }))
     // Wait for feature flags to load and experimental section to render
     await waitFor(() => {
@@ -362,7 +385,7 @@ describe('Configure', () => {
       if (channel === 'feature-flags:set') return Promise.resolve({ enableExperimentalFeatures: true, showPrScores: true })
       return Promise.resolve(null)
     })
-    renderConfigure()
+    renderConnect()
     fireEvent.click(screen.getByRole('tab', { name: 'Integrations' }))
     await waitFor(() => screen.getByText(/Connected as/i))
     // If PR Scores toggle rendered, click it
@@ -391,7 +414,7 @@ describe('Configure', () => {
         React.createElement(ConfigurePage)
       )
     )
-    // URL param tab=policies → Policies tab is active
+    // URL param tab=policies → the owning Advanced group auto-expands and Policies is active
     await waitFor(() => {
       const policiesTab = screen.getByRole('tab', { name: 'Policies' })
       expect(policiesTab).toHaveAttribute('aria-selected', 'true')
@@ -404,7 +427,7 @@ describe('Configure', () => {
     // No ?tab= param — urlTab is null → the short-circuit `&&` path hits falsy branch
     renderConfigure()
     await waitFor(() => {
-      const settingsTab = screen.getByRole('tab', { name: 'Settings' })
+      const settingsTab = screen.getByRole('tab', { name: 'General' })
       expect(settingsTab).toHaveAttribute('aria-selected', 'true')
     })
   })
@@ -418,9 +441,9 @@ describe('Configure', () => {
     })
   })
 
-  it('renders Skills tab content when tab is clicked', async () => {
+  it('renders Playbooks tab content when clicked', async () => {
     renderConfigure()
-    fireEvent.click(screen.getByRole('tab', { name: 'Skills' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Playbooks' }))
     await waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledWith('skills:list', expect.any(Object))
     })
@@ -428,6 +451,7 @@ describe('Configure', () => {
 
   it('renders Team Hub tab content when tab is clicked', async () => {
     renderConfigure()
+    expandAdvancedGroup()
     fireEvent.click(screen.getByRole('tab', { name: 'Team Hub' }))
     // TeamHub renders — verify it's in the document (calls app:get-cwd on mount)
     await waitFor(() => {
@@ -437,7 +461,7 @@ describe('Configure', () => {
     expect(screen.getByRole('tab', { name: 'Team Hub' })).toHaveAttribute('aria-selected', 'true')
   })
 
-  it('renders White Label tab content when tab is clicked', async () => {
+  it('renders Branding tab content when tab is clicked', async () => {
     mockInvoke.mockImplementation((channel: string) => {
       if (channel === 'branding:get-presets') return Promise.resolve([])
       if (channel === 'branding:get') return Promise.resolve(null)
@@ -446,7 +470,8 @@ describe('Configure', () => {
       return Promise.resolve(null)
     })
     renderConfigure()
-    fireEvent.click(screen.getByRole('tab', { name: 'White Label' }))
+    expandAdvancedGroup()
+    fireEvent.click(screen.getByRole('tab', { name: 'Branding' }))
     await waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledWith('branding:get-presets')
     })
@@ -518,7 +543,7 @@ describe('Configure', () => {
       if (channel === 'feature-flags:get') return Promise.resolve(null)
       return Promise.resolve(null)
     })
-    renderConfigure()
+    renderConnect()
     fireEvent.click(screen.getByRole('tab', { name: 'Integrations' }))
     await waitFor(() => screen.getByText('Connect GitHub'))
     fireEvent.click(screen.getByText('Connect GitHub'))

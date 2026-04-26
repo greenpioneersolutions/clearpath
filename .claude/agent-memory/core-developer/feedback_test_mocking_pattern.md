@@ -18,3 +18,5 @@ Module-level singletons (like `sessionStore` in CLIManager.ts) require `vi.reset
 Pattern from AuthManager.test.ts is the canonical reference.
 
 Also: `getWebContents() => null` causes early returns in event handlers (exit, stdout etc). Use `{ send: vi.fn(), isDestroyed: vi.fn().mockReturnValue(false) }` as mock WebContents.
+
+**setup-coverage.ts gotcha:** `src/test/setup-coverage.ts` force-loads every `src/main/**/*.ts` via `import.meta.glob` BEFORE test-file mocks register. Any module with `import Store from 'electron-store'` will have the real Store bound in that module's closure. Symptom: `vi.mock('electron-store')` has no effect — `storeData` stays empty but the module still reads/writes real data. Fix: declare module-under-test variables as `let`, and re-import via `await import('./Module')` inside `beforeEach` after `vi.resetModules()`.

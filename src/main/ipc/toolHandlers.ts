@@ -3,14 +3,14 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs'
 import { homedir } from 'os'
 import { join, dirname } from 'path'
 
-interface McpServerEntry {
+export interface McpServerEntry {
   command: string
   args?: string[]
   env?: Record<string, string>
   disabled?: boolean
 }
 
-interface McpConfigFile {
+export interface McpConfigFile {
   mcpServers: Record<string, McpServerEntry>
 }
 
@@ -25,7 +25,7 @@ interface McpServerInfo {
   cli: 'copilot' | 'claude'
 }
 
-function safeReadJson<T>(path: string, fallback: T): T {
+export function safeReadJson<T>(path: string, fallback: T): T {
   try {
     return JSON.parse(readFileSync(path, 'utf8')) as T
   } catch {
@@ -33,7 +33,7 @@ function safeReadJson<T>(path: string, fallback: T): T {
   }
 }
 
-function safeWriteJson(path: string, data: unknown): { success: boolean; error?: string } {
+export function safeWriteJson(path: string, data: unknown): { success: boolean; error?: string } {
   try {
     mkdirSync(dirname(path), { recursive: true })
     writeFileSync(path, JSON.stringify(data, null, 2) + '\n', 'utf8')
@@ -43,7 +43,7 @@ function safeWriteJson(path: string, data: unknown): { success: boolean; error?:
   }
 }
 
-function getMcpConfigPath(cli: 'copilot' | 'claude', scope: 'user' | 'project', workingDirectory?: string): string {
+export function getMcpConfigPath(cli: 'copilot' | 'claude', scope: 'user' | 'project', workingDirectory?: string): string {
   const home = homedir()
   if (scope === 'user') {
     return cli === 'copilot'
@@ -84,17 +84,17 @@ function listMcpServers(cli: 'copilot' | 'claude', workingDirectory?: string): M
 // ── MCP Server Command Security ─────────────────────────────────────────────
 
 /** Known-safe MCP command patterns. Commands not matching trigger a warning. */
-const KNOWN_SAFE_MCP_COMMANDS = new Set([
+export const KNOWN_SAFE_MCP_COMMANDS = new Set([
   'npx', 'node', 'python', 'python3', 'uvx', 'docker', 'deno',
 ])
 
 /** Commands that should be blocked outright — high risk of damage. */
-const BLOCKED_MCP_COMMANDS = /^(rm|del|format|mkfs|dd|shutdown|reboot|kill|killall|pkill|curl|wget|nc|ncat|bash|sh|zsh|cmd|powershell)$/i
+export const BLOCKED_MCP_COMMANDS = /^(rm|del|format|mkfs|dd|shutdown|reboot|kill|killall|pkill|curl|wget|nc|ncat|bash|sh|zsh|cmd|powershell)$/i
 
 /** Shell metacharacters that suggest injection attempts in args. */
-const SHELL_META_RE = /[;&|`$(){}!<>]/
+export const SHELL_META_RE = /[;&|`$(){}!<>]/
 
-function validateMcpServer(entry: McpServerEntry): { valid: boolean; error?: string; warning?: string } {
+export function validateMcpServer(entry: McpServerEntry): { valid: boolean; error?: string; warning?: string } {
   const cmd = entry.command.trim()
 
   // Block empty commands

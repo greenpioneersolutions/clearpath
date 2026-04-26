@@ -5,6 +5,8 @@ interface Props {
   status: AuthStatus | null
   loading: boolean
   onConnect: () => void
+  /** Open the Install modal for this CLI. */
+  onInstall: () => void
   onRefresh: () => void
 }
 
@@ -37,11 +39,19 @@ const TOKEN_SOURCE_LABEL: Record<string, string> = {
   'auth-status': 'via auth status',
 }
 
-export function AuthStatusCard({ cli, status, loading, onConnect, onRefresh }: Props): JSX.Element {
+export function AuthStatusCard({
+  cli,
+  status,
+  loading,
+  onConnect,
+  onInstall,
+  onRefresh,
+}: Props): JSX.Element {
   const meta = CLI_META[cli]
   const isInstalled = status?.installed ?? false
   const isAuthenticated = status?.authenticated ?? false
-  const canConnect = !loading && isInstalled && !isAuthenticated
+  /** The card is "fully done" when both conditions are met — no CTAs shown. */
+  const allDone = isInstalled && isAuthenticated
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 flex flex-col gap-5">
@@ -97,31 +107,30 @@ export function AuthStatusCard({ cli, status, loading, onConnect, onRefresh }: P
         )}
       </div>
 
-      {/* Actions */}
-      <div className="flex gap-2 pt-1">
-        {isAuthenticated ? (
-          <div className="flex items-center gap-2 w-full px-4 py-2 bg-green-50 text-green-700 rounded-lg text-sm font-medium border border-green-200">
-            <span className="h-2 w-2 rounded-full bg-green-500 flex-shrink-0" />
-            Connected
-          </div>
-        ) : (
-          <button
-            onClick={onConnect}
-            disabled={!canConnect}
-            className="w-full px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-          >
-            {loading
-              ? 'Checking…'
-              : !isInstalled
-              ? 'Not Installed'
-              : 'Connect'}
-          </button>
-        )}
-      </div>
-
-      {/* Install hint */}
-      {!loading && !isInstalled && (
-        <InstallHint cli={cli} />
+      {/* Actions — hidden entirely when installed + authenticated */}
+      {allDone ? (
+        <div className="flex items-center gap-2 w-full px-4 py-2 bg-green-50 text-green-700 rounded-lg text-sm font-medium border border-green-200">
+          <span className="h-2 w-2 rounded-full bg-green-500 flex-shrink-0" />
+          Connected
+        </div>
+      ) : !isInstalled ? (
+        // Not installed → show Install button (opens InstallModal)
+        <button
+          onClick={onInstall}
+          disabled={loading}
+          className="w-full px-4 py-2 bg-[#5B4FC4] text-white rounded-lg text-sm font-medium hover:bg-[#4a3fb3] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        >
+          {loading ? 'Checking…' : 'Install Now'}
+        </button>
+      ) : (
+        // Installed, not authenticated → show Connect button
+        <button
+          onClick={onConnect}
+          disabled={loading}
+          className="w-full px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        >
+          {loading ? 'Checking…' : 'Connect'}
+        </button>
       )}
     </div>
   )
@@ -180,19 +189,5 @@ function RefreshIcon({ spinning }: { spinning: boolean }): JSX.Element {
         d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
       />
     </svg>
-  )
-}
-
-function InstallHint({ cli }: { cli: 'copilot' | 'claude' }): JSX.Element {
-  const instructions =
-    cli === 'copilot'
-      ? 'npm install -g @github/copilot'
-      : 'npm install -g @anthropic-ai/claude-code'
-
-  return (
-    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
-      <p className="text-xs text-amber-700 font-medium mb-1">Not installed</p>
-      <code className="text-xs text-amber-800 font-mono">{instructions}</code>
-    </div>
   )
 }
