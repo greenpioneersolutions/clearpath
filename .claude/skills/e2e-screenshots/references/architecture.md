@@ -44,7 +44,7 @@ delete process.env.ELECTRON_RUN_AS_NODE
 // Exclude the crawl spec from the default run
 exclude: [
   './e2e/extensions-integration.spec.ts',
-  './e2e/screenshot-crawl.spec.ts',  // ← run via npm run e2e:screenshots instead
+  './e2e/screenshot-crawl.spec.ts',  // ← run via npm run e2e:screenshots / e2e:screenshots:compare instead
 ]
 
 // Capture failure screenshot for any failing functional test
@@ -56,26 +56,26 @@ afterEach: async function (test, _ctx, result) {
 }
 ```
 
-## Environment variable flow
+## Local script flow
 
 ```
 npm run e2e:screenshots
-  → SCREENSHOT_DIR=e2e/screenshots/baseline npx wdio run wdio.screenshots.conf.ts
-    → screenshots.ts reads process.env.SCREENSHOT_DIR
-      → resolveScreenshotPath() resolves to {cwd}/e2e/screenshots/baseline/{name}.png
+  → npm run build && wdio run wdio.screenshots.conf.ts --update-visual-baseline
+    → @wdio/visual-service captures every screen and overwrites the baseline
 
-npm run e2e:screenshots:ci
-  → SCREENSHOT_DIR=e2e/screenshots/actual npx wdio run wdio.screenshots.conf.ts
-    → screenshots.ts reads process.env.SCREENSHOT_DIR
-      → resolveScreenshotPath() resolves to {cwd}/e2e/screenshots/actual/{name}.png
+npm run e2e:screenshots:compare
+  → npm run build && wdio run wdio.screenshots.conf.ts
+    → captures + compares against baseline; mismatches log but don't fail
 ```
+
+`wdio.screenshots.conf.ts` resolves `baselineFolder` to `e2e/screenshots/baseline/` and writes diff/actual artifacts to `.tmp/visual/` (gitignored).
 
 ## Git LFS flow
 
-1. `e2e/screenshots/baseline/` is LFS-tracked (rule in `.gitattributes`)
-2. `npm run e2e:screenshots` writes PNGs there
-3. `git add e2e/screenshots/baseline/ && git commit` → LFS stores binary, git stores pointer
-4. CI `update-screenshots` job automates steps 2–3 and pushes back to the branch
+1. `e2e/screenshots/baseline/` is LFS-tracked (rule in `.gitattributes`).
+2. `npm run e2e:screenshots` (or the CI `screenshot-regression` job with `--update-visual-baseline`) writes PNGs there.
+3. `git add e2e/screenshots/baseline/ && git commit` → LFS stores binary, git stores pointer.
+4. CI's `screenshot-regression` job automates steps 2–3 and pushes back via `git push --force-with-lease`. The commit message contains `[skip ci]` so it doesn't loop.
 
 ## Why two wdio config files?
 

@@ -8,7 +8,7 @@ allowed-tools: Read Glob Grep Bash
 
 # E2E Screenshot System
 
-This project uses a **data-driven visual crawl** to capture baseline screenshots of every page and tab in the Electron app. Screenshots are stored in Git LFS and updated via CI or a dedicated npm script.
+This project uses a **data-driven visual crawl** to capture baseline screenshots of every page and tab in the Electron app. Screenshots are stored in Git LFS and updated automatically by CI on every PR.
 
 The system has three layers:
 1. **`e2e/helpers/screenshots.ts`** — DRY capture utilities (`captureScreenshot`, `captureFailureScreenshot`)
@@ -17,18 +17,30 @@ The system has three layers:
 
 ---
 
+## Capture-first policy (CI)
+
+CI **always** runs the crawl with `--update-visual-baseline`, so the screenshot job never fails because of pixel mismatches. Instead, every PR carries an `Auto-update screenshot baselines` commit pushed back by the workflow — that commit's diff is how visual changes are surfaced and reviewed.
+
+What still fails the screenshot job:
+
+- Navigation / element-wait timeouts during the crawl
+- JS exceptions thrown from inside the spec or the renderer
+- Required Insights tabs missing (built-in tabs throw if not found)
+- `browser.checkScreen` errors (driver crash, screenshot couldn't be produced)
+
+So CI catches "page no longer loads" or "spec broke" while ignoring "the Settings tab moved 3 px to the right." If a PR's auto-baseline commit shows unexpected diffs, that is the regression signal — review the LFS-pointer hash changes and decide whether to keep them.
+
 ## How to run locally
 
 ```bash
-# Compare against committed baselines; auto-saves a new baseline if one
-# is missing for a given tag (so the first run for a fresh tag passes).
+# CI parity: capture + overwrite baselines.
 npm run e2e:screenshots
 
-# Force-update every baseline (after an intentional UI change).
-npm run e2e:screenshots:update
+# Compare-only against committed baselines (informational; never fails).
+npm run e2e:screenshots:compare
 ```
 
-Both scripts run `npm run build` first. Diff output lands under `.tmp/visual/` (gitignored).
+Both scripts run `npm run build` first. Generated output lands under `.tmp/visual/` (gitignored).
 
 **Important:** Both `wdio.conf.ts` and `wdio.screenshots.conf.ts` call `delete process.env.ELECTRON_RUN_AS_NODE` at the top. VS Code sets this env var and it prevents Electron from launching as a GUI app — no manual `unset` needed.
 
@@ -114,12 +126,17 @@ await waitForLoadingToSettle(6000)
 
 ## CI workflow
 
-| Job | Trigger | What it does |
-|---|---|---|
-| `screenshot-regression` | Pull requests | Runs `e2e:screenshots:ci` → uploads `e2e/screenshots/actual/` as artifact `screenshots-actual` |
-| `update-screenshots` | `workflow_dispatch` or commit message contains `[update-screenshots]` | Runs `e2e:screenshots` → commits updated baselines back to the branch via LFS |
+There is one screenshot job — `screenshot-regression` in `.github/workflows/ci.yml` — gated by the upstream `test` job. On every push to `dev`/`release/**`/`hotfix/**` and every PR to `main`/`dev`:
 
-Both CI jobs install Xvfb (`libgbm-dev libasound2-dev`) and set `DISPLAY=:99` before running Electron.
+1. Build the app
+2. Install Xvfb (`libgbm-dev libasound2-dev`) and set `DISPLAY=:99`
+3. Run `npx wdio run wdio.screenshots.conf.ts --update-visual-baseline` — captures every screen and overwrites the baseline
+4. `git add e2e/screenshots/baseline/`, commit `Auto-update screenshot baselines [skip ci]` if anything changed, `git push --force-with-lease`
+5. Upload `.tmp/visual/actual/`, `.tmp/visual/diff/`, and `e2e/screenshots/baseline/` as the `screenshots` artifact
+
+The `[skip ci]` token on the auto-baseline commit prevents an infinite re-run loop.
+
+`workflow_dispatch:` is enabled for manual reruns; there is no longer an `update_baselines` input because update is the default.
 
 ---
 

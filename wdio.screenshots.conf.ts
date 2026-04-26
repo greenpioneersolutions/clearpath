@@ -5,12 +5,15 @@
  * Runs only e2e/screenshot-crawl.spec.ts — excluded from the default
  * wdio.conf.ts run so the visual crawl doesn't slow down functional tests.
  *
- * Visual regression is handled by @wdio/visual-service, which does pixel-level
- * comparison against committed baselines (e2e/screenshots/baseline/).
+ * Visual capture is handled by @wdio/visual-service. CI's policy is to
+ * always run with --update-visual-baseline (see .github/workflows/ci.yml)
+ * so visual changes show up as PR-baseline-diff commits rather than as
+ * test failures. The per-shot mismatch threshold below is informational —
+ * the spec no longer asserts on it.
  *
  * Usage:
- *   npm run e2e:screenshots          — compare against baselines (auto-creates missing)
- *   npm run e2e:screenshots:update   — force-update all baselines with current UI
+ *   npm run e2e:screenshots          — capture + overwrite baselines (CI parity)
+ *   npm run e2e:screenshots:compare  — compare-only (informational; never fails)
  */
 
 import type { Options } from '@wdio/types'

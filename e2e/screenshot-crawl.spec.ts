@@ -5,45 +5,41 @@
 /**
  * e2e/screenshot-crawl.spec.ts
  *
- * Visual coverage spec — crawls every page and tab in the app and performs a
- * pixel-level comparison against committed baseline images via @wdio/visual-service.
+ * Visual coverage spec — crawls every page and tab in the app and captures a
+ * screenshot of each via @wdio/visual-service.
  *
- * On first run (no baseline) the service auto-saves the screenshot as the
- * baseline (autoSaveBaseline: true) so the test always passes.  On subsequent
- * runs it compares pixel-by-pixel; the test fails only when the mismatch
- * percentage exceeds MISMATCH_THRESHOLD.
+ * Policy (see .github/workflows/ci.yml): CI always runs this spec with
+ *   --update-visual-baseline
+ * which makes every captured screenshot overwrite its baseline. The CI's
+ * "Commit updated baselines" step then pushes those updates back as an
+ * "Auto-update screenshot baselines" commit, surfacing visual changes as PR
+ * diffs without failing the test on pixel mismatches.
  *
- * To update baselines after an intentional UI change:
- *   npm run e2e:screenshots:update
+ * What still fails the test:
+ *   - Navigation / element-wait timeouts ("element not existing after Xms")
+ *   - JS exceptions thrown from inside the spec or app
+ *   - Required Insights tabs missing (built-in tabs throw if not found)
+ *   - browser.checkScreen erroring (driver crash, screenshot not produced)
  *
- * Run in isolation (compare mode):
- *   npm run e2e:screenshots
+ * Local usage:
+ *   npm run e2e:screenshots          - capture + update baselines (CI parity)
+ *   npm run e2e:screenshots:compare  - compare against committed baselines
+ *                                      (informational; no longer fails the test)
  */
 
 import { waitForAppReady, navigateSidebarTo, invokeIPC, ELEMENT_TIMEOUT } from './helpers/app.js'
 
-// ── Threshold ─────────────────────────────────────────────────────────────────
-
-/**
- * Maximum allowed pixel-mismatch percentage before a screenshot test fails.
- * 2 % accommodates minor sub-pixel / anti-aliasing differences across
- * platforms and GPU drivers without masking real regressions.
- */
-const MISMATCH_THRESHOLD = 2
-
 // ── Data tables ──────────────────────────────────────────────────────────────
 
 /**
- * Per-entry visual options that override the global MISMATCH_THRESHOLD.
- * Use when a view has known dynamic content (timestamps, live counters, activity
- * feeds) that will legitimately differ between runs but shouldn't cause failures.
+ * Per-entry visual options. With the "always update baseline" policy these
+ * are no-ops on the comparison side, but `blockOut` is still honored: the
+ * masked rectangles are zeroed in the captured baseline as well, which keeps
+ * the saved baseline free of dynamic regions like live clocks.
  *
- * tolerance    — max allowed mismatch %; defaults to MISMATCH_THRESHOLD (2 %).
- * blockOut     — pixel rectangles masked before comparison (e.g. a live clock).
- *                Coordinates are in CSS pixels relative to the screenshot top-left.
+ * blockOut — pixel rectangles to mask. Coordinates in CSS pixels, top-left.
  */
 interface VisualOptions {
-  tolerance?: number
   blockOut?: Array<{ x: number; y: number; width: number; height: number }>
 }
 
@@ -130,10 +126,9 @@ const WORK_TABS: WorkTab[] = [
 // tabs that only exist when matching extensions are installed. PR #47 merged
 // the old "Analytics" and "Usage Analytics" pages into a single "Activity" view.
 const INSIGHTS_TABS: InsightsTab[] = [
-  // Activity merges the old Analytics + Usage views; charts include date axes
-  { label: 'Activity',         screenshot: 'insights--tab-activity',   tolerance: 4 },
-  // Compliance view may render current dates in charts/timestamps
-  { label: 'Compliance',       screenshot: 'insights--tab-compliance', tolerance: 4 },
+  // Activity merges the old Analytics + Usage views
+  { label: 'Activity',         screenshot: 'insights--tab-activity' },
+  { label: 'Compliance',       screenshot: 'insights--tab-compliance' },
   // Extension-contributed tabs — present only if the extension is installed
   { label: 'Catalog Insights', screenshot: 'insights--tab-catalog-insights', optional: true },
   { label: 'Efficiency',       screenshot: 'insights--tab-efficiency',       optional: true },
@@ -173,8 +168,7 @@ const CONFIGURE_TABS: ConfigureTab[] = [
   { key: 'policies',      label: 'Policies',           screenshot: 'configure--tab-policies' },
   { key: 'workspaces',    label: 'Workspaces',         screenshot: 'configure--tab-workspaces' },
   { key: 'team',          label: 'Team Hub',           screenshot: 'configure--tab-team' },
-  // Scheduler tab may display current date/time in job listings
-  { key: 'scheduler',     label: 'Scheduler',          screenshot: 'configure--tab-scheduler', tolerance: 4 },
+  { key: 'scheduler',     label: 'Scheduler',          screenshot: 'configure--tab-scheduler' },
   { key: 'branding',      label: 'Branding',           screenshot: 'configure--tab-branding' },
 ]
 
@@ -221,8 +215,7 @@ const CONFIGURE_SUB_TABS: ConfigureSubTab[] = [
   { configureTab: 'team', subLabel: 'Shared Folder', screenshot: 'configure--tab-team--sub-sync' },
   { configureTab: 'team', subLabel: 'Setup Wizard',  screenshot: 'configure--tab-team--sub-wizard' },
   { configureTab: 'team', subLabel: 'Marketplace',   screenshot: 'configure--tab-team--sub-marketplace' },
-  // Activity feed shows relative timestamps ("X minutes ago") that change between runs
-  { configureTab: 'team', subLabel: 'Activity', screenshot: 'configure--tab-team--sub-activity', tolerance: 6 },
+  { configureTab: 'team', subLabel: 'Activity', screenshot: 'configure--tab-team--sub-activity' },
 
   // ── Branding (5 inner sections) ─────────────────────────────────────────
   // 'Theme Presets' is the default — captured by configure--tab-branding above.
@@ -236,32 +229,19 @@ const CONFIGURE_SUB_TABS: ConfigureSubTab[] = [
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /**
- * Normalise the return value of browser.checkScreen() to a plain mismatch %.
- * The visual service returns `Result` which is a union of number, ImageCompareResult,
- * or MultiResult.  For single-screen checks we always get a number or an object
- * with a `misMatchPercentage` field.
- */
-function toMismatchPct(result: unknown): number {
-  if (typeof result === 'number') return result
-  if (result !== null && typeof result === 'object' && 'misMatchPercentage' in result) {
-    return (result as { misMatchPercentage: number }).misMatchPercentage
-  }
-  return 0
-}
-
-/**
- * Capture and compare a screenshot against its baseline.
- * - If no baseline exists: auto-saves one (test always passes on first run).
- * - If a baseline exists: compares pixel-by-pixel and fails if mismatch > threshold.
- * - With --update-visual-baseline flag: overwrites the baseline unconditionally.
+ * Capture a screenshot for the given tag.
  *
- * @param name      Screenshot tag (= baseline filename without extension)
- * @param options   Per-shot visual options: tolerance override, blockOutAreas, etc.
+ * Under the "always update baseline" CI policy this overwrites the baseline
+ * with the current actual; locally without --update-visual-baseline it
+ * compares against the committed baseline. Either way, a comparison
+ * mismatch never fails the test — visual changes are surfaced via the PR
+ * baseline-diff commit, not via test failures. browser.checkScreen will
+ * still throw if the screenshot itself can't be produced, which keeps real
+ * driver/page-load failures gated.
  */
 async function checkScreenshot(name: string, options: VisualOptions = {}): Promise<void> {
-  const { tolerance = MISMATCH_THRESHOLD, blockOut } = options
-  const result = await browser.checkScreen(name, blockOut ? { blockOut } : {})
-  expect(toMismatchPct(result)).toBeLessThanOrEqual(tolerance)
+  const { blockOut } = options
+  await browser.checkScreen(name, blockOut ? { blockOut } : {})
 }
 
 /**
@@ -275,7 +255,6 @@ async function checkScreenshot(name: string, options: VisualOptions = {}): Promi
  * actually has hidden content.
  */
 async function tryScrollCapture(baseName: string): Promise<void> {
-  let capturedPct: number | null = null
   try {
     const scrolled = await browser.execute(() => {
       // 1. Try document-level scroll
@@ -294,7 +273,7 @@ async function tryScrollCapture(baseName: string): Promise<void> {
 
     if (scrolled) {
       await browser.pause(300)
-      capturedPct = toMismatchPct(await browser.checkScreen(`${baseName}--scrolled`))
+      await browser.checkScreen(`${baseName}--scrolled`)
       // Restore scroll position so subsequent tests start clean
       await browser.execute(() => {
         document.documentElement.scrollTo(0, 0)
@@ -304,10 +283,6 @@ async function tryScrollCapture(baseName: string): Promise<void> {
     }
   } catch {
     // Best-effort — scroll failures never block the test
-  }
-  // Assert outside try/catch so a real mismatch still fails the test
-  if (capturedPct !== null) {
-    expect(capturedPct).toBeLessThanOrEqual(MISMATCH_THRESHOLD)
   }
 }
 
@@ -623,8 +598,7 @@ describe('ClearPathAI — Screenshot Crawl', () => {
     const WORKSPACE_SUB_TABS = [
       { subLabel: 'Repos',      screenshot: 'configure--tab-workspaces--sub-repos' },
       { subLabel: 'Broadcast',  screenshot: 'configure--tab-workspaces--sub-broadcast' },
-      // Activity feed shows relative timestamps ("X minutes ago") that change between runs
-      { subLabel: 'Activity',   screenshot: 'configure--tab-workspaces--sub-activity', tolerance: 6 },
+      { subLabel: 'Activity',   screenshot: 'configure--tab-workspaces--sub-activity' },
       { subLabel: 'Settings',   screenshot: 'configure--tab-workspaces--sub-settings' },
     ]
 
