@@ -4,6 +4,7 @@ import Store from 'electron-store'
 import { getStoreEncryptionKey } from '../utils/storeEncryption'
 import {
   BUILD_FLAGS,
+  BUILD_FLAGS_LOCKED,
   EXPERIMENTAL_FLAG_KEYS,
   type FeatureFlags,
   type FeatureFlagKey,
@@ -224,6 +225,11 @@ function clampToCompiledIn(flags: FeatureFlags): FeatureFlags {
 }
 
 function resolveFlags(): FeatureFlags {
+  // In locked mode, BUILD_FLAGS is the single source of truth — stored
+  // overrides are ignored entirely. This mirrors the Settings UI, which is
+  // read-only in locked builds, and gives `dev:preview` / `preview:locked`
+  // the same effective flag set an end user would see for that build.
+  if (BUILD_FLAGS_LOCKED) return { ...BUILD_FLAGS }
   const overrides = store.get('flags')
   return clampToCompiledIn({ ...DEFAULTS, ...overrides })
 }
@@ -234,11 +240,14 @@ export function registerFeatureFlagHandlers(ipcMain: IpcMain): void {
   /** Get resolved flags (all defaults + overrides). */
   ipcMain.handle('feature-flags:get', () => ({
     flags: resolveFlags(),
-    activePresetId: store.get('activePresetId'),
+    // Locked builds have no notion of an "active preset" — overrides are ignored.
+    activePresetId: BUILD_FLAGS_LOCKED ? null : store.get('activePresetId'),
+    locked: BUILD_FLAGS_LOCKED,
   }))
 
   /** Set individual flag overrides. */
   ipcMain.handle('feature-flags:set', (_e, args: Partial<FeatureFlags>) => {
+    if (BUILD_FLAGS_LOCKED) return resolveFlags() // Locked: silently ignore
     const previous = resolveFlags()
     const current = store.get('flags')
     // Drop overrides for experimental flags whose code is compiled out of this
@@ -259,6 +268,7 @@ export function registerFeatureFlagHandlers(ipcMain: IpcMain): void {
 
   /** Apply a preset (replaces all overrides). */
   ipcMain.handle('feature-flags:apply-preset', (_e, args: { presetId: string }) => {
+    if (BUILD_FLAGS_LOCKED) return resolveFlags() // Locked: silently ignore
     const preset = PRESETS.find((p) => p.id === args.presetId)
     if (!preset) return { error: 'Unknown preset' }
     const previous = resolveFlags()
@@ -270,10 +280,11 @@ export function registerFeatureFlagHandlers(ipcMain: IpcMain): void {
   })
 
   /** Get available presets. */
-  ipcMain.handle('feature-flags:get-presets', () => PRESETS)
+  ipcMain.handle('feature-flags:get-presets', () => (BUILD_FLAGS_LOCKED ? [] : PRESETS))
 
   /** Reset to all-on defaults. */
   ipcMain.handle('feature-flags:reset', () => {
+    if (BUILD_FLAGS_LOCKED) return resolveFlags() // Locked: silently ignore
     const previous = resolveFlags()
     store.set('flags', {})
     store.set('activePresetId', 'all-on')

@@ -97,7 +97,7 @@ const FLAG_GROUPS: FlagGroup[] = [
 // ── Component ────────────────────────────────────────────────────────────────
 
 export default function FeatureFlagSettings(): JSX.Element {
-  const { flags, activePresetId, presets, setFlag, applyPreset, resetFlags, progressionStage, sessionCount } = useFeatureFlags()
+  const { flags, activePresetId, presets, setFlag, applyPreset, resetFlags, progressionStage, sessionCount, locked } = useFeatureFlags()
 
   const enabledCount = Object.values(flags).filter(Boolean).length
   const totalCount = Object.keys(flags).length
@@ -106,7 +106,23 @@ export default function FeatureFlagSettings(): JSX.Element {
 
   return (
     <div className="space-y-6">
+      {/* Locked-mode banner — replaces interactive controls when CLEARPATH_FLAGS_LOCKED=1 */}
+      {locked && (
+        <div className="border border-amber-300 bg-amber-50 rounded-xl px-4 py-3">
+          <div className="flex items-start gap-2">
+            <span className="text-amber-700 mt-0.5" aria-hidden>🔒</span>
+            <div>
+              <p className="text-sm font-semibold text-amber-900">Flags are locked to features.json defaults</p>
+              <p className="text-xs text-amber-800 mt-0.5">
+                This build was produced with <code className="text-[10px] bg-amber-100 px-1 py-0.5 rounded">CLEARPATH_FLAGS_LOCKED=1</code>. Toggles, presets, and stored overrides are inert. Off-by-default flags are hidden — they aren't reachable in this build. Rebuild without the flag (or run <code className="text-[10px] bg-amber-100 px-1 py-0.5 rounded">npm run dev</code>) to edit.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Progressive Disclosure card — opt-in mode that auto-adjusts visible features */}
+      {!locked && (
       <div className={`border rounded-xl p-4 ${isProgressive ? 'border-indigo-300 bg-indigo-50' : 'border-gray-200 bg-white'}`}>
         <div className="flex items-start justify-between gap-4">
           <div className="flex-1">
@@ -139,8 +155,10 @@ export default function FeatureFlagSettings(): JSX.Element {
           </button>
         </div>
       </div>
+      )}
 
-      {/* Presets */}
+      {/* Presets — hidden in locked mode (no overrides allowed) */}
+      {!locked && presets.length > 0 && (
       <div>
         <h3 className="text-sm font-semibold text-gray-800 mb-3">Quick Presets</h3>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
@@ -158,24 +176,35 @@ export default function FeatureFlagSettings(): JSX.Element {
           ))}
         </div>
       </div>
+      )}
 
       {/* Summary */}
       <div className="flex items-center justify-between bg-gray-50 rounded-lg px-4 py-2.5">
         <span className="text-xs text-gray-600">{enabledCount} of {totalCount} features enabled</span>
-        <button onClick={resetFlags}
-          className="text-xs text-indigo-600 hover:text-indigo-500 font-medium">
-          Enable All
-        </button>
+        {!locked && (
+          <button onClick={resetFlags}
+            className="text-xs text-indigo-600 hover:text-indigo-500 font-medium">
+            Enable All
+          </button>
+        )}
       </div>
 
       {/* Flag groups */}
       <div className="space-y-6">
-        {FLAG_GROUPS.map((group) => (
+        {FLAG_GROUPS.map((group) => {
+          // In locked mode, hide flags whose effective value is false — they
+          // aren't reachable in the running app and shouldn't show up as
+          // configurable here. Compiled-out experimental flags are also
+          // hidden in locked mode (they're already false).
+          const visibleFlags = locked ? group.flags.filter(({ key }) => flags[key]) : group.flags
+          if (visibleFlags.length === 0) return null
+          return (
           <div key={group.label}>
             <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">{group.label}</h3>
             <div className="bg-white border border-gray-200 rounded-xl divide-y divide-gray-100">
-              {group.flags.map(({ key, label, description }) => {
+              {visibleFlags.map(({ key, label, description }) => {
                 const compiledOut = COMPILED_OUT.has(key)
+                const readOnly = locked || compiledOut
                 return (
                 <div key={key} className="flex items-center justify-between px-4 py-2.5">
                   <div>
@@ -185,17 +214,22 @@ export default function FeatureFlagSettings(): JSX.Element {
                       {compiledOut && (
                         <span className="ml-1 italic">— not included in this build</span>
                       )}
+                      {locked && !compiledOut && (
+                        <span className="ml-1 italic">— locked to features.json</span>
+                      )}
                     </p>
                   </div>
                   <button
-                    onClick={() => { if (!compiledOut) setFlag(key, !flags[key]) }}
-                    disabled={compiledOut}
+                    onClick={() => { if (!readOnly) setFlag(key, !flags[key]) }}
+                    disabled={readOnly}
                     className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                      compiledOut ? 'bg-gray-200 cursor-not-allowed' : flags[key] ? 'bg-indigo-600' : 'bg-gray-300'
+                      readOnly
+                        ? (flags[key] ? 'bg-indigo-300 cursor-not-allowed' : 'bg-gray-200 cursor-not-allowed')
+                        : flags[key] ? 'bg-indigo-600' : 'bg-gray-300'
                     }`}
                     role="switch"
                     aria-checked={flags[key]}
-                    aria-disabled={compiledOut}
+                    aria-disabled={readOnly}
                     aria-label={`Toggle ${label}`}>
                     <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
                       flags[key] ? 'translate-x-4' : 'translate-x-0.5'
@@ -206,7 +240,8 @@ export default function FeatureFlagSettings(): JSX.Element {
               })}
             </div>
           </div>
-        ))}
+          )
+        })}
       </div>
     </div>
   )
