@@ -275,10 +275,13 @@ jobs:
             exit 0
           fi
           git commit -m "Auto-update experimental screenshot baselines [skip ci]"
-          # Drop unstaged build-artifact changes (e.g. featureFlags.generated.ts
-          # regenerated with experimental flags forced on) so `git rebase` can run.
-          git checkout -- .
-          git clean -fd
+          # Stash unstaged changes (e.g. featureFlags.generated.ts regenerated
+          # with experimental flags forced on) so `git rebase` can run. We use
+          # stash instead of `checkout -- .` because the latter triggers the
+          # Git LFS smudge filter on every tracked binary, which complains
+          # ("should have been pointers, but weren't") and aborts the step.
+          # Stash is cheap and the resulting orphan stash dies with the runner.
+          git stash push --include-untracked --quiet || true
           # Try a few times in case the sibling job pushes between fetch and push.
           for attempt in 1 2 3; do
             git fetch origin "$BRANCH"
