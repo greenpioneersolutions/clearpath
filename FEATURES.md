@@ -167,6 +167,22 @@ const MyPage = __FEATURES__.showMyPage ? lazy(() => import('./pages/MyPage')) : 
 
 Always register the route — the redirect arm matters because extension-pinned sidebar links may target the experimental path directly. (Without it, navigating there has no matching child route, the parent Layout unmounts, and the sidebar disappears mid-test.)
 
+If the flag gates an **extension-contributed** page (e.g. PR Scores, Backstage Explorer, Efficiency Coach), also set `featureGate` on the extension's nav entry so the sidebar link is hidden when the flag is off — otherwise the link advertises a feature that just redirects:
+
+```jsonc
+// extensions/<ext>/clearpath-extension.json
+"contributes": {
+  "navigation": [
+    {
+      "id": "my-page",
+      "path": "/my-page",
+      "label": "My Page",
+      "featureGate": ["showMyFeature"]
+    }
+  ]
+}
+```
+
 ---
 
 ## Removing a flag

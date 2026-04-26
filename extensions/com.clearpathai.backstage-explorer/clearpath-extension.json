@@ -60,7 +60,8 @@
         "path": "/backstage-explorer",
         "label": "Backstage",
         "icon": "server-stack",
-        "position": "after:insights"
+        "position": "after:insights",
+        "featureGate": ["showBackstageExplorer"]
       }
     ],
     "panels": [],
