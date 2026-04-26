@@ -25,9 +25,20 @@ import {
 } from './helpers/app.js'
 
 interface ExperimentalRoute {
-  /** URL hash route (excluding the leading `#/`). */
+  /**
+   * URL hash to navigate to (excluding the leading `#/`). Supports search
+   * params for sub-tabs, e.g. `'connect?tab=mcp'` becomes
+   * `#/connect?tab=mcp` — HashRouter parses the search half via
+   * useSearchParams.
+   */
   route: string
-  /** Visible heading or marker text used to confirm the page rendered. */
+  /**
+   * Visible text used to confirm the experimental surface rendered. Pick
+   * a string that only appears when the gated chunk is loaded (i.e. not
+   * something that's also in the sidebar or a tab button) so a missing
+   * `CLEARPATH_E2E_EXPERIMENTAL=1` build fails loudly instead of silently
+   * capturing a fallback page.
+   */
   marker: string
   /** Output filename — written under experimental-features/. */
   screenshot: string
@@ -47,6 +58,23 @@ const EXPERIMENTAL_PAGES: ExperimentalRoute[] = [
     route: 'backstage-explorer',
     marker: 'Backstage',
     screenshot: 'experimental-features/backstage-explorer--initial',
+  },
+  // Connect sub-tabs gated behind experimental flags. The base /connect page
+  // ships in default builds; only these two tabs (and their lazy chunks)
+  // require CLEARPATH_E2E_EXPERIMENTAL=1.
+  {
+    route: 'connect?tab=mcp',
+    // McpCatalogGrid renders a "Custom server" tile at the end of the grid —
+    // unique to McpTab's body, won't appear elsewhere on /connect.
+    marker: 'Custom server',
+    screenshot: 'experimental-features/connect--tab-mcp',
+  },
+  {
+    route: 'connect?tab=extensions',
+    // ExtensionManager renders a "Permissions" section heading per
+    // installed extension. Won't appear from any other Connect tab body.
+    marker: 'Permissions',
+    screenshot: 'experimental-features/connect--tab-extensions',
   },
 ]
 

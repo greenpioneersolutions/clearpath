@@ -148,7 +148,7 @@ export const BUILD_FLAGS: Readonly<FeatureFlags> = Object.freeze({
  * turn this on (used by the dev:preview / preview:locked scripts to
  * simulate an end-user with the features.json defaults frozen).
  */
-export const BUILD_FLAGS_LOCKED = true as const;
+export const BUILD_FLAGS_LOCKED = false as const;
 
 export const FEATURE_FLAG_META: Readonly<Record<FeatureFlagKey, FeatureFlagMetadata>> = Object.freeze({
   enableClaudeSdk: { experimental: false, enabled: true, addedIn: "1.8.0" },
