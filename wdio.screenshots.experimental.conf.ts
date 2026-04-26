@@ -15,10 +15,21 @@
  */
 
 import type { Options } from '@wdio/types'
+import { mkdirSync } from 'node:fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
+
+// `wdio-visual-service`'s autoSaveBaseline writes via `fs.copyFile` which
+// errors with ENOENT when the parent directory is missing. The
+// `experimental-features/` subfolder is empty until the first baseline is
+// generated, so create it up-front to keep the first CI run idempotent.
+const EXPERIMENTAL_BASELINE_DIR = path.join(
+  __dirname,
+  'e2e/screenshots/baseline/experimental-features',
+)
+mkdirSync(EXPERIMENTAL_BASELINE_DIR, { recursive: true })
 
 // VS Code sets ELECTRON_RUN_AS_NODE=1 which prevents Electron from launching.
 delete process.env.ELECTRON_RUN_AS_NODE
