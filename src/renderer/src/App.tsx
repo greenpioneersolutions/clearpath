@@ -1,4 +1,4 @@
-import { lazy, Suspense, type ComponentType } from 'react'
+import { lazy, Suspense } from 'react'
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { FeatureFlagProvider } from './contexts/FeatureFlagContext'
 import { BrandingProvider } from './contexts/BrandingContext'
@@ -22,10 +22,10 @@ import ExtensionPage from './components/extensions/ExtensionPage'
 // have produced.
 declare const __FEATURES__: import('../../shared/featureFlags.generated').FeatureFlags
 
-const PrScores: ComponentType | null = __FEATURES__.showPrScores
+const PrScores = __FEATURES__.showPrScores
   ? lazy(() => import('./pages/PrScores'))
   : null
-const BackstageExplorer: ComponentType | null = __FEATURES__.showBackstageExplorer
+const BackstageExplorer = __FEATURES__.showBackstageExplorer
   ? lazy(() => import('./pages/BackstageExplorer'))
   : null
 

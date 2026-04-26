@@ -1,6 +1,6 @@
 import { defineConfig } from 'electron-vite'
 import react from '@vitejs/plugin-react'
-import { readFileSync, existsSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { execFileSync } from 'node:child_process'
 
@@ -45,22 +45,16 @@ function loadFeatures(): Record<string, boolean> {
 
 function regenerateFeatureFlagsModule(): void {
   // Keep the generated TS module in sync with features.json on every build.
-  // Synchronous + best-effort: a generation failure should not abort the
-  // whole build, since the previously-generated file may already be valid.
-  try {
-    execFileSync(
-      process.execPath,
-      [resolve(__dirname, 'scripts/generate-feature-flags.mjs')],
-      { stdio: 'inherit' },
-    )
-  } catch (err) {
-    if (existsSync(resolve(__dirname, 'src/shared/featureFlags.generated.ts'))) {
-      // eslint-disable-next-line no-console
-      console.warn('[feature-flags] generator failed, using existing module:', err)
-    } else {
-      throw err
-    }
-  }
+  // We always rethrow on failure — silently using the existing module would
+  // let the build proceed with `__FEATURES__` (computed below from the
+  // current features.json) and BUILD_FLAGS (frozen at the previous
+  // generation) drifting apart. That divergence shows up as runtime UI
+  // state disagreeing with the tree-shaken bundle.
+  execFileSync(
+    process.execPath,
+    [resolve(__dirname, 'scripts/generate-feature-flags.mjs')],
+    { stdio: 'inherit' },
+  )
 }
 
 regenerateFeatureFlagsModule()

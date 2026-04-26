@@ -66,10 +66,11 @@ function buildSource(features) {
     '// Do not edit by hand. Re-run via `npm run generate:flags` or any build script.',
   ].join('\n')
 
-  // Note: each `as const` assertion here is what gives consumers literal
-  // boolean inference (so e.g. `if (BUILD_FLAGS.showPrScores) { … }` becomes a
-  // statically known branch). Combined with the Vite `define` substitution
-  // for `__FEATURES__`, Rollup eliminates disabled experimental branches.
+  // Note: this generated module supplies the shared FeatureFlagKey /
+  // FeatureFlags typing used by the app, main process, and tests.
+  // Build-time branch elimination for experimental flags comes from the Vite
+  // `define` substitution for `__FEATURES__` — that's what lets Rollup drop
+  // disabled experimental code paths from the production bundle.
   return `${banner}
 
 export type FeatureFlagKey =
