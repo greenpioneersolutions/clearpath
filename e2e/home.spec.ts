@@ -15,6 +15,7 @@ import {
   getInputValue,
   ELEMENT_TIMEOUT,
 } from './helpers/app.js'
+import { captureScreenshot } from './helpers/screenshots.js'
 
 describe('ClearPathAI — Home Page', () => {
   before(async () => {
@@ -29,6 +30,8 @@ describe('ClearPathAI — Home Page', () => {
     it('renders the Home page with substantial content', async () => {
       const html = await getRootHTML()
       expect(html.length).toBeGreaterThan(500)
+      // Capture the fully-loaded Home dashboard (greeting, action cards, progress)
+      await captureScreenshot('home/dashboard-initial')
     })
 
     it('shows a time-based greeting or welcome message', async () => {
@@ -96,6 +99,9 @@ describe('ClearPathAI — Home Page', () => {
       await setInputValue(selector, 'Help me write a memo')
       const value = await getInputValue(selector)
       expect(value).toBe('Help me write a memo')
+
+      // Capture the quick-prompt input with typed text
+      await captureScreenshot('home/quick-prompt-typed')
 
       // Clear for next tests
       await setInputValue(selector, '')

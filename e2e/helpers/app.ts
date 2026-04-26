@@ -41,6 +41,74 @@ export async function waitForAppReady(): Promise<void> {
 }
 
 /**
+ * Freeze dynamic content in the DOM to a deterministic placeholder so that
+ * screenshot baselines don't drift between runs because of time-of-day
+ * greetings, relative timestamps, locale-formatted dates, etc.
+ *
+ * Two complementary mechanisms run inside the same DOM walk:
+ *
+ * 1. **Pattern-based replacement** in every text node. Common dynamic
+ *    formats are matched by regex and overwritten with constants. This
+ *    catches Recharts SVG axis labels, UI badges, list rows, etc. without
+ *    requiring component-level changes. Patterns are conservative — they
+ *    only match shapes that look unambiguously like timestamps/dates.
+ *
+ * 2. **`data-screenshot-stub="…"`** per-element override. For dynamic
+ *    content that doesn't match a pattern (random IDs, percent badges,
+ *    counters), put `data-screenshot-stub="placeholder"` on the smallest
+ *    enclosing element in the React component; this helper sets that
+ *    element's textContent to the attribute value. Layout is preserved
+ *    because the same number of characters can be used as a placeholder.
+ *
+ * Call this immediately before `browser.checkScreen` — see usage in
+ * `e2e/screenshot-crawl.spec.ts`.
+ */
+export async function freezeDynamicContent(): Promise<void> {
+  await browser.execute(() => {
+    function replaceDynamic(text: string): string {
+      let next = text
+      // Time-of-day greetings (HomeHub, dashboard widgets)
+      next = next.replace(/Good (morning|afternoon|evening)/g, 'Good day')
+      // Relative phrases that don't carry a number
+      next = next.replace(/\b(just now|moments? ago|yesterday)\b/gi, '5 minutes ago')
+      // "5m ago", "5 minutes ago", "2h ago", "3 days ago", etc.
+      next = next.replace(
+        /\b\d+\s*(seconds?|secs?|s|minutes?|mins?|m|hours?|hrs?|h|days?|d|weeks?|w|months?|mo|years?|y)\s+ago\b/gi,
+        '5 minutes ago',
+      )
+      // Long-form locale date+time first (more specific) so the date-only
+      // pattern doesn't fire on the date half and leave stray punctuation.
+      next = next.replace(
+        /\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2},\s+\d{4}(,\s+\d{1,2}:\d{2}(:\d{2})?\s?(AM|PM))?/g,
+        'Apr 26, 2026, 2:45 PM',
+      )
+      // 12-hour clock "2:45 PM" / "12:34:56 PM"
+      next = next.replace(/\b\d{1,2}:\d{2}(:\d{2})?\s?(AM|PM)\b/g, '2:45 PM')
+      // Short locale date "4/26/2026"
+      next = next.replace(/\b\d{1,2}\/\d{1,2}\/\d{4}\b/g, '4/26/2026')
+      // ISO calendar date "2026-04-26"
+      next = next.replace(/\b\d{4}-\d{2}-\d{2}\b/g, '2026-04-26')
+      // Stopwatch durations like "2m 15s"
+      next = next.replace(/\b\d+m\s+\d+s\b/g, '2m 15s')
+      return next
+    }
+
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)
+    let node: Node | null
+    while ((node = walker.nextNode())) {
+      const textNode = node as Text
+      const replaced = replaceDynamic(textNode.data)
+      if (replaced !== textNode.data) textNode.data = replaced
+    }
+
+    document.querySelectorAll<HTMLElement>('[data-screenshot-stub]').forEach((el: HTMLElement) => {
+      const stub = el.getAttribute('data-screenshot-stub') ?? ''
+      if (el.textContent !== stub) el.textContent = stub
+    })
+  })
+}
+
+/**
  * Collect browser console logs and return an array of critical errors.
  * Warnings and info messages are filtered out — only errors are flagged.
  *
@@ -64,18 +132,19 @@ export async function getCriticalConsoleErrors(): Promise<string[]> {
  * and wait briefly for the route transition to settle.
  *
  * The sidebar renders NavLink elements with text content matching the
- * route labels defined in Sidebar.tsx: Home, Work, Insights, Configure, Learn.
+ * route labels defined in Sidebar.tsx: Home, Work, Insights, Clear Memory,
+ * Learn, plus Connect and Settings (pinned to the bottom).
  *
- * Note: "Configure" is pinned to the bottom of the sidebar in a <div>
- * outside the main <nav> element, so we search the entire <aside> for
- * any anchor containing the label text.
+ * Note: "Connect" and "Settings" are pinned to the bottom of the sidebar
+ * in a <div> outside the main <nav> element, so we search the entire
+ * <aside> for any anchor containing the label text.
  *
  * Uses XPath text matching since WebdriverIO's `=` text-selector syntax
  * is not reliably translated in Electron's Chromedriver context.
  */
 export async function navigateSidebarTo(label: string): Promise<void> {
-  // Search the entire sidebar aside (not just nav) to handle Configure which is
-  // rendered in a div pinned to the bottom, outside the primary <nav>
+  // Search the entire sidebar aside (not just nav) to handle pinned-bottom
+  // links (Connect, Settings) that live in a div outside the primary <nav>
   const xpath = `//aside//a[contains(., '${label}')]`
   const link = await $(xpath)
 
@@ -107,12 +176,19 @@ export async function mainContentIsRendered(): Promise<boolean> {
 
 /**
  * Navigate to the Configure page and select a specific tab.
- * Tab keys: setup, accessibility, settings, policies, integrations,
- * extensions, memory, agents, skills, wizard, workspaces, team,
- * scheduler, branding.
+ *
+ * The sidebar link to /configure has the visible label "Settings" (the
+ * route path itself is still /configure, the label was changed in PR #47).
+ *
+ * Tab keys: setup, accessibility, settings, tools, policies, memory,
+ * agents, skills, wizard, workspaces, team, scheduler, branding.
+ *
+ * Tabs that previously lived under Configure but moved to /connect in
+ * PR #47 — integrations, extensions, plus the Settings sub-tabs Plugins,
+ * Environment, Webhooks — should be reached via navigateToConnectTab().
  */
 export async function navigateToConfigureTab(tabKey: string): Promise<void> {
-  await navigateSidebarTo('Configure')
+  await navigateSidebarTo('Settings')
 
   const tabButton = await $(`#tab-${tabKey}`)
   await tabButton.waitForExist({ timeout: ELEMENT_TIMEOUT })
@@ -120,6 +196,23 @@ export async function navigateToConfigureTab(tabKey: string): Promise<void> {
   await tabButton.click()
 
   // Wait for tab content to render
+  await browser.pause(500)
+}
+
+// ── Connect Page Helpers ────────────────────────────────────────────────────
+
+/**
+ * Navigate to the Connect page and switch to a specific sub-tab via
+ * the ?tab= URL param (which Connect.tsx reads on mount).
+ *
+ * Sub-tab keys: integrations, extensions, mcp, environment, plugins,
+ * webhooks. PR #47 introduced Connect as the home for integration-style
+ * surfaces that previously lived in Configure.
+ */
+export async function navigateToConnectTab(tabKey: string): Promise<void> {
+  await browser.execute((key: string) => {
+    window.location.hash = `#/connect?tab=${key}`
+  }, tabKey)
   await browser.pause(500)
 }
 

@@ -45,10 +45,13 @@ describe('ClearPathAI — Full Navigation', () => {
       }
       const allText = texts.join(' ')
 
+      // PR #47: sidebar link to /configure is now labeled "Settings",
+      // and a new "Connect" entry was added (pinned to the bottom).
       expect(allText).toContain('Home')
       expect(allText).toContain('Work')
       expect(allText).toContain('Insights')
-      expect(allText).toContain('Configure')
+      expect(allText).toContain('Settings')
+      expect(allText).toContain('Connect')
     })
 
     it('highlights the active route link', async () => {
@@ -142,11 +145,11 @@ describe('ClearPathAI — Full Navigation', () => {
     })
 
     it('shows analytics or tab navigation', async () => {
+      // PR #47: Analytics + Usage merged into a single "Activity" tab.
       const html = await getRootHTML()
       const hasInsightsUI =
-        html.includes('Analytics') ||
+        html.includes('Activity') ||
         html.includes('Compliance') ||
-        html.includes('Usage') ||
         html.includes('Insights')
       expect(hasInsightsUI).toBe(true)
     })
@@ -160,7 +163,9 @@ describe('ClearPathAI — Full Navigation', () => {
   // ── Navigate All Routes Sequentially ──────────────────────────────────
 
   describe('Sequential Route Navigation', () => {
-    const routes = ['Home', 'Work', 'Insights', 'Configure', 'Home']
+    // PR #47: sidebar label for /configure changed from "Configure" to
+    // "Settings"; "Connect" was added as a new pinned route.
+    const routes = ['Home', 'Work', 'Insights', 'Connect', 'Settings', 'Home']
 
     for (const route of routes) {
       it(`navigates to ${route} without crash`, async () => {
@@ -177,7 +182,7 @@ describe('ClearPathAI — Full Navigation', () => {
 
   describe('Rapid Navigation', () => {
     it('handles fast sequential clicks without crashing', async () => {
-      const routes = ['Work', 'Insights', 'Configure', 'Home', 'Work', 'Home']
+      const routes = ['Work', 'Insights', 'Settings', 'Home', 'Work', 'Home']
 
       for (const route of routes) {
         await navigateSidebarTo(route)

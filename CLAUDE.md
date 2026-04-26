@@ -727,3 +727,4 @@ interface AgentConfig {
 7. **Chat-First UX**: Conversation UI renders AI markdown (bold, code, tables, lists) — not a terminal emulator.
 8. **Full Persistence**: Sessions, settings, costs, notifications all persist across app restarts via electron-store. No external database.
 9. **Non-Technical Users**: Design for managers and non-developers. Red = errors only, not informational. Usage stats are opt-in clicks, not in-your-face.
+

@@ -13,6 +13,7 @@ import {
   getCriticalConsoleErrors,
   navigateSidebarTo,
   navigateToConfigureTab,
+  navigateToConnectTab,
   mainContentIsRendered,
   getRootHTML,
   invokeIPC,
@@ -110,15 +111,17 @@ describe('ClearPathAI — App Lifecycle', () => {
       expect(html.length).toBeGreaterThan(300)
     })
 
-    it('Step 5: Check Integrations status', async () => {
-      await navigateToConfigureTab('integrations')
+    it('Step 5: Check Integrations status (Connect → Integrations)', async () => {
+      // PR #47 moved integrations from Configure to the Connect page.
+      await navigateToConnectTab('integrations')
 
       const html = await getRootHTML()
       expect(html).toContain('GitHub')
     })
 
-    it('Step 6: Review Extensions', async () => {
-      await navigateToConfigureTab('extensions')
+    it('Step 6: Review Extensions (Connect → Extensions)', async () => {
+      // PR #47 moved extensions from Configure to the Connect page.
+      await navigateToConnectTab('extensions')
 
       const html = await getRootHTML()
       expect(html).toContain('Extensions')
@@ -171,17 +174,23 @@ describe('ClearPathAI — App Lifecycle', () => {
 
       await navigateHash('#/configure')
       expect(await mainContentIsRendered()).toBe(true)
+
+      // PR #47 added the top-level /connect route
+      await navigateHash('#/connect')
+      expect(await mainContentIsRendered()).toBe(true)
     })
 
-    it('handles navigation to Configure with tab query param', async () => {
-      await navigateHash('#/configure?tab=extensions')
+    it('handles navigation to Connect with extensions tab query param', async () => {
+      // PR #47: extensions moved from Configure → Connect.
+      await navigateHash('#/connect?tab=extensions')
 
       const html = await getRootHTML()
       expect(html).toContain('Extensions')
     })
 
-    it('handles navigation to Configure with integrations tab param', async () => {
-      await navigateHash('#/configure?tab=integrations')
+    it('handles navigation to Connect with integrations tab param', async () => {
+      // PR #47: integrations moved from Configure → Connect.
+      await navigateHash('#/connect?tab=integrations')
 
       const html = await getRootHTML()
       expect(html).toContain('GitHub')
@@ -228,7 +237,8 @@ describe('ClearPathAI — App Lifecycle', () => {
     })
 
     it('page does not show blank content after navigation', async () => {
-      const routes = ['Work', 'Insights', 'Configure', 'Home']
+      // PR #47: sidebar label for /configure is now "Settings".
+      const routes = ['Work', 'Insights', 'Settings', 'Home']
       for (const route of routes) {
         await navigateSidebarTo(route)
         await browser.pause(500)

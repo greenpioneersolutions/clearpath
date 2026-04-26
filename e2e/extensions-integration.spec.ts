@@ -9,12 +9,11 @@ import {
   waitForAppReady,
   getCriticalConsoleErrors,
   navigateToConfigureTab,
-  waitForText,
+  navigateToConnectTab,
   buttonExists,
   clickButton,
   getRootHTML,
   invokeIPC,
-  ELEMENT_TIMEOUT,
 } from './helpers/app.js'
 import path from 'path'
 import { fileURLToPath } from 'url'
@@ -36,7 +35,7 @@ describe('ClearPathAI — Extension Integration', () => {
 
   describe('Extension Install from .clear.ext', () => {
     before(async () => {
-      await navigateToConfigureTab('extensions')
+      await navigateToConnectTab('extensions')
       await browser.pause(500)
     })
 
@@ -65,7 +64,7 @@ describe('ClearPathAI — Extension Integration', () => {
       // Refresh the extensions tab to pick up the new installation
       await navigateToConfigureTab('settings')
       await browser.pause(300)
-      await navigateToConfigureTab('extensions')
+      await navigateToConnectTab('extensions')
       await browser.pause(500)
 
       const html = await getRootHTML()
@@ -172,7 +171,7 @@ describe('ClearPathAI — Extension Integration', () => {
 
   describe('Extension Toggle and Restart Flow', () => {
     before(async () => {
-      await navigateToConfigureTab('extensions')
+      await navigateToConnectTab('extensions')
       await browser.pause(500)
     })
 
@@ -235,7 +234,7 @@ describe('ClearPathAI — Extension Integration', () => {
 
   describe('Tab Navigation Guard', () => {
     before(async () => {
-      await navigateToConfigureTab('extensions')
+      await navigateToConnectTab('extensions')
       await browser.pause(500)
     })
 
@@ -247,10 +246,14 @@ describe('ClearPathAI — Extension Integration', () => {
       await toggleBtn.click()
       await browser.pause(500)
 
-      // Try to navigate to Settings tab
-      const settingsTab = await $('#tab-settings')
-      await settingsTab.click()
-      await browser.pause(300)
+      // Try to navigate to a sibling Connect tab. PR #47 moved Extensions
+      // from Configure → Connect, so the guard now intercepts switching
+      // between connect-tab-* buttons (or away from /connect entirely).
+      const otherConnectTab = await $('#connect-tab-mcp')
+      if (await otherConnectTab.isExisting()) {
+        await otherConnectTab.click()
+        await browser.pause(300)
+      }
 
       const html = await getRootHTML()
       expect(html).toContain('Extension changes pending')
@@ -270,9 +273,11 @@ describe('ClearPathAI — Extension Integration', () => {
     })
 
     it('Continue without restart navigates to target tab', async () => {
-      // Try to navigate away again
-      const settingsTab = await $('#tab-settings')
-      await settingsTab.click()
+      // Try to navigate away again — this time to the MCP connect tab.
+      const otherConnectTab = await $('#connect-tab-mcp')
+      if (!(await otherConnectTab.isExisting())) return
+
+      await otherConnectTab.click()
       await browser.pause(300)
 
       const html = await getRootHTML()
@@ -281,9 +286,9 @@ describe('ClearPathAI — Extension Integration', () => {
       await clickButton('Continue without restart')
       await browser.pause(500)
 
-      // Should now be on Settings tab
-      const settingsSelected = await $('#tab-settings')
-      const selected = await settingsSelected.getAttribute('aria-selected')
+      // Should now be on the MCP connect tab
+      const mcpSelected = await $('#connect-tab-mcp')
+      const selected = await mcpSelected.getAttribute('aria-selected')
       expect(selected).toBe('true')
     })
   })

@@ -4,6 +4,15 @@ import { fileURLToPath } from 'url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
+// VS Code sets ELECTRON_RUN_AS_NODE=1 which prevents Electron from launching
+// as a GUI app (it runs as a plain Node.js process instead). Unset it here so
+// the wdio runner always gets a real Electron window regardless of how it is invoked.
+delete process.env.ELECTRON_RUN_AS_NODE
+
+// Screenshot capture: afterTest saves failure screenshots to e2e/screenshots/failures/
+// Full visual crawl: npm run e2e:screenshots (compare mode; CI parity)
+// Force-overwrite all baselines: npm run e2e:screenshots:update
+
 export const config: Options.Testrunner = {
   runner: 'local',
   specs: ['./e2e/**/*.spec.ts'],
@@ -11,6 +20,9 @@ export const config: Options.Testrunner = {
     // extensions-integration requires a pre-packaged .clear.ext file.
     // Run it separately via: npm run e2e:extensions
     './e2e/extensions-integration.spec.ts',
+    // screenshot-crawl is a dedicated visual crawl spec — not a functional test.
+    // Run it separately via: npm run e2e:screenshots
+    './e2e/screenshot-crawl.spec.ts',
   ],
   maxInstances: 1,
 
@@ -22,6 +34,11 @@ export const config: Options.Testrunner = {
         // Must run `npm run build` before e2e tests.
         appEntryPoint: path.join(__dirname, 'out/main/index.js'),
         appArgs: [],
+      },
+      // Required for CI environments (Ubuntu/Docker) where Chromium's sandbox
+      // is unavailable. Without --no-sandbox the Electron process exits immediately.
+      'goog:chromeOptions': {
+        args: ['--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage'],
       },
     },
   ],
@@ -40,6 +57,21 @@ export const config: Options.Testrunner = {
   mochaOpts: {
     ui: 'bdd',
     timeout: 60000,
+  },
+
+  /**
+   * Per-test failure screenshot. WebdriverIO's per-test runner hook is
+   * `afterTest` (not `afterEach` — that name is reserved for the Mocha
+   * spec-level hook and would be silently ignored if put here).
+   */
+  afterTest: async function (test, _context, { passed }) {
+    if (passed) return
+    try {
+      const { captureFailureScreenshot } = await import('./e2e/helpers/screenshots.js')
+      await captureFailureScreenshot(test.title ?? 'unknown-test')
+    } catch {
+      // Best-effort — don't fail the test over a screenshot error
+    }
   },
 
   /**
