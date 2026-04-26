@@ -10,12 +10,9 @@ import {
   waitForAppReady,
   getCriticalConsoleErrors,
   navigateSidebarTo,
-  waitForText,
-  buttonExists,
   getRootHTML,
   setInputValue,
   getInputValue,
-  ELEMENT_TIMEOUT,
 } from './helpers/app.js'
 import { captureScreenshot } from './helpers/screenshots.js'
 
@@ -132,27 +129,9 @@ describe('ClearPathAI — Work Page', () => {
     })
   })
 
-  // ── Panel Deep-Links ──────────────────────────────────────────────────
-
-  describe('Work Page Panel Deep-Links', () => {
-    const panels = ['agents', 'tools', 'templates', 'skills', 'subagents']
-
-    for (const panel of panels) {
-      it(`opens ${panel} panel via hash parameter`, async () => {
-        await navigateToHash(`#/work?panel=${panel}`)
-
-        const root = await $('#root')
-        expect(await root.isExisting()).toBe(true)
-        const html = await root.getHTML()
-        expect(html.length).toBeGreaterThan(200)
-      })
-    }
-
-    it('has no critical errors after panel cycling', async () => {
-      const errors = await getCriticalConsoleErrors()
-      expect(Array.isArray(errors)).toBe(true)
-    })
-  })
+  // PR #47 removed the right-rail panels (?panel=agents|tools|templates|
+  // skills|subagents) from Work.tsx. The URL params still parse but render
+  // nothing, so the previous panel deep-link tests were dropped.
 
   // ── Command Input ──────────────────────────────────────────────────────
   //

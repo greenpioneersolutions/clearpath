@@ -10,9 +10,7 @@ import {
   waitForAppReady,
   getCriticalConsoleErrors,
   navigateSidebarTo,
-  waitForText,
   getRootHTML,
-  ELEMENT_TIMEOUT,
 } from './helpers/app.js'
 
 describe('ClearPathAI — Insights Page', () => {
@@ -30,14 +28,15 @@ describe('ClearPathAI — Insights Page', () => {
       expect(html.length).toBeGreaterThan(200)
     })
 
-    it('shows tab navigation for Analytics, Compliance, Usage', async () => {
+    it('shows tab navigation for Activity and Compliance', async () => {
+      // PR #47 merged the old "Analytics" + "Usage" tabs into a single
+      // "Activity" tab. Built-in Insights tabs are now Activity + Compliance.
       const html = await getRootHTML()
-      const hasAnalytics = html.includes('Analytics')
+      const hasActivity = html.includes('Activity')
       const hasCompliance = html.includes('Compliance')
-      const hasUsage = html.includes('Usage')
 
       // At least one of the built-in tabs should be visible
-      expect(hasAnalytics || hasCompliance || hasUsage).toBe(true)
+      expect(hasActivity || hasCompliance).toBe(true)
     })
 
     it('has no critical errors', async () => {
@@ -49,8 +48,8 @@ describe('ClearPathAI — Insights Page', () => {
   // ── Tab Switching ─────────────────────────────────────────────────────
 
   describe('Tab Switching', () => {
-    it('can switch to Analytics tab', async () => {
-      const xpath = `//button[contains(., 'Analytics')]`
+    it('can switch to Activity tab', async () => {
+      const xpath = `//button[contains(., 'Activity')]`
       const tab = await $(xpath)
       if (await tab.isExisting()) {
         await tab.click()
@@ -62,17 +61,6 @@ describe('ClearPathAI — Insights Page', () => {
 
     it('can switch to Compliance tab', async () => {
       const xpath = `//button[contains(., 'Compliance')]`
-      const tab = await $(xpath)
-      if (await tab.isExisting()) {
-        await tab.click()
-        await browser.pause(500)
-        const html = await getRootHTML()
-        expect(html.length).toBeGreaterThan(200)
-      }
-    })
-
-    it('can switch to Usage tab', async () => {
-      const xpath = `//button[contains(., 'Usage')]`
       const tab = await $(xpath)
       if (await tab.isExisting()) {
         await tab.click()
@@ -96,8 +84,8 @@ describe('ClearPathAI — Insights Page', () => {
       await browser.pause(500)
     })
 
-    it('clicking Analytics tab gives it active styling', async () => {
-      const btn = await $('//button[contains(., "Analytics")]')
+    it('clicking Activity tab gives it active styling', async () => {
+      const btn = await $('//button[contains(., "Activity")]')
       if (await btn.isExisting()) {
         await btn.click()
         await browser.pause(300)
@@ -123,7 +111,7 @@ describe('ClearPathAI — Insights Page', () => {
     })
 
     it('tab round-trip preserves rendering', async () => {
-      const tabs = ['Analytics', 'Compliance', 'Usage']
+      const tabs = ['Activity', 'Compliance']
       for (const label of tabs) {
         const btn = await $(`//button[contains(., '${label}')]`)
         if (await btn.isExisting()) {
@@ -131,10 +119,10 @@ describe('ClearPathAI — Insights Page', () => {
           await browser.pause(300)
         }
       }
-      // Return to Analytics
-      const analyticsBtn = await $('//button[contains(., "Analytics")]')
-      if (await analyticsBtn.isExisting()) {
-        await analyticsBtn.click()
+      // Return to Activity
+      const activityBtn = await $('//button[contains(., "Activity")]')
+      if (await activityBtn.isExisting()) {
+        await activityBtn.click()
         await browser.pause(300)
         const html = await getRootHTML()
         expect(html.length).toBeGreaterThan(200)

@@ -10,14 +10,11 @@ import {
   waitForAppReady,
   getCriticalConsoleErrors,
   navigateToConfigureTab,
+  navigateToConnectTab,
   waitForText,
-  buttonExists,
   getRootHTML,
   setInputValue,
   getInputValue,
-  clickButton,
-  waitForSelector,
-  ELEMENT_TIMEOUT,
 } from './helpers/app.js'
 import { captureScreenshot } from './helpers/screenshots.js'
 
@@ -30,7 +27,7 @@ describe('ClearPathAI — Integrations', () => {
 
   describe('Integrations Tab', () => {
     before(async () => {
-      await navigateToConfigureTab('integrations')
+      await navigateToConnectTab('integrations')
     })
 
     it('renders the Integrations tab content', async () => {
@@ -48,7 +45,7 @@ describe('ClearPathAI — Integrations', () => {
 
   describe('Integration Cards', () => {
     before(async () => {
-      await navigateToConfigureTab('integrations')
+      await navigateToConnectTab('integrations')
       await browser.pause(500)
       // Capture the fully-loaded integration cards grid
       await captureScreenshot('integrations/cards-initial')
@@ -94,7 +91,7 @@ describe('ClearPathAI — Integrations', () => {
 
   describe('GitHub Integration Detail', () => {
     before(async () => {
-      await navigateToConfigureTab('integrations')
+      await navigateToConnectTab('integrations')
       await browser.pause(500)
     })
 
@@ -122,7 +119,7 @@ describe('ClearPathAI — Integrations', () => {
 
   describe('Integration Status Display', () => {
     before(async () => {
-      await navigateToConfigureTab('integrations')
+      await navigateToConnectTab('integrations')
       await browser.pause(500)
     })
 
@@ -143,7 +140,7 @@ describe('ClearPathAI — Integrations', () => {
 
   describe('GitHub Connection Form Interaction', () => {
     before(async () => {
-      await navigateToConfigureTab('integrations')
+      await navigateToConnectTab('integrations')
       await browser.pause(500)
     })
 
@@ -206,7 +203,7 @@ describe('ClearPathAI — Integrations', () => {
 
   describe('Other Integration Form Elements', () => {
     before(async () => {
-      await navigateToConfigureTab('integrations')
+      await navigateToConnectTab('integrations')
       await browser.pause(500)
     })
 
@@ -237,13 +234,15 @@ describe('ClearPathAI — Integrations', () => {
 
   describe('Stability', () => {
     it('survives navigating away and back', async () => {
-      await navigateToConfigureTab('integrations')
+      // Navigate Connect → Integrations, then to Configure → Settings (a
+      // different top-level route), then back to Connect → Integrations.
+      await navigateToConnectTab('integrations')
       await browser.pause(300)
 
       await navigateToConfigureTab('settings')
       await browser.pause(300)
 
-      await navigateToConfigureTab('integrations')
+      await navigateToConnectTab('integrations')
       await browser.pause(300)
 
       const html = await getRootHTML()

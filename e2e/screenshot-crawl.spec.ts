@@ -50,7 +50,7 @@ interface VisualOptions {
 interface SidebarPage extends VisualOptions {
   nav: string
   screenshot: string
-  optional?: boolean  // true for extension-contributed routes that may not always be installed
+  optional?: boolean  // true for routes gated behind feature flags or extensions
 }
 
 interface WorkTab extends VisualOptions {
@@ -58,12 +58,14 @@ interface WorkTab extends VisualOptions {
   screenshot: string
 }
 
-interface WorkPanel extends VisualOptions {
-  key: string
+interface InsightsTab extends VisualOptions {
+  label: string
   screenshot: string
+  optional?: boolean  // true for extension-contributed tabs
 }
 
-interface InsightsTab extends VisualOptions {
+interface ConnectTab extends VisualOptions {
+  key: string
   label: string
   screenshot: string
 }
@@ -86,94 +88,123 @@ interface ConfigureSubTab extends VisualOptions {
   screenshot: string
 }
 
-// Core sidebar pages + extension-contributed routes (optional — guarded with existence check)
+// Core sidebar pages.
+//
+// Sidebar labels were updated in PR #47 — the /configure route is now
+// labelled "Settings" (not "Configure"); /connect was added; /clear-memory
+// was added; the right-rail Work panels were removed.
+//
+// Extension-contributed sidebar entries (Backstage, PR Scores, Efficiency
+// Coach) are guarded with `optional: true` — the spec checks for the
+// anchor and skips the screenshot if it's not rendered.
 const SIDEBAR_PAGES: SidebarPage[] = [
   { nav: 'Home',             screenshot: 'home--initial' },
   { nav: 'Work',             screenshot: 'work--initial' },
   { nav: 'Insights',         screenshot: 'insights--initial' },
-  { nav: 'Learn',            screenshot: 'learn--initial' },
-  { nav: 'Configure',        screenshot: 'configure--initial' },
+  { nav: 'Clear Memory',     screenshot: 'clear-memory--initial', optional: true },
+  { nav: 'Learn',            screenshot: 'learn--initial',        optional: true },
+  { nav: 'Connect',          screenshot: 'connect--initial' },
+  { nav: 'Settings',         screenshot: 'configure--initial' },
   // Extension-contributed routes — present when extensions are installed
   { nav: 'Backstage',        screenshot: 'ext--backstage',        optional: true },
   { nav: 'Efficiency Coach', screenshot: 'ext--efficiency-coach', optional: true },
   { nav: 'PR Scores',        screenshot: 'ext--pr-scores',        optional: true },
 ]
 
-// Work page mode tabs (driven by hash query params, confirmed in work-page.spec.ts).
-// work--initial already captures the default wizard view so wizard is omitted here.
+// Work page mode tabs (driven by ?tab= URL param, confirmed in work-page.spec.ts).
+// All five modes are flag-gated; ?tab= will switch into them when the flag is on.
+// work--initial already captures the default landing view.
+//
+// Note: PR #47 removed the right-rail context panels (agents, tools, templates,
+// skills, subagents) from Work. The corresponding `?panel=` URL params are no
+// longer rendered, so WORK_PANELS was deleted entirely from this spec.
 const WORK_TABS: WorkTab[] = [
   { key: 'session',  screenshot: 'work--tab-session' },
+  { key: 'wizard',   screenshot: 'work--tab-wizard' },
   { key: 'compose',  screenshot: 'work--tab-compose' },
   { key: 'schedule', screenshot: 'work--tab-schedule' },
   { key: 'memory',   screenshot: 'work--tab-memory' },
 ]
 
-// Work page right-side context panels (opened via ?panel= hash param)
-const WORK_PANELS: WorkPanel[] = [
-  { key: 'agents',    screenshot: 'work--panel-agents' },
-  { key: 'tools',     screenshot: 'work--panel-tools' },
-  { key: 'templates', screenshot: 'work--panel-templates' },
-  { key: 'skills',    screenshot: 'work--panel-skills' },
-  { key: 'subagents', screenshot: 'work--panel-subagents' },
-]
-
-// Insights tabs — core tabs plus extension-contributed tabs.
-// Extension tabs are guarded: if the button isn't found the test skips gracefully.
+// Insights tabs — built-in tabs (Activity, Compliance) plus extension-contributed
+// tabs that only exist when matching extensions are installed. PR #47 merged
+// the old "Analytics" and "Usage Analytics" pages into a single "Activity" view.
 const INSIGHTS_TABS: InsightsTab[] = [
-  { label: 'Analytics',        screenshot: 'insights--tab-analytics' },
-  // Compliance and Usage views may render current dates in charts/timestamps
+  // Activity merges the old Analytics + Usage views; charts include date axes
+  { label: 'Activity',         screenshot: 'insights--tab-activity',   tolerance: 4 },
+  // Compliance view may render current dates in charts/timestamps
   { label: 'Compliance',       screenshot: 'insights--tab-compliance', tolerance: 4 },
-  { label: 'Usage',            screenshot: 'insights--tab-usage',      tolerance: 4 },
-  { label: 'Catalog Insights', screenshot: 'insights--tab-catalog-insights' },
-  { label: 'Efficiency',       screenshot: 'insights--tab-efficiency' },
-  { label: 'PR Health',        screenshot: 'insights--tab-pr-health' },
+  // Extension-contributed tabs — present only if the extension is installed
+  { label: 'Catalog Insights', screenshot: 'insights--tab-catalog-insights', optional: true },
+  { label: 'Efficiency',       screenshot: 'insights--tab-efficiency',       optional: true },
+  { label: 'PR Health',        screenshot: 'insights--tab-pr-health',        optional: true },
 ]
 
-// All 14 Configure tabs — captured by clicking tab buttons directly after an
-// initial navigation so re-navigation loading flashes don't affect screenshots.
+// Connect page sub-tabs (added in PR #47). Each tab button has a stable
+// `id="connect-tab-{key}"` selector hook that matches Connect.tsx.
+const CONNECT_TABS: ConnectTab[] = [
+  { key: 'integrations', label: 'Integrations', screenshot: 'connect--tab-integrations' },
+  { key: 'extensions',   label: 'Extensions',   screenshot: 'connect--tab-extensions' },
+  { key: 'mcp',          label: 'MCP Servers',  screenshot: 'connect--tab-mcp' },
+  { key: 'environment',  label: 'Environment',  screenshot: 'connect--tab-environment' },
+  { key: 'plugins',      label: 'Plugins',      screenshot: 'connect--tab-plugins' },
+  { key: 'webhooks',     label: 'Webhooks',     screenshot: 'connect--tab-webhooks' },
+]
+
+// All 13 Configure tabs — captured by clicking the sidenav tab buttons after a
+// single navigation so re-navigation loading flashes don't affect screenshots.
+//
+// PR #47 changes:
+//   - Sidebar label changed from "Configure" → "Settings" (URL still /configure).
+//   - Tab labels renamed: Settings→General, Memory→Notes & Context,
+//     Agents→Prompts, Skills→Playbooks, White Label→Branding.
+//   - New tab: Tools & Permissions (key=tools).
+//   - Integrations + Extensions tabs were moved out of Configure and into
+//     /connect — they no longer appear here.
 const CONFIGURE_TABS: ConfigureTab[] = [
-  { key: 'setup',         label: 'Setup Wizard',  screenshot: 'configure--tab-setup' },
-  { key: 'accessibility', label: 'Accessibility', screenshot: 'configure--tab-accessibility' },
-  { key: 'settings',      label: 'Settings',      screenshot: 'configure--tab-settings' },
-  { key: 'policies',      label: 'Policies',      screenshot: 'configure--tab-policies' },
-  { key: 'integrations',  label: 'Integrations',  screenshot: 'configure--tab-integrations' },
-  { key: 'extensions',    label: 'Extensions',    screenshot: 'configure--tab-extensions' },
-  { key: 'memory',        label: 'Memory',        screenshot: 'configure--tab-memory' },
-  { key: 'agents',        label: 'Agents',        screenshot: 'configure--tab-agents' },
-  { key: 'skills',        label: 'Skills',        screenshot: 'configure--tab-skills' },
-  { key: 'wizard',        label: 'Session Wizard', screenshot: 'configure--tab-wizard' },
-  { key: 'workspaces',    label: 'Workspaces',    screenshot: 'configure--tab-workspaces' },
-  { key: 'team',          label: 'Team Hub',      screenshot: 'configure--tab-team' },
+  { key: 'setup',         label: 'Setup Wizard',       screenshot: 'configure--tab-setup' },
+  { key: 'accessibility', label: 'Accessibility',      screenshot: 'configure--tab-accessibility' },
+  { key: 'agents',        label: 'Prompts',            screenshot: 'configure--tab-agents' },
+  { key: 'skills',        label: 'Playbooks',          screenshot: 'configure--tab-skills' },
+  { key: 'memory',        label: 'Notes & Context',    screenshot: 'configure--tab-memory' },
+  { key: 'settings',      label: 'General',            screenshot: 'configure--tab-settings' },
+  { key: 'tools',         label: 'Tools & Permissions', screenshot: 'configure--tab-tools' },
+  { key: 'wizard',        label: 'Session Wizard',     screenshot: 'configure--tab-wizard' },
+  { key: 'policies',      label: 'Policies',           screenshot: 'configure--tab-policies' },
+  { key: 'workspaces',    label: 'Workspaces',         screenshot: 'configure--tab-workspaces' },
+  { key: 'team',          label: 'Team Hub',           screenshot: 'configure--tab-team' },
   // Scheduler tab may display current date/time in job listings
-  { key: 'scheduler',     label: 'Scheduler',     screenshot: 'configure--tab-scheduler', tolerance: 4 },
-  { key: 'branding',      label: 'White Label',   screenshot: 'configure--tab-branding' },
+  { key: 'scheduler',     label: 'Scheduler',          screenshot: 'configure--tab-scheduler', tolerance: 4 },
+  { key: 'branding',      label: 'Branding',           screenshot: 'configure--tab-branding' },
 ]
 
 // Inner sub-tabs for each Configure sidenav section that has its own tab bar.
-// Sections with only a single flat view (Accessibility, Integrations, Extensions,
-// Agents, Skills, Setup Wizard, Session Wizard, Scheduler) are not listed here
-// because the main CONFIGURE_TABS crawl already captures their full view.
+// Sections with only a single flat view (Accessibility, Agents/Prompts,
+// Skills/Playbooks, Tools, Setup Wizard, Session Wizard, Scheduler) are not
+// listed here because the main CONFIGURE_TABS crawl already captures their
+// full view.
 //
 // Screenshot naming: configure--tab-{section}--sub-{key}
+//
+// PR #47 removed the Plugins, Environment, and Webhooks sub-tabs from Settings
+// — those moved to /connect. "Budget & Limits" was renamed to "Session Limits"
+// (cost UI was removed; only max-turns config remains).
 const CONFIGURE_SUB_TABS: ConfigureSubTab[] = [
-  // ── Settings (10 inner tabs) ────────────────────────────────────────────
-  { configureTab: 'settings', subLabel: 'CLI Flags',       screenshot: 'configure--tab-settings--sub-cli-flags' },
+  // ── Settings / "General" (7 inner tabs) ─────────────────────────────────
+  // 'CLI Flags' is the default — captured by configure--tab-settings above.
   { configureTab: 'settings', subLabel: 'Model',           screenshot: 'configure--tab-settings--sub-model' },
-  { configureTab: 'settings', subLabel: 'Budget & Limits', screenshot: 'configure--tab-settings--sub-budget' },
-  { configureTab: 'settings', subLabel: 'Plugins',         screenshot: 'configure--tab-settings--sub-plugins' },
+  { configureTab: 'settings', subLabel: 'Session Limits',  screenshot: 'configure--tab-settings--sub-limits' },
   { configureTab: 'settings', subLabel: 'Profiles',        screenshot: 'configure--tab-settings--sub-profiles' },
-  { configureTab: 'settings', subLabel: 'Environment',     screenshot: 'configure--tab-settings--sub-env' },
   { configureTab: 'settings', subLabel: 'Notifications',   screenshot: 'configure--tab-settings--sub-notifications' },
-  { configureTab: 'settings', subLabel: 'Webhooks',        screenshot: 'configure--tab-settings--sub-webhooks' },
   { configureTab: 'settings', subLabel: 'Data Management', screenshot: 'configure--tab-settings--sub-data' },
   { configureTab: 'settings', subLabel: 'Feature Flags',   screenshot: 'configure--tab-settings--sub-features' },
 
   // ── Policies (3 inner tabs) ─────────────────────────────────────────────
-  // 'Presets' is the default view — captured by configure--tab-policies above.
+  // 'Presets' is the default — captured by configure--tab-policies above.
   { configureTab: 'policies', subLabel: 'Violations', screenshot: 'configure--tab-policies--sub-violations' },
   { configureTab: 'policies', subLabel: 'Editor',     screenshot: 'configure--tab-policies--sub-editor' },
 
-  // ── Memory (6 inner tabs) ───────────────────────────────────────────────
+  // ── Memory / "Notes & Context" (6 inner tabs) ──────────────────────────
   // 'Notes' is the default — captured by configure--tab-memory above.
   { configureTab: 'memory', subLabel: 'Starter Memories', screenshot: 'configure--tab-memory--sub-starter' },
   { configureTab: 'memory', subLabel: 'Config Files',     screenshot: 'configure--tab-memory--sub-config-files' },
@@ -193,7 +224,7 @@ const CONFIGURE_SUB_TABS: ConfigureSubTab[] = [
   // Activity feed shows relative timestamps ("X minutes ago") that change between runs
   { configureTab: 'team', subLabel: 'Activity', screenshot: 'configure--tab-team--sub-activity', tolerance: 6 },
 
-  // ── White Label / Branding (6 inner sections) ───────────────────────────
+  // ── Branding (5 inner sections) ─────────────────────────────────────────
   // 'Theme Presets' is the default — captured by configure--tab-branding above.
   { configureTab: 'branding', subLabel: 'Identity',       screenshot: 'configure--tab-branding--sub-identity' },
   { configureTab: 'branding', subLabel: 'Brand Colors',   screenshot: 'configure--tab-branding--sub-colors' },
@@ -313,7 +344,8 @@ describe('ClearPathAI — Screenshot Crawl', () => {
   describe('Sidebar Pages', () => {
     for (const page of SIDEBAR_PAGES) {
       it(`captures ${page.nav} page`, async () => {
-        // For optional extension routes, guard with an existence check first
+        // For optional routes (feature-flagged or extension-contributed),
+        // guard with an existence check first.
         if (page.optional) {
           const xpath = `//aside//a[contains(., '${page.nav}')]`
           const link = await $(xpath)
@@ -353,29 +385,7 @@ describe('ClearPathAI — Screenshot Crawl', () => {
 
         const root = await $('#root')
         expect(await root.isExisting()).toBe(true)
-        await checkScreenshot(tab.screenshot)
-      })
-    }
-  })
-
-  // ── Work Page — Context Panels ────────────────────────────────────────────
-
-  describe('Work Page — Context Panels', () => {
-    before(async () => {
-      await navigateSidebarTo('Work')
-      await browser.pause(800)
-    })
-
-    for (const panel of WORK_PANELS) {
-      it(`captures Work panel: ${panel.key}`, async () => {
-        await browser.execute((key) => {
-          window.location.hash = `#/work?panel=${key}`
-        }, panel.key)
-        await browser.pause(800)
-
-        const root = await $('#root')
-        expect(await root.isExisting()).toBe(true)
-        await checkScreenshot(panel.screenshot)
+        await checkScreenshot(tab.screenshot, tab)
       })
     }
   })
@@ -394,7 +404,11 @@ describe('ClearPathAI — Screenshot Crawl', () => {
         const btn = await $(`//button[contains(., '${tab.label}')]`)
 
         if (!(await btn.isExisting())) {
-          console.log(`[screenshot-crawl] Insights tab "${tab.label}" not found — skipping`)
+          if (!tab.optional) {
+            // Built-in tabs must exist — surface the failure rather than silently skipping
+            throw new Error(`Required Insights tab "${tab.label}" not found`)
+          }
+          console.log(`[screenshot-crawl] Optional Insights tab "${tab.label}" not found — skipping`)
           return
         }
 
@@ -405,7 +419,35 @@ describe('ClearPathAI — Screenshot Crawl', () => {
 
         const root = await $('#root')
         expect(await root.isExisting()).toBe(true)
-        await checkScreenshot(tab.screenshot)
+        await checkScreenshot(tab.screenshot, tab)
+      })
+    }
+  })
+
+  // ── Connect Page — Tabs ───────────────────────────────────────────────────
+  //
+  // Connect is the new home (PR #47) for integration-style surfaces:
+  // Integrations, Extensions, MCP Servers, Environment, Plugins, Webhooks.
+  // Each sub-tab button has id="connect-tab-{key}".
+
+  describe('Connect Page — Tabs', () => {
+    before(async () => {
+      await navigateSidebarTo('Connect')
+      await browser.pause(800)
+    })
+
+    for (const tab of CONNECT_TABS) {
+      it(`captures Connect tab: ${tab.label}`, async () => {
+        const tabBtn = await $(`#connect-tab-${tab.key}`)
+        await tabBtn.waitForExist({ timeout: ELEMENT_TIMEOUT })
+        await tabBtn.waitForClickable({ timeout: ELEMENT_TIMEOUT })
+        await tabBtn.click()
+        await browser.pause(800)
+        await waitForLoadingToSettle()
+
+        const root = await $('#root')
+        expect(await root.isExisting()).toBe(true)
+        await checkScreenshot(tab.screenshot, tab)
       })
     }
   })
@@ -417,7 +459,9 @@ describe('ClearPathAI — Screenshot Crawl', () => {
       // Navigate to Configure once, then click through tabs directly.
       // Avoids repeated sidebar navigation which can trigger loading flashes
       // on async-loaded tabs (e.g. Setup Wizard fetches data via IPC on mount).
-      await navigateSidebarTo('Configure')
+      //
+      // Sidebar label is "Settings" (PR #47); URL is still /configure.
+      await navigateSidebarTo('Settings')
       await browser.pause(1000)
     })
 
@@ -434,7 +478,7 @@ describe('ClearPathAI — Screenshot Crawl', () => {
 
         const root = await $('#root')
         expect(await root.isExisting()).toBe(true)
-        await checkScreenshot(tab.screenshot)
+        await checkScreenshot(tab.screenshot, tab)
       })
     }
   })
@@ -442,9 +486,9 @@ describe('ClearPathAI — Screenshot Crawl', () => {
   // ── Configure Page — Tab Sub-Tabs ─────────────────────────────────────────
   //
   // Several Configure sidenav sections contain their own inner tab bar
-  // (Settings, Policies, Memory, Workspaces, Team Hub, White Label).
-  // This block visits every inner sub-tab and optionally captures a
-  // scrolled-down view when the content overflows the viewport.
+  // (Settings/General, Policies, Memory/Notes & Context, Workspaces, Team Hub,
+  // Branding). This block visits every inner sub-tab and optionally captures
+  // a scrolled-down view when the content overflows the viewport.
   //
   // Selector strategy: inner tab buttons are plain <button> elements without
   // role="tab" (that attribute is reserved for the Configure sidenav itself),
@@ -459,7 +503,7 @@ describe('ClearPathAI — Screenshot Crawl', () => {
     let currentConfigureTab = ''
 
     before(async () => {
-      await navigateSidebarTo('Configure')
+      await navigateSidebarTo('Settings')
       await browser.pause(1000)
       currentConfigureTab = ''
     })

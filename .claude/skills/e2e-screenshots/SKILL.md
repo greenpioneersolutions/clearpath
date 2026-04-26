@@ -20,14 +20,15 @@ The system has three layers:
 ## How to run locally
 
 ```bash
-# Capture/update all baselines (writes to e2e/screenshots/baseline/)
+# Compare against committed baselines; auto-saves a new baseline if one
+# is missing for a given tag (so the first run for a fresh tag passes).
 npm run e2e:screenshots
 
-# CI mode — writes to e2e/screenshots/actual/ (uploaded as artifact)
-npm run e2e:screenshots:ci
+# Force-update every baseline (after an intentional UI change).
+npm run e2e:screenshots:update
 ```
 
-Both scripts build the app first (`npm run build`). The `SCREENSHOT_DIR` env var controls the output directory and is set by the scripts automatically.
+Both scripts run `npm run build` first. Diff output lands under `.tmp/visual/` (gitignored).
 
 **Important:** Both `wdio.conf.ts` and `wdio.screenshots.conf.ts` call `delete process.env.ELECTRON_RUN_AS_NODE` at the top. VS Code sets this env var and it prevents Electron from launching as a GUI app — no manual `unset` needed.
 
@@ -57,23 +58,33 @@ All three generated directories are in `.gitignore`. Only `baseline/` is tracked
 |---|---|
 | Top-level page | `home--initial.png` |
 | Work mode tab | `work--tab-compose.png` |
-| Work context panel | `work--panel-agents.png` |
-| Insights tab | `insights--tab-analytics.png` |
+| Connect sub-tab | `connect--tab-mcp.png` |
+| Insights tab | `insights--tab-activity.png` |
 | Configure tab | `configure--tab-settings.png` |
+| Configure sub-tab | `configure--tab-memory--sub-context.png` |
 | Extension route | `ext--pr-scores.png` |
 
 ---
 
-## Coverage — what's currently captured (37 screenshots)
+## Coverage — what's currently captured
 
-| Section | Count | Keys |
-|---|---|---|
-| Core sidebar pages | 5 | home, work, insights, learn, configure |
-| Extension sidebar pages | 3 | ext--backstage, ext--efficiency-coach, ext--pr-scores |
-| Work mode tabs | 4 | session, compose, schedule, memory |
-| Work context panels | 5 | agents, tools, templates, skills, subagents |
-| Insights tabs | 6 | analytics, compliance, usage, catalog-insights, efficiency, pr-health |
-| Configure tabs | 14 | setup, accessibility, settings, policies, integrations, extensions, memory, agents, skills, wizard, workspaces, team, scheduler, branding |
+| Section | Keys |
+|---|---|
+| Core sidebar pages | home, work, insights, connect, configure (label "Settings") |
+| Optional sidebar pages | clear-memory, learn, ext--backstage, ext--efficiency-coach, ext--pr-scores |
+| Work mode tabs | session, wizard, compose, schedule, memory |
+| Insights tabs | activity, compliance (built-in); catalog-insights, efficiency, pr-health (extension-contributed, optional) |
+| Connect sub-tabs | integrations, extensions, mcp, environment, plugins, webhooks |
+| Configure tabs (13) | setup, accessibility, agents (label "Prompts"), skills (label "Playbooks"), memory (label "Notes & Context"), settings (label "General"), tools (label "Tools & Permissions"), wizard, policies, workspaces, team, scheduler, branding |
+
+For the full inventory of inner sub-tabs and per-shot tolerances see
+[references/coverage-map.md](references/coverage-map.md).
+
+> **Note on PR #47** — The Work right-rail panels (`?panel=…`) were
+> removed in main, the standalone /connections route was replaced by
+> the Connect page, the Insights "Analytics" + "Usage" tabs were
+> merged into a single "Activity" tab, and the "Budget & Limits"
+> sub-tab was renamed to "Session Limits" (cost UI removed).
 
 ---
 
@@ -83,14 +94,14 @@ All three generated directories are in `.gitignore`. Only `baseline/` is tracked
 Add an entry to `SIDEBAR_PAGES` in `e2e/screenshot-crawl.spec.ts`:
 ```typescript
 { nav: 'My Page', screenshot: 'my-page--initial' }
-// For extension-contributed routes that may not always be installed:
+// For routes gated by feature flags or extension-contributed:
 { nav: 'My Ext', screenshot: 'ext--my-ext', optional: true }
 ```
 
 ### New tab on an existing page
 - **Work tabs** → add to `WORK_TABS`, use `key` matching the `?tab=` hash param
-- **Work panels** → add to `WORK_PANELS`, use `key` matching the `?panel=` hash param
-- **Insights tabs** → add to `INSIGHTS_TABS`, use `label` matching the visible button text
+- **Insights tabs** → add to `INSIGHTS_TABS`, use `label` matching the visible button text; mark extension-contributed tabs `optional: true`
+- **Connect sub-tabs** → add to `CONNECT_TABS`, use `key` matching the `#connect-tab-{key}` DOM id
 - **Configure tabs** → add to `CONFIGURE_TABS`, use `key` matching the `#tab-{key}` DOM id
 
 ### New page section or async-loaded content

@@ -11,13 +11,13 @@ import {
   waitForAppReady,
   getCriticalConsoleErrors,
   navigateToConfigureTab,
+  navigateToConnectTab,
   waitForText,
   buttonExists,
   clickButton,
   getRootHTML,
   countElements,
   invokeIPC,
-  ELEMENT_TIMEOUT,
 } from './helpers/app.js'
 import { captureScreenshot } from './helpers/screenshots.js'
 
@@ -56,7 +56,7 @@ describe('ClearPathAI — Extensions', () => {
 
   describe('Extensions Tab', () => {
     before(async () => {
-      await navigateToConfigureTab('extensions')
+      await navigateToConnectTab('extensions')
     })
 
     it('renders the Extensions heading', async () => {
@@ -114,7 +114,7 @@ describe('ClearPathAI — Extensions', () => {
 
   describe('Extension List Display', () => {
     before(async () => {
-      await navigateToConfigureTab('extensions')
+      await navigateToConnectTab('extensions')
       await browser.pause(500)
     })
 
@@ -144,7 +144,7 @@ describe('ClearPathAI — Extensions', () => {
 
   describe('Extension Detail Panel', () => {
     before(async () => {
-      await navigateToConfigureTab('extensions')
+      await navigateToConnectTab('extensions')
       await browser.pause(500)
     })
 
@@ -198,7 +198,7 @@ describe('ClearPathAI — Extensions', () => {
 
   describe('Extension Toggle', () => {
     before(async () => {
-      await navigateToConfigureTab('extensions')
+      await navigateToConnectTab('extensions')
       await browser.pause(500)
     })
 
@@ -228,7 +228,7 @@ describe('ClearPathAI — Extensions', () => {
 
   describe('Extension Toggle State', () => {
     before(async () => {
-      await navigateToConfigureTab('extensions')
+      await navigateToConnectTab('extensions')
       await browser.pause(500)
     })
 
@@ -271,7 +271,7 @@ describe('ClearPathAI — Extensions', () => {
       // Switch away and back
       await navigateToConfigureTab('settings')
       await browser.pause(300)
-      await navigateToConfigureTab('extensions')
+      await navigateToConnectTab('extensions')
       await browser.pause(500)
 
       // Verify the toggle stayed in its new state
@@ -328,13 +328,13 @@ describe('ClearPathAI — Extensions', () => {
 
   describe('Extensions Tab Stability', () => {
     it('survives switching away and back to Extensions tab', async () => {
-      await navigateToConfigureTab('extensions')
+      await navigateToConnectTab('extensions')
       await browser.pause(300)
 
       await navigateToConfigureTab('settings')
       await browser.pause(300)
 
-      await navigateToConfigureTab('extensions')
+      await navigateToConnectTab('extensions')
       await browser.pause(300)
 
       const html = await getRootHTML()

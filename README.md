@@ -30,12 +30,12 @@ ClearPathAI wraps GitHub Copilot CLI (and Claude Code CLI for teams that have ac
 
 ## Key Features
 
-- **Intuitive 4-screen navigation** — Home dashboard, Work session with contextual panels, Insights analytics, and Configure settings. No menu maze.
+- **Intuitive sidebar navigation** — Home dashboard, Work session, Insights analytics, Clear Memory workspace, Connect (integrations & extensions), and Settings. No menu maze.
 - **Multi-CLI support** — GitHub Copilot CLI (primary) and Claude Code CLI (secondary) with adapter pattern for adding more backends
 - **Real-time session management** — Streaming output display, slash command autocomplete, mode switching (normal/plan/autopilot)
 - **Agent management** — Toggle built-in and custom agents, create agent definitions, agent profiles
 - **Sub-agent process monitor** — Delegate tasks to background CLI processes, monitor progress, kill/pause/resume
-- **Cost analytics** — Real-time token usage tracking, budget alerts, cost-per-task metrics, CSV export
+- **Usage analytics** — Real-time token usage tracking, session activity feed, per-model breakdowns
 - **Prompt template library** — 30+ built-in templates across 12 categories with variable placeholders
 - **Task scheduler** — Cron-based scheduled tasks with node-cron, missed run detection, execution history
 - **Policy guardrails** — Configurable policy presets (Cautious/Standard/Unrestricted) with violation logging
@@ -57,8 +57,9 @@ ClearPathAI wraps GitHub Copilot CLI (and Claude Code CLI for teams that have ac
 ┌─────────────────────────────────────────────────┐
 │                   Clear Path                     │
 │  ┌───────────────────────────────────────────┐  │
-│  │    4-Screen React Renderer (UI)           │  │
-│  │  Home │ Work │ Insights │ Configure       │  │
+│  │    Sidebar React Renderer (UI)            │  │
+│  │  Home · Work · Insights · Clear Memory    │  │
+│  │  Connect · Settings                       │  │
 │  └──────────────────┬────────────────────────┘  │
 │                     │ IPC Bridge                 │
 │  ┌──────────────────┴────────────────────────┐  │
@@ -124,17 +125,20 @@ Releases are built automatically via GitHub Actions for all three platforms when
 
 ## Navigation
 
-Clear Path uses a streamlined 4-screen navigation:
+Clear Path uses a streamlined sidebar with the following entries:
 
 | Screen | Purpose |
 |--------|---------|
-| **Home** | Customizable widget dashboard with preset layouts |
-| **Work** | Session chat + contextual panel toolbar (Agents, Tools, Files, Git, Templates, Sub-Agents, Knowledge Base) |
-| **Insights** | Analytics (token-first + cost toggle), Compliance, and Usage tabs |
+| **Home** | Dashboard / HomeHub greeting, quick prompt input, and recent sessions |
+| **Work** | Session chat with mode toggle (Session, Wizard, Compose, Schedule, Memory) |
+| **Insights** | Activity (merged Analytics + Usage Analytics) and Compliance tabs, plus extension-contributed tabs when installed |
+| **Clear Memory** | ClearMemory IDE workspace |
+| **Connect** | Integrations, Extensions, MCP Servers, Environment, Plugins, Webhooks |
 | **PR Scores** | Experimental — GitHub PR scoring, repo dashboards, AI review (feature-flagged) |
-| **Configure** | Settings, Policies, Integrations, Extensions, Memory, Skills, Workspaces, Team Hub, Scheduler, Branding |
+| **Settings** | Setup Wizard, Accessibility, Prompts, Playbooks, Notes & Context, General, Tools & Permissions, Session Wizard, Policies, Workspaces, Team Hub, Scheduler, Branding |
+| **Learn** | Optional, feature-flagged — onboarding and learning paths |
 
-Managers see 4 screens, not 18 pages. Power users access everything through contextual panels in the Work view.
+Managers see a focused sidebar, not 18 pages. Power users reach every detail through the sub-tabs inside each screen.
 
 ## Extensions
 
@@ -155,7 +159,7 @@ ClearPathAI supports a dynamic extension system that lets you add custom feature
 - Access other extensions' data
 - Crash the host app (errors are contained in the iframe)
 
-Extensions are managed in **Configure > Extensions** where users can install from zip files, enable/disable, and grant or revoke individual permissions.
+Extensions are managed in **Connect > Extensions** where users can install from zip files, enable/disable, and grant or revoke individual permissions.
 
 **[Read the full Extension Developer Guide](docs/extensions.md)** for architecture details, the manifest spec, SDK API reference, security model, and step-by-step tutorials for building your own extensions.
 
@@ -165,12 +169,12 @@ ClearPathAI is built for organizations that need AI tooling they can control, au
 
 | Capability | What It Means |
 |-----------|---------------|
-| **Policy guardrails** | Prevent unauthorized tool use, enforce permission modes, cap budgets, protect sensitive files |
+| **Policy guardrails** | Prevent unauthorized tool use, enforce permission modes, cap turn limits, protect sensitive files |
 | **Compliance & audit** | Immutable audit log with JSONL archival, one-click compliance snapshot export |
 | **Sensitive data scanning** | Catches credentials, API keys, and PII in prompts before they reach the AI |
 | **Encryption at rest** | OS keychain for secrets (macOS Keychain, DPAPI, libsecret), AES-encrypted electron-store, CSP headers, IPC whitelisting |
 | **Team onboarding** | Built-in Learning Center with role-based paths, interactive lessons, and progress tracking |
-| **Cost governance** | Real-time cost tracking, budget alerts, auto-pause at limits, ROI analytics |
+| **Session limits** | Configurable max-turns per session via Settings > Session Limits |
 | **Config sharing** | Export/import settings, policies, templates, and agents as team bundles — no server required |
 | **Air-gapped deployment** | Full offline operation with local models via Ollama — zero external network calls |
 | **Open source (MIT)** | Read every line. Fork it. Rebrand it. Customize it. No vendor lock-in, ever. |

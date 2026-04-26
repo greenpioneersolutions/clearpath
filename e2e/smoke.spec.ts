@@ -125,8 +125,9 @@ describe('ClearPathAI — Smoke Tests', () => {
     expect(html.length).toBeGreaterThan(50)
   })
 
-  it('navigates to Configure without crashing', async () => {
-    await navigateSidebarTo('Configure')
+  it('navigates to Configure (sidebar label "Settings") without crashing', async () => {
+    // PR #47: the sidebar link to /configure is now labeled "Settings".
+    await navigateSidebarTo('Settings')
     const root = await $('#root')
     expect(await root.isExisting()).toBe(true)
     const html = await root.getHTML()
