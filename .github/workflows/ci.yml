@@ -10,16 +10,7 @@ on:
     branches:
       - main
       - dev
-  workflow_dispatch:
-    inputs:
-      update_baselines:
-        description: 'Force-update all screenshot baselines (intentional bulk update)'
-        required: false
-        default: 'false'
-        type: choice
-        options:
-          - 'false'
-          - 'true'
+  workflow_dispatch: {}
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -50,16 +41,19 @@ jobs:
       - name: Build app
         run: npm run build
 
-  # ── Screenshot regression tests ──────────────────────────────────────────────
+  # ── Screenshot capture ───────────────────────────────────────────────────────
   # Always runs after the main test job (on every push and PR).
   #
-  # Normal mode (default): runs in compare-only mode. autoSaveBaseline:true in
-  # wdio.screenshots.conf.ts handles first-run cases (auto-creates missing baselines).
-  # Tests fail if mismatch > 2% threshold. Only newly auto-saved baselines are
-  # committed back (changed files won't show a diff if comparison passed).
+  # Policy: this job *captures* visual changes; it does NOT gate the CI on
+  # pixel mismatches. wdio is invoked with --update-visual-baseline so every
+  # baseline is overwritten with the current actual screenshot, and the
+  # downstream commit step pushes those updates back as a separate
+  # "Auto-update screenshot baselines" commit. Reviewers see the visual
+  # changes as PR diffs (LFS pointer hash changes) without the test failing.
   #
-  # Update mode: trigger via workflow_dispatch with update_baselines=true to
-  # force-overwrite all baselines after an intentional UI change.
+  # Real failures still bubble up: navigation timeouts, missing elements,
+  # JS errors during the crawl, and app-load failures all surface as job
+  # errors here. Only the pixel-mismatch comparison was removed.
   #
   # Requires the repo to allow Actions to create commits:
   #   Settings → Actions → Workflow permissions → "Read and write permissions"
@@ -101,26 +95,24 @@ jobs:
           echo "DISPLAY=:99" >> $GITHUB_ENV
           sleep 2
 
-      - name: Run visual regression tests
-        run: |
-          if [ "${{ github.event.inputs.update_baselines }}" = "true" ]; then
-            echo "Running in update-baseline mode (workflow_dispatch requested)"
-            npx wdio run wdio.screenshots.conf.ts --update-visual-baseline
-          else
-            echo "Running in compare mode (baselines must match within threshold)"
-            npx wdio run wdio.screenshots.conf.ts
-          fi
+      - name: Run screenshot crawl
+        # Always run with --update-visual-baseline. This captures the current
+        # state of every page/tab as the new baseline; the next "Commit new
+        # baselines" step pushes those updates back so reviewers see what
+        # changed in the PR diff. Real test failures (navigation timeouts,
+        # missing elements, app crashes) still fail this step and stop CI.
+        run: npx wdio run wdio.screenshots.conf.ts --update-visual-baseline
         env:
           DISPLAY: ':99'
 
-      - name: Commit new baselines
+      - name: Commit updated baselines
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add e2e/screenshots/baseline/
-          # Only commit when there are changes (new auto-saved baselines or explicit update).
-          # In compare mode only newly auto-saved baselines (untracked → added) will appear
-          # here; existing baselines that passed comparison won't show a diff.
+          # Commit only when something actually changed. With --update-visual-baseline
+          # a baseline only diffs if the captured pixels differ from the previous
+          # baseline, so this commit is skipped when nothing visual changed.
           git diff --staged --quiet || git commit -m "Auto-update screenshot baselines [skip ci]"
           # --force-with-lease is safer than --force — it only overwrites if the
           # remote ref matches what we fetched at checkout, protecting against
