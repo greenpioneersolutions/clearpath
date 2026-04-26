@@ -1,4 +1,5 @@
 import { useFeatureFlags, type FeatureFlags } from '../../contexts/FeatureFlagContext'
+import { getStageInfo } from '../../lib/progressiveDisclosure'
 
 // ── Flag groups for organized display ────────────────────────────────────────
 
@@ -32,6 +33,7 @@ const FLAG_GROUPS: FlagGroup[] = [
       { key: 'showPolicies', label: 'Policies', description: 'Governance rules and presets' },
       { key: 'showIntegrations', label: 'Integrations', description: 'GitHub and external services' },
       { key: 'showMemory', label: 'Memory', description: 'Notes, CLAUDE.md, context files' },
+      { key: 'showClearMemory', label: 'Clear Memory', description: 'Cross-session AI memory engine. Runs locally. ~700 MB disk + ~600 MB model download on first enable.' },
       { key: 'showSkillsManagement', label: 'Skills Management', description: 'Create, edit, manage skills' },
       { key: 'showSessionWizard', label: 'Session Wizard Config', description: 'Customize wizard options' },
       { key: 'showWorkspaces', label: 'Workspaces', description: 'Multi-repo management' },
@@ -76,18 +78,61 @@ const FLAG_GROUPS: FlagGroup[] = [
       { key: 'prScoresAiReview', label: 'PR Scores AI Review', description: 'Enable AI-powered PR code review via connected CLI' },
     ],
   },
+  {
+    label: 'Backends (SDK adapters)',
+    flags: [
+      { key: 'enableClaudeSdk', label: 'Claude SDK backend', description: 'Drive Claude sessions through @anthropic-ai/claude-agent-sdk using ANTHROPIC_API_KEY — no claude CLI binary required.' },
+      { key: 'enableCopilotSdk', label: 'Copilot SDK backend', description: 'Drive Copilot sessions through copilot --acp (Agent Client Protocol) over stdio. Still requires the copilot CLI to be installed locally.' },
+    ],
+  },
 ]
 
 // ── Component ────────────────────────────────────────────────────────────────
 
 export default function FeatureFlagSettings(): JSX.Element {
-  const { flags, activePresetId, presets, setFlag, applyPreset, resetFlags } = useFeatureFlags()
+  const { flags, activePresetId, presets, setFlag, applyPreset, resetFlags, progressionStage, sessionCount } = useFeatureFlags()
 
   const enabledCount = Object.values(flags).filter(Boolean).length
   const totalCount = Object.keys(flags).length
+  const isProgressive = activePresetId === 'progressive'
+  const stageInfo = isProgressive && progressionStage ? getStageInfo(sessionCount) : null
 
   return (
     <div className="space-y-6">
+      {/* Progressive Disclosure card — opt-in mode that auto-adjusts visible features */}
+      <div className={`border rounded-xl p-4 ${isProgressive ? 'border-indigo-300 bg-indigo-50' : 'border-gray-200 bg-white'}`}>
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex-1">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-semibold text-gray-900">Auto-reveal features as you grow</span>
+              {isProgressive && stageInfo && (
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-600 text-white font-medium">
+                  {stageInfo.label} — {sessionCount} session{sessionCount === 1 ? '' : 's'}
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-gray-600 mt-1">
+              {isProgressive && stageInfo
+                ? stageInfo.description
+                : 'Start simple and unlock features as you complete more sessions. Recommended for new users.'}
+            </p>
+          </div>
+          <button
+            onClick={() => applyPreset(isProgressive ? 'all-on' : 'progressive')}
+            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors flex-shrink-0 ${
+              isProgressive ? 'bg-indigo-600' : 'bg-gray-300'
+            }`}
+            role="switch"
+            aria-checked={isProgressive}
+            aria-label="Toggle progressive disclosure"
+          >
+            <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+              isProgressive ? 'translate-x-4' : 'translate-x-0.5'
+            }`} />
+          </button>
+        </div>
+      </div>
+
       {/* Presets */}
       <div>
         <h3 className="text-sm font-semibold text-gray-800 mb-3">Quick Presets</h3>

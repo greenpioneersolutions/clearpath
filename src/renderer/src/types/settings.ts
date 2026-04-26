@@ -29,6 +29,13 @@ export interface AppSettings {
   envVars: Record<string, string>
   /** Dynamic env var metadata (built-in + user-created). Sensitive values stored in credentialStore. */
   envVarEntries?: EnvVarEntry[]
+  /**
+   * Default backend id used by session wizards when the user hasn't explicitly
+   * picked one. One of `copilot-cli` | `copilot-sdk` | `claude-cli` | `claude-sdk`.
+   * Session wizard falls back to the most recently used backend, then the first
+   * ready backend from AuthManager.
+   */
+  preferredBackend?: import('../../../shared/backends').BackendId
 }
 
 export interface EnvVarEntry {

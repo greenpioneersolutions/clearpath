@@ -42,11 +42,32 @@ const NAV_ITEMS: Array<{ to: string; label: string; flagKey?: keyof FeatureFlags
       </svg>
     ),
   },
+  {
+    to: '/clear-memory',
+    label: 'Clear Memory',
+    flagKey: 'showClearMemory',
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 3a3 3 0 00-3 3v.5M15 21a3 3 0 003-3v-.5" opacity="0.5" />
+      </svg>
+    ),
+  },
 ]
+
+const CONNECT_ITEM = {
+  to: '/connect',
+  label: 'Connect',
+  icon: (
+    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 4a2 2 0 114 0v1a1 1 0 001 1h3a1 1 0 011 1v3a1 1 0 01-1 1h-1a2 2 0 100 4h1a1 1 0 011 1v3a1 1 0 01-1 1h-3a1 1 0 01-1-1v-1a2 2 0 10-4 0v1a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 00-1-1H4a2 2 0 110-4h1a1 1 0 001-1V7a1 1 0 011-1h3a1 1 0 001-1V4z" />
+    </svg>
+  ),
+}
 
 const CONFIGURE_ITEM = {
   to: '/configure',
-  label: 'Configure',
+  label: 'Settings',
   icon: (
     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
@@ -313,8 +334,12 @@ export default function Sidebar(): JSX.Element {
 
       {/* ── Configure (pinned to bottom) ─────────────────────────────────── */}
       {flags.showConfigure && (
-        <div className="px-2 pb-1">
+        <div className="px-2 pb-1 space-y-1">
           <div className="mx-1 border-t mb-2" style={{ borderColor: `${brand.colorSidebarText}22` }} />
+          <NavLink to={CONNECT_ITEM.to} className={linkClass} style={({ isActive }) => linkStyle(isActive)}>
+            {CONNECT_ITEM.icon}
+            {!collapsed && <span>{CONNECT_ITEM.label}</span>}
+          </NavLink>
           <NavLink to={CONFIGURE_ITEM.to} className={linkClass} style={({ isActive }) => linkStyle(isActive)}>
             {CONFIGURE_ITEM.icon}
             {!collapsed && <span>{CONFIGURE_ITEM.label}</span>}

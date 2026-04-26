@@ -1,5 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import ExtensionSlot from '../extensions/ExtensionSlot'
+import type { BackendId } from '../../../../shared/backends'
+import { providerOf, BACKEND_LABELS, BACKEND_GRID_ORDER, transportOf } from '../../../../shared/backends'
+import type { AuthState } from '../../types/ipc'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -36,8 +39,8 @@ interface SkillItem {
 // ── Props ────────────────────────────────────────────────────────────────────
 
 interface Props {
-  onLaunchSession: (opts: { cli: 'copilot' | 'claude'; name: string; initialPrompt: string; displayPrompt?: string; agent?: string; model?: string; fleetMode?: boolean; contextSummary?: { memories: string[]; agent?: string; skill?: string } }) => void
-  defaultCli: 'copilot' | 'claude'
+  onLaunchSession: (opts: { cli: BackendId; name: string; initialPrompt: string; displayPrompt?: string; agent?: string; model?: string; fleetMode?: boolean; contextSummary?: { memories: string[]; agent?: string; skill?: string } }) => void
+  defaultCli: BackendId
   /** Pre-select a wizard option by id (e.g. 'question', 'task') and skip to 'fill' step */
   initialOptionId?: string
   /** Jump directly to a step (e.g. 'context') */
@@ -71,7 +74,11 @@ export default function SessionWizard({ onLaunchSession, defaultCli, initialOpti
   const [step, setStep] = useState<Step>('choose')
   const [selectedOption, setSelectedOption] = useState<WizardOption | null>(null)
   const [values, setValues] = useState<Record<string, string>>({})
-  const [cli, setCli] = useState<'copilot' | 'claude'>(defaultCli)
+  const [cli, setCli] = useState<BackendId>(defaultCli)
+  // Available backends = all 4 BackendIds where both `installed` and
+  // `authenticated` are true per AuthManager. Refreshed on mount and whenever
+  // the status changes.
+  const [readyBackends, setReadyBackends] = useState<BackendId[]>([])
   const [sessionName, setSessionName] = useState('')
   const [builtPrompt, setBuiltPrompt] = useState('')
 
@@ -114,6 +121,47 @@ export default function SessionWizard({ onLaunchSession, defaultCli, initialOpti
   }, [])
 
   useEffect(() => { void load() }, [load])
+
+  // Resolve preferredBackend from settings once — falls back to the defaultCli
+  // prop the parent passes in.
+  useEffect(() => {
+    let mounted = true
+    void (window.electronAPI.invoke('settings:get') as Promise<{ preferredBackend?: BackendId }>).then((s) => {
+      if (mounted && s?.preferredBackend) setCli(s.preferredBackend)
+    })
+    return () => { mounted = false }
+  // Only run once on mount — parent prop changes should already update defaultCli.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Load the set of ready backends from AuthManager. The session wizard only
+  // offers backends that are actually installed + authenticated — so users
+  // don't start a Claude SDK session without setting their API key.
+  useEffect(() => {
+    const computeReady = (raw: unknown): BackendId[] => {
+      const s = raw as AuthState | null | undefined
+      if (!s || typeof s !== 'object' || !('copilot' in s) || !('claude' in s)) return []
+      const out: BackendId[] = []
+      for (const id of BACKEND_GRID_ORDER) {
+        const provider = providerOf(id)
+        // Defensive: legacy auth shapes (before Phase 1 migration) may have a
+        // flat AuthStatus rather than { cli, sdk }. Treat missing sub-keys as
+        // "not ready" rather than crashing.
+        const providerState = s[provider] as { cli?: { installed?: boolean; authenticated?: boolean }; sdk?: { installed?: boolean; authenticated?: boolean } } | undefined
+        if (!providerState) continue
+        const status = transportOf(id) === 'cli' ? providerState.cli : providerState.sdk
+        if (status?.installed && status.authenticated) out.push(id)
+      }
+      return out
+    }
+    void (window.electronAPI.invoke('auth:get-status') as Promise<unknown>).then((s) => {
+      setReadyBackends(computeReady(s))
+    }).catch(() => { /* in tests, IPC may not resolve */ })
+    const off = window.electronAPI.on('auth:status-changed', (payload: unknown) => {
+      setReadyBackends(computeReady(payload))
+    })
+    return off
+  }, [])
 
   // ── Auto-select option or step from props (deep-link from Home) ────────
   useEffect(() => {
@@ -642,13 +690,18 @@ export default function SessionWizard({ onLaunchSession, defaultCli, initialOpti
                   className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-400 mb-1">AI Engine</label>
-                <div className="flex rounded-lg bg-gray-800 p-0.5">
-                  <button onClick={() => setCli('copilot')}
-                    className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${cli === 'copilot' ? 'bg-green-600 text-white' : 'text-gray-400 hover:text-gray-200'}`}>Copilot</button>
-                  <button onClick={() => setCli('claude')}
-                    className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${cli === 'claude' ? 'bg-orange-600 text-white' : 'text-gray-400 hover:text-gray-200'}`}>Claude</button>
-                </div>
+                <label className="block text-xs font-medium text-gray-400 mb-1">Backend</label>
+                <select
+                  value={cli}
+                  onChange={(e) => setCli(e.target.value as BackendId)}
+                  className="bg-gray-800 border border-gray-700 text-gray-200 text-xs rounded-lg px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-indigo-500"
+                >
+                  {(readyBackends.length > 0 ? readyBackends : BACKEND_GRID_ORDER).map((id) => (
+                    <option key={id} value={id}>
+                      {BACKEND_LABELS[id]}{readyBackends.length === 0 ? ' (check setup)' : ''}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
           </div>
@@ -729,13 +782,18 @@ export default function SessionWizard({ onLaunchSession, defaultCli, initialOpti
                   className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-400 mb-1">AI Engine</label>
-                <div className="flex rounded-lg bg-gray-800 p-0.5">
-                  <button onClick={() => setCli('copilot')}
-                    className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${cli === 'copilot' ? 'bg-green-600 text-white' : 'text-gray-400 hover:text-gray-200'}`}>Copilot</button>
-                  <button onClick={() => setCli('claude')}
-                    className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${cli === 'claude' ? 'bg-orange-600 text-white' : 'text-gray-400 hover:text-gray-200'}`}>Claude</button>
-                </div>
+                <label className="block text-xs font-medium text-gray-400 mb-1">Backend</label>
+                <select
+                  value={cli}
+                  onChange={(e) => setCli(e.target.value as BackendId)}
+                  className="bg-gray-800 border border-gray-700 text-gray-200 text-xs rounded-lg px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-indigo-500"
+                >
+                  {(readyBackends.length > 0 ? readyBackends : BACKEND_GRID_ORDER).map((id) => (
+                    <option key={id} value={id}>
+                      {BACKEND_LABELS[id]}{readyBackends.length === 0 ? ' (check setup)' : ''}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
           </div>
@@ -784,8 +842,8 @@ export default function SessionWizard({ onLaunchSession, defaultCli, initialOpti
           </div>
 
           <div className="flex items-center gap-3 text-xs text-gray-500">
-            <span className={`px-2 py-1 rounded ${cli === 'copilot' ? 'bg-green-900/30 text-green-400' : 'bg-orange-900/30 text-orange-400'}`}>
-              {cli === 'copilot' ? 'Copilot' : 'Claude'}
+            <span className={`px-2 py-1 rounded ${providerOf(cli) === 'copilot' ? 'bg-green-900/30 text-green-400' : 'bg-orange-900/30 text-orange-400'}`}>
+              {BACKEND_LABELS[cli]}
             </span>
             <span>{sessionName || `${selectedOption?.label ?? 'Context'} Session`}</span>
           </div>
@@ -831,7 +889,7 @@ export default function SessionWizard({ onLaunchSession, defaultCli, initialOpti
                 className="bg-gray-800 border border-gray-700 text-gray-300 text-xs rounded-lg px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-indigo-500 max-w-[200px]"
               >
                 <option value="">Use default</option>
-                {(cli === 'copilot'
+                {(providerOf(cli) === 'copilot'
                   ? [
                       { group: 'Free', models: ['gpt-5-mini', 'gpt-4.1', 'gpt-4o'] },
                       { group: '0.33x', models: ['claude-haiku-4.5', 'gemini-3-flash'] },
@@ -851,7 +909,7 @@ export default function SessionWizard({ onLaunchSession, defaultCli, initialOpti
           </div>
 
           {/* Fleet mode toggle — Copilot only */}
-          {cli === 'copilot' && (
+          {providerOf(cli) === 'copilot' && (
             <div className="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3">
               <div className="flex items-center justify-between">
                 <div>

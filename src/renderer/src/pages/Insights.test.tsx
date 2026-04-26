@@ -20,13 +20,11 @@ vi.mock('recharts', () => {
 
 beforeEach(() => {
   setupElectronAPI({
-    'cost:summary': { totalTokens: 0, todayTokens: 0, totalInputTokens: 0, totalOutputTokens: 0, totalCost: 0, todaySpend: 0, totalPrompts: 0, displayMode: 'tokens' },
+    'cost:summary': { totalTokens: 0, todayTokens: 0, totalInputTokens: 0, totalOutputTokens: 0, totalPrompts: 0 },
     'cost:daily-spend': [],
     'cost:by-session': [],
     'cost:by-model': [],
     'cost:by-agent': [],
-    'cost:get-budget': { daily: null, weekly: null, monthly: null, dailyTokens: null, weeklyTokens: null, monthlyTokens: null, autoPause: false },
-    'cost:check-budget': { alerts: [], autoPause: false },
     'compliance:get-log': [],
     'compliance:security-events': [],
     'compliance:get-file-patterns': [],
@@ -44,20 +42,20 @@ function renderInsights() {
 }
 
 describe('Insights', () => {
-  it('renders tab bar with Analytics, Compliance, Usage', () => {
+  it('renders tab bar with Activity and Compliance (no Analytics or Usage)', () => {
     renderInsights()
-    // "Analytics" appears as both a tab and a heading inside the Analytics page
-    const analyticsItems = screen.getAllByText('Analytics')
-    expect(analyticsItems.length).toBeGreaterThanOrEqual(1)
+    // "Activity" appears as both a tab and a heading inside the Activity page
+    const activityItems = screen.getAllByText('Activity')
+    expect(activityItems.length).toBeGreaterThanOrEqual(1)
     expect(screen.getByText('Compliance')).toBeInTheDocument()
-    expect(screen.getByText('Usage')).toBeInTheDocument()
+    expect(screen.queryByText('Analytics')).not.toBeInTheDocument()
+    expect(screen.queryByText('Usage')).not.toBeInTheDocument()
   })
 
-  it('shows Analytics tab by default', () => {
+  it('shows Activity tab by default', () => {
     renderInsights()
-    const analyticsItems = screen.getAllByText('Analytics')
-    // The tab button should have the active border class
-    const tab = analyticsItems.find((el) => el.tagName === 'BUTTON')
+    const activityItems = screen.getAllByText('Activity')
+    const tab = activityItems.find((el) => el.tagName === 'BUTTON')
     expect(tab?.className).toContain('border-indigo-600')
   })
 
@@ -66,12 +64,5 @@ describe('Insights', () => {
     fireEvent.click(screen.getByText('Compliance'))
     const complianceBtn = screen.getByText('Compliance')
     expect(complianceBtn.className).toContain('border-indigo-600')
-  })
-
-  it('switches to Usage tab', () => {
-    renderInsights()
-    fireEvent.click(screen.getByText('Usage'))
-    const usageBtn = screen.getByText('Usage')
-    expect(usageBtn.className).toContain('border-indigo-600')
   })
 })

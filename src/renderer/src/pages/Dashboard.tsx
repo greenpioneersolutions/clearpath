@@ -1,14 +1,17 @@
 import { useEffect, useState } from 'react'
 import { AuthStatusCard } from '../components/AuthStatusCard'
 import { LoginModal } from '../components/LoginModal'
-import type { AuthState, AuthStatus } from '../types/ipc'
+import { InstallModal } from '../components/InstallModal'
+import type { AuthState, AuthStatus, ProviderAuthState } from '../types/ipc'
 
 const EMPTY_STATUS: AuthStatus = { installed: false, authenticated: false, checkedAt: 0 }
+const EMPTY_PROVIDER_STATE: ProviderAuthState = { ...EMPTY_STATUS, cli: EMPTY_STATUS, sdk: EMPTY_STATUS }
 
 export default function Dashboard(): JSX.Element {
-  const [state, setState] = useState<AuthState>({ copilot: EMPTY_STATUS, claude: EMPTY_STATUS })
+  const [state, setState] = useState<AuthState>({ copilot: EMPTY_PROVIDER_STATE, claude: EMPTY_PROVIDER_STATE })
   const [loading, setLoading] = useState(true)
   const [loginTarget, setLoginTarget] = useState<'copilot' | 'claude' | null>(null)
+  const [installTarget, setInstallTarget] = useState<'copilot' | 'claude' | null>(null)
 
   // Load initial auth state from cache (fast) then a background refresh if stale
   useEffect(() => {
@@ -23,7 +26,7 @@ export default function Dashboard(): JSX.Element {
   useEffect(() => {
     const cleanup = window.electronAPI.on(
       'auth:status-changed',
-      (s: AuthState) => setState(s)
+      (s: AuthState) => setState(s),
     )
     return cleanup
   }, [])
@@ -36,10 +39,29 @@ export default function Dashboard(): JSX.Element {
     })
   }
 
-  const handleModalClose = () => {
+  const handleLoginClose = () => {
     setLoginTarget(null)
     // Re-fetch status so cards reflect the new auth state immediately
     void (window.electronAPI.invoke('auth:get-status') as Promise<AuthState>).then(setState)
+  }
+
+  const handleInstallClose = () => {
+    setInstallTarget(null)
+    // Force a refresh — install-complete invalidates the cache, but this makes sure
+    void (window.electronAPI.invoke('auth:refresh') as Promise<AuthState>).then(setState)
+  }
+
+  const handleInstallDone = () => {
+    // Chain straight from Install → Login (one-tap end-to-end)
+    const cli = installTarget
+    setInstallTarget(null)
+    if (cli) {
+      // Refresh first so state shows installed=true, then open login
+      void (window.electronAPI.invoke('auth:refresh') as Promise<AuthState>).then((s) => {
+        setState(s)
+        setLoginTarget(cli)
+      })
+    }
   }
 
   return (
@@ -62,6 +84,7 @@ export default function Dashboard(): JSX.Element {
           status={state.copilot}
           loading={loading}
           onConnect={() => setLoginTarget('copilot')}
+          onInstall={() => setInstallTarget('copilot')}
           onRefresh={handleRefresh}
         />
         <AuthStatusCard
@@ -69,12 +92,22 @@ export default function Dashboard(): JSX.Element {
           status={state.claude}
           loading={loading}
           onConnect={() => setLoginTarget('claude')}
+          onInstall={() => setInstallTarget('claude')}
           onRefresh={handleRefresh}
         />
       </div>
 
+      {installTarget !== null && (
+        <InstallModal
+          cli={installTarget}
+          isOpen
+          onClose={handleInstallClose}
+          onInstalled={handleInstallDone}
+        />
+      )}
+
       {loginTarget !== null && (
-        <LoginModal cli={loginTarget} isOpen onClose={handleModalClose} />
+        <LoginModal cli={loginTarget} isOpen onClose={handleLoginClose} />
       )}
     </div>
   )

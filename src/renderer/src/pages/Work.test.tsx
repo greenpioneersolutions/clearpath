@@ -282,102 +282,57 @@ describe('Work', () => {
   })
 
   // ── Panel toggling ─────────────────────────────────────────────────────
+  // The left-side panel toolbar (Tools / Work Items / Agents / Templates) was
+  // removed during the UX overhaul — Work.tsx no longer hosts side panels.
+  // Tests for panel open/close/toggle deleted with the UI.
 
-  it('toggles a panel open when panel button is clicked', async () => {
+  // ── Zero-click new session ─────────────────────────────────────────────
+
+  it('starts a session immediately when + New is clicked (no modal)', async () => {
     renderWork()
     await waitFor(() => expect(document.querySelector('[class]')).toBeTruthy())
-    // Tools panel button has title="Tools"
-    const toolsBtn = screen.getByTitle('Tools')
-    fireEvent.click(toolsBtn)
-    // After clicking, panel is active (button should take on primary brand style)
-    expect(toolsBtn.getAttribute('style')).toContain('var(--brand-btn-primary)')
-  })
-
-  it('closes panel when same button is clicked again', async () => {
-    renderWork()
-    await waitFor(() => expect(document.querySelector('[class]')).toBeTruthy())
-    const toolsBtn = screen.getByTitle('Tools')
-    fireEvent.click(toolsBtn)
-    expect(toolsBtn.getAttribute('style')).toContain('var(--brand-btn-primary)')
-    fireEvent.click(toolsBtn)
-    // After second click, panel should be closed (no primary color)
-    expect(toolsBtn.getAttribute('style') ?? '').not.toContain('var(--brand-btn-primary)')
-  })
-
-  it('opens agents panel', async () => {
-    renderWork()
-    await waitFor(() => expect(document.querySelector('[class]')).toBeTruthy())
-    const agentsBtn = screen.queryByTitle('Agents')
-    if (agentsBtn) {
-      fireEvent.click(agentsBtn)
-      expect(agentsBtn.getAttribute('style')).toContain('var(--brand-btn-primary)')
-    } else {
-      // Feature flag disabled — skip
-      expect(true).toBe(true)
-    }
-  })
-
-  it('opens work-items panel', async () => {
-    renderWork()
-    await waitFor(() => expect(document.querySelector('[class]')).toBeTruthy())
-    const workItemsBtn = screen.getByTitle('Work Items')
-    fireEvent.click(workItemsBtn)
-    expect(workItemsBtn.getAttribute('style')).toContain('var(--brand-btn-primary)')
-  })
-
-  // ── New session modal ──────────────────────────────────────────────────
-
-  it('opens new session modal when + New is clicked', async () => {
-    renderWork()
-    await waitFor(() => expect(document.querySelector('[class]')).toBeTruthy())
-    const newBtn = screen.getByText('+ New')
-    fireEvent.click(newBtn)
-    await waitFor(() => {
-      // The NewSessionModal has a dialog role — WelcomeBack does not
-      expect(screen.getByRole('dialog')).toBeInTheDocument()
-    })
-  })
-
-  it('closes new session modal when Cancel is clicked', async () => {
-    renderWork()
-    await waitFor(() => expect(document.querySelector('[class]')).toBeTruthy())
+    // Reset call tracking so we can assert the click triggers start-session
+    mockInvoke.mockClear()
     fireEvent.click(screen.getByText('+ New'))
-    await waitFor(() => screen.getByRole('dialog'))
-    // aria-label="Cancel new session" is on the cancel button in the modal
-    const cancelBtn = screen.getByRole('button', { name: /cancel new session/i })
-    fireEvent.click(cancelBtn)
-    await waitFor(() => {
-      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-    })
-  })
-
-  it('starts a session via the new session modal', async () => {
-    renderWork()
-    await waitFor(() => expect(document.querySelector('[class]')).toBeTruthy())
-    fireEvent.click(screen.getByText('+ New'))
-    await waitFor(() => screen.getByRole('dialog'))
-    // Use exact aria-label to target the modal start button, not the WelcomeBack "Start New Session" button
-    const startBtn = screen.getByLabelText('Start new session')
-    fireEvent.click(startBtn)
     await waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledWith('cli:start-session', expect.objectContaining({
-        cli: expect.any(String),
         mode: 'interactive',
       }))
     })
+    // No "New session" dialog should have opened
+    expect(screen.queryByLabelText('Cancel new session')).not.toBeInTheDocument()
   })
 
-  it('shows session in dropdown after starting', async () => {
+  it('opens the Edit session modal when the gear is clicked on an active session', async () => {
+    mockInvoke.mockImplementation((channel: string) => {
+      if (channel === 'cli:list-sessions') return Promise.resolve([
+        { sessionId: 'edit-sess', cli: 'copilot-cli', name: 'Editable', status: 'running', startedAt: Date.now() },
+      ])
+      if (channel === 'cli:get-persisted-sessions') return Promise.resolve([])
+      if (channel === 'cli:get-message-log') return Promise.resolve([])
+      if (channel === 'wizard:get-state') return Promise.resolve({ hasCompletedWizard: true })
+      return Promise.resolve(null)
+    })
+    renderWork()
+    await waitFor(() => {
+      expect(document.querySelector('[title="Edit session"]')).not.toBeNull()
+    })
+    const gear = document.querySelector('[title="Edit session"]') as HTMLButtonElement
+    fireEvent.click(gear)
+    await waitFor(() => {
+      expect(screen.getByText('Edit session')).toBeInTheDocument()
+      expect(screen.getByLabelText('Save session changes')).toBeInTheDocument()
+    })
+  })
+
+  it('still renders the gear after starting a session', async () => {
     renderWork()
     await waitFor(() => expect(document.querySelector('[class]')).toBeTruthy())
     fireEvent.click(screen.getByText('+ New'))
-    await waitFor(() => screen.getByRole('dialog'))
-    fireEvent.click(screen.getByLabelText('Start new session'))
     await waitFor(() => {
-      // The session should appear in the select dropdown
-      const options = screen.getAllByRole('option')
-      const sessionPresent = options.some((o) => o.getAttribute('value') === 'new-123')
-      expect(sessionPresent).toBe(true)
+      // Gear button is rendered for the active session with title="Edit session"
+      const gear = document.querySelector('[title="Edit session"]')
+      expect(gear).not.toBeNull()
     })
   })
 
@@ -672,11 +627,10 @@ describe('Work', () => {
 
   // ── Session selection ──────────────────────────────────────────────────
 
-  it('changes selected session via dropdown', async () => {
+  it('renders session breadcrumb showing name, friendly CLI label, and model', async () => {
     mockInvoke.mockImplementation((channel: string) => {
       if (channel === 'cli:list-sessions') return Promise.resolve([
-        { sessionId: 'sess-a', cli: 'copilot', name: 'Session A', status: 'running', startedAt: Date.now() - 1000 },
-        { sessionId: 'sess-b', cli: 'claude', name: 'Session B', status: 'running', startedAt: Date.now() },
+        { sessionId: 'sess-a', cli: 'copilot-cli', name: 'Session A', status: 'running', startedAt: Date.now() - 1000 },
       ])
       if (channel === 'cli:get-persisted-sessions') return Promise.resolve([])
       if (channel === 'cli:get-message-log') return Promise.resolve([])
@@ -685,14 +639,18 @@ describe('Work', () => {
       return Promise.resolve(null)
     })
     renderWork()
+    // Breadcrumb renders when a session is selected — the name is visible and the
+    // friendly CLI label ("Copilot") appears in the breadcrumb span.
     await waitFor(() => {
-      const options = screen.getAllByRole('option')
-      expect(options.some((o) => o.getAttribute('value') === 'sess-a')).toBe(true)
-      expect(options.some((o) => o.getAttribute('value') === 'sess-b')).toBe(true)
+      expect(screen.getByText(/Session A/)).toBeInTheDocument()
     })
-    const select = screen.getByRole('combobox')
-    fireEvent.change(select, { target: { value: 'sess-a' } })
-    expect((select as HTMLSelectElement).value).toBe('sess-a')
+    // The breadcrumb span combines name · CLI · model in one container.
+    const breadcrumb = screen.getByText(/Session A/).closest('span')
+    expect(breadcrumb?.textContent).toMatch(/Session A/)
+    expect(breadcrumb?.textContent).toMatch(/Copilot/)
+    // Gear button for Edit session appears next to the breadcrumb
+    const gear = document.querySelector('[title="Edit session"]')
+    expect(gear).not.toBeNull()
   })
 
   // ── Session Mode tab ───────────────────────────────────────────────────
@@ -962,108 +920,19 @@ describe('Work', () => {
 
   // ── WelcomeBack interactions ───────────────────────────────────────────
 
-  it('clicking Start New Session in WelcomeBack opens the modal', async () => {
+  it('clicking Start a session in WelcomeBack zero-click launches a session', async () => {
     renderWork()
-    await waitFor(() => screen.getByText('Start New Session'))
-    fireEvent.click(screen.getByText('Start New Session'))
+    await waitFor(() => screen.getByText('Start a session'))
+    mockInvoke.mockClear()
+    fireEvent.click(screen.getByText('Start a session'))
+    // No modal — the button now calls handleQuickStart which invokes cli:start-session directly
     await waitFor(() => {
-      expect(screen.getByRole('dialog')).toBeInTheDocument()
+      expect(mockInvoke).toHaveBeenCalledWith('cli:start-session', expect.objectContaining({ mode: 'interactive' }))
     })
+    expect(screen.queryByLabelText('Cancel new session')).not.toBeInTheDocument()
   })
 
-  it('clicking View in WelcomeBack shows stopped session conversation', async () => {
-    mockInvoke.mockImplementation((channel: string) => {
-      if (channel === 'cli:list-sessions') return Promise.resolve([])
-      if (channel === 'cli:get-persisted-sessions') return Promise.resolve([
-        {
-          sessionId: 'view-sess',
-          cli: 'copilot',
-          name: 'Archived Session',
-          startedAt: Date.now() - 86400000,
-          messageLog: [{ type: 'text', content: 'Archived message content', sender: 'user' }],
-        },
-      ])
-      if (channel === 'wizard:get-state') return Promise.resolve({ hasCompletedWizard: true })
-      if (channel === 'starter-pack:get-prompts') return Promise.resolve([])
-      return Promise.resolve(null)
-    })
-    renderWork()
-    await waitFor(() => screen.getByText('Archived Session'))
-
-    // WelcomeBack shows View button for that session (may be opacity-0 but in DOM)
-    const viewBtn = screen.getByRole('button', { name: 'View' })
-    fireEvent.click(viewBtn)
-
-    // Should now show the conversation messages
-    await waitFor(() => {
-      expect(screen.getByText('Archived message content')).toBeInTheDocument()
-    })
-  })
-
-  it('Back button in stopped session view returns to WelcomeBack', async () => {
-    mockInvoke.mockImplementation((channel: string) => {
-      if (channel === 'cli:list-sessions') return Promise.resolve([])
-      if (channel === 'cli:get-persisted-sessions') return Promise.resolve([
-        {
-          sessionId: 'back-sess',
-          cli: 'copilot',
-          name: 'Back Session',
-          startedAt: Date.now() - 86400000,
-          messageLog: [{ type: 'text', content: 'Back session message', sender: 'user' }],
-        },
-      ])
-      if (channel === 'wizard:get-state') return Promise.resolve({ hasCompletedWizard: true })
-      if (channel === 'starter-pack:get-prompts') return Promise.resolve([])
-      return Promise.resolve(null)
-    })
-    renderWork()
-    await waitFor(() => screen.getByText('Back Session'))
-
-    // Click View to enter stopped session view
-    fireEvent.click(screen.getByRole('button', { name: 'View' }))
-    // Click Back to return to WelcomeBack
-    await waitFor(() => screen.getByRole('button', { name: /back/i }))
-    fireEvent.click(screen.getByRole('button', { name: /back/i }))
-
-    // The Back button should be gone (stopped session view hidden)
-    await waitFor(() => {
-      expect(screen.queryByRole('button', { name: /back/i })).not.toBeInTheDocument()
-    })
-    // WelcomeBack heading is shown again
-    expect(screen.getByText('Welcome Back')).toBeInTheDocument()
-  })
-
-  it('Continue from this session starts a new session', async () => {
-    mockInvoke.mockImplementation((channel: string) => {
-      if (channel === 'cli:list-sessions') return Promise.resolve([])
-      if (channel === 'cli:get-persisted-sessions') return Promise.resolve([
-        {
-          sessionId: 'cont-sess',
-          cli: 'claude',
-          name: 'Continue Me',
-          startedAt: Date.now() - 86400000,
-          messageLog: [{ type: 'text', content: 'Continue message', sender: 'user' }],
-        },
-      ])
-      if (channel === 'wizard:get-state') return Promise.resolve({ hasCompletedWizard: true })
-      if (channel === 'starter-pack:get-prompts') return Promise.resolve([])
-      if (channel === 'cli:start-session') return Promise.resolve({ sessionId: 'cont-new' })
-      return Promise.resolve(null)
-    })
-    renderWork()
-    await waitFor(() => screen.getByText('Continue Me'))
-
-    // View the stopped session first
-    fireEvent.click(screen.getByRole('button', { name: 'View' }))
-    await waitFor(() => screen.getByText(/continue from this session/i))
-    fireEvent.click(screen.getByText(/continue from this session/i))
-
-    await waitFor(() => {
-      expect(mockInvoke).toHaveBeenCalledWith('cli:start-session', expect.objectContaining({ cli: 'claude' }))
-    })
-  })
-
-  it('Continue button in WelcomeBack starts a new session', async () => {
+  it('clicking a WelcomeBack recent row continues into a new session', async () => {
     mockInvoke.mockImplementation((channel: string) => {
       if (channel === 'cli:list-sessions') return Promise.resolve([])
       if (channel === 'cli:get-persisted-sessions') return Promise.resolve([
@@ -1083,9 +952,8 @@ describe('Work', () => {
     renderWork()
     await waitFor(() => screen.getByText('WB Continue'))
 
-    // WelcomeBack shows Continue button for the session
-    const continueBtn = screen.getByRole('button', { name: 'Continue' })
-    fireEvent.click(continueBtn)
+    // Row click continues into a new session (row itself is a button)
+    fireEvent.click(screen.getByText('WB Continue'))
 
     await waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledWith('cli:start-session', expect.objectContaining({ cli: 'copilot' }))
@@ -1093,20 +961,7 @@ describe('Work', () => {
   })
 
   // ── Panel close button ────────────────────────────────────────────────
-
-  it('Close button in panel header closes the panel', async () => {
-    renderWork()
-    await waitFor(() => expect(document.querySelector('[class]')).toBeTruthy())
-    // Open the Tools panel
-    const toolsBtn = screen.getByTitle('Tools')
-    fireEvent.click(toolsBtn)
-    expect(toolsBtn.getAttribute('style')).toContain('var(--brand-btn-primary)')
-
-    // Close via panel header "Close" button
-    const closeBtn = screen.getByText('Close')
-    fireEvent.click(closeBtn)
-    expect(toolsBtn.getAttribute('style') ?? '').not.toContain('var(--brand-btn-primary)')
-  })
+  // Panel toolbar removed in the UX overhaul — see note above.
 
   // ── Active session with persisted messages ────────────────────────────
 
@@ -1185,17 +1040,11 @@ describe('Work', () => {
 
   // ── startSession with contextSummary ─────────────────────────────────
 
-  it('startSession with initialPrompt shows user message in chat', async () => {
+  it('startSession via + New invokes cli:start-session in interactive mode', async () => {
     renderWork()
     await waitFor(() => expect(document.querySelector('[class]')).toBeTruthy())
+    mockInvoke.mockClear()
     fireEvent.click(screen.getByText('+ New'))
-    await waitFor(() => screen.getByRole('dialog'))
-    // Fill in a prompt
-    const promptInput = screen.queryByPlaceholderText(/initial prompt/i) ?? screen.queryByPlaceholderText(/prompt/i)
-    if (promptInput) {
-      fireEvent.change(promptInput, { target: { value: 'My initial task' } })
-    }
-    fireEvent.click(screen.getByLabelText('Start new session'))
     await waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledWith('cli:start-session', expect.objectContaining({ mode: 'interactive' }))
     })
@@ -1203,20 +1052,8 @@ describe('Work', () => {
 
   // ── Template select ───────────────────────────────────────────────────
 
-  it('opening templates panel renders templates component', async () => {
-    renderWork()
-    await waitFor(() => expect(document.querySelector('[class]')).toBeTruthy())
-    const templateBtn = screen.queryByTitle('Templates')
-    if (templateBtn) {
-      fireEvent.click(templateBtn)
-      await waitFor(() => {
-        expect(templateBtn.getAttribute('style')).toContain('var(--brand-btn-primary)')
-      })
-    } else {
-      // Flag disabled — panel not shown, skip
-      expect(true).toBe(true)
-    }
-  })
+  // Templates panel button removed with the left-side toolbar. QuickCompose
+  // template picker is covered by the handleTemplateSelect tests below.
 
   // ── parseUsageStats model extraction ─────────────────────────────────
 
@@ -1338,17 +1175,10 @@ describe('Work', () => {
     renderWork()
     await waitFor(() => screen.getByLabelText('Message input'))
 
-    // QuickCompose is rendered (session is running). Click the Templates button in QuickCompose.
-    // QuickCompose renders a "Templates" button (aria-label or text).
-    // Use the button with aria-label or title="Templates" that is inside the QuickCompose area.
-    // getAllByTitle to avoid ambiguity with the panel button on the left
-    await waitFor(() => {
-      // QuickCompose fetches templates when the picker is opened
-      const tmplBtns = screen.getAllByTitle('Templates')
-      // The last one is the QuickCompose picker (the first is the panel button in left toolbar)
-      const quickComposeTmplBtn = tmplBtns[tmplBtns.length - 1]
-      fireEvent.click(quickComposeTmplBtn)
-    })
+    // Open the ContextPicker, switch to the Playbooks tab (which hosts templates), click the template.
+    fireEvent.click(screen.getByLabelText('Attach context'))
+    await waitFor(() => screen.getByRole('tab', { name: 'Playbooks' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Playbooks' }))
 
     await waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledWith('templates:list', expect.anything())
@@ -1510,12 +1340,10 @@ describe('Work', () => {
     renderWork()
     await waitFor(() => screen.getByLabelText('Message input'))
 
-    // Open the QuickCompose templates picker
-    await waitFor(() => {
-      const tmplBtns = screen.getAllByTitle('Templates')
-      const quickComposeTmplBtn = tmplBtns[tmplBtns.length - 1]
-      fireEvent.click(quickComposeTmplBtn)
-    })
+    // Open the ContextPicker, switch to the Playbooks tab (templates), click the template.
+    fireEvent.click(screen.getByLabelText('Attach context'))
+    await waitFor(() => screen.getByRole('tab', { name: 'Playbooks' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Playbooks' }))
 
     await waitFor(() => screen.getByText('Template With Vars'))
     fireEvent.click(screen.getByText('Template With Vars'))
@@ -1639,11 +1467,10 @@ describe('Work', () => {
     renderWork()
     await waitFor(() => expect(document.querySelector('[class]')).toBeTruthy())
 
+    mockInvoke.mockClear()
     fireEvent.click(screen.getByText('+ New'))
-    await waitFor(() => screen.getByRole('dialog'))
-    fireEvent.click(screen.getByLabelText('Start new session'))
 
-    // The modal start triggers startSession — mock returns a new session ID
+    // Zero-click launch — mock returns a new session ID
     await waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledWith('cli:start-session', expect.any(Object))
     })
@@ -1821,9 +1648,8 @@ describe('Work', () => {
     })
     renderWork()
     await waitFor(() => {
-      // Running session should be auto-selected (it's the running one)
-      const select = screen.getByRole('combobox')
-      expect((select as HTMLSelectElement).value).toBe('running-s')
+      // Running session is auto-selected — the breadcrumb shows its name.
+      expect(screen.getByText(/Running One/)).toBeInTheDocument()
     })
   })
 
@@ -1851,27 +1677,6 @@ describe('Work', () => {
     // No Allow/Deny buttons visible without a permission-request
     const allowBtn = screen.queryByText('Allow')
     expect(allowBtn).toBeNull()
-  })
-
-  // ── Session dropdown: empty selection clears selectedId ───────────────
-
-  it('selecting empty option in session dropdown clears selection', async () => {
-    mockInvoke.mockImplementation((channel: string) => {
-      if (channel === 'cli:list-sessions') return Promise.resolve([
-        { sessionId: 'clear-sel', cli: 'copilot', name: 'Clearable', status: 'running', startedAt: Date.now() },
-      ])
-      if (channel === 'cli:get-persisted-sessions') return Promise.resolve([])
-      if (channel === 'cli:get-message-log') return Promise.resolve([])
-      if (channel === 'wizard:get-state') return Promise.resolve({ hasCompletedWizard: true })
-      if (channel === 'starter-pack:get-prompts') return Promise.resolve([])
-      return Promise.resolve(null)
-    })
-    renderWork()
-    await waitFor(() => screen.getByRole('combobox'))
-    const select = screen.getByRole('combobox')
-    // Select the empty option (value="")
-    fireEvent.change(select, { target: { value: '' } })
-    expect((select as HTMLSelectElement).value).toBe('')
   })
 
   // ── handleSend: sends via /delegate prefix ────────────────────────────
@@ -2274,34 +2079,4 @@ describe('Work', () => {
     cleanup()
   })
 
-  // ── WelcomeBack onStartWithPrompt ─────────────────────────────────────
-
-  it('onStartWithPrompt in WelcomeBack starts a session with the prompt', async () => {
-    mockInvoke.mockImplementation((channel: string) => {
-      if (channel === 'cli:list-sessions') return Promise.resolve([])
-      if (channel === 'cli:get-persisted-sessions') return Promise.resolve([])
-      if (channel === 'wizard:get-state') return Promise.resolve({ hasCompletedWizard: true })
-      if (channel === 'cli:start-session') return Promise.resolve({ sessionId: 'prompt-sess' })
-      if (channel === 'starter-pack:get-prompts') return Promise.resolve([
-        { id: 'p1', text: 'Help me plan my sprint', category: 'planning', targetAgentId: 'task' },
-      ])
-      if (channel === 'starter-pack:get-progress') return Promise.resolve({ percentage: 0, dismissed: false })
-      if (channel === 'starter-pack:get-visible-agents') return Promise.resolve([])
-      return Promise.resolve(null)
-    })
-    renderWork()
-
-    // WelcomeBack shows quick start prompts — click one to trigger onStartWithPrompt
-    await waitFor(() => {
-      const promptBtn = screen.queryByText('Help me plan my sprint')
-      if (promptBtn) {
-        fireEvent.click(promptBtn)
-      }
-    })
-
-    // If the prompt button was rendered, cli:start-session should be called
-    const sessionCalls = mockInvoke.mock.calls.filter(([ch]) => ch === 'cli:start-session')
-    // Either the prompt was found and clicked, or it wasn't rendered (either is valid)
-    expect(sessionCalls.length >= 0).toBe(true)
-  })
 })

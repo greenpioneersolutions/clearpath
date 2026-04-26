@@ -9,6 +9,19 @@ export interface OutputMessage {
   output: ParsedOutput
   sender?: 'user' | 'ai' | 'system'
   timestamp?: number  // ms since epoch — when the message was added
+  /**
+   * Optional inline annotation rendered below a user message — e.g.
+   * "Sent with Prompt: Coach + 2 notes attached". Used to make injected
+   * context visible to the user.
+   */
+  contextAnnotation?: string
+  /**
+   * Id of the CLI turn this message belongs to. Propagated from
+   * `ParsedOutput.turnId` when a `cli:output` event is ingested. Used by
+   * `groupMessages` to merge all streaming fragments of a single AI turn
+   * into one bubble regardless of streaming pauses.
+   */
+  turnId?: string
 }
 
 export interface UsageStats {
@@ -31,10 +44,20 @@ interface Props {
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 /**
- * Group messages for display. Each message is its own group UNLESS they are
- * consecutive AI text messages that arrived within 2 seconds of each other
- * (streaming fragments from the same response). This prevents separate AI
- * responses from different turns being merged into one giant bubble.
+ * Group messages for display. Consecutive AI text messages are merged into one
+ * group if they belong to the same CLI turn — the main process stamps a
+ * `turnId` on every `cli:output` event between `cli:turn-start` and
+ * `cli:turn-end`, so "same turn" is authoritative and survives long streaming
+ * pauses (plan-mode reasoning, large tool results, etc.).
+ *
+ * Fallback: if either message lacks a `turnId` — e.g. a rehydrated session
+ * persisted before the turn-id field existed — we fall back to the previous
+ * 2-second timestamp heuristic. This keeps older sessions readable without
+ * widening the window for new ones (which would re-introduce the "long
+ * response gets split into two bubbles" bug the turn-id change is fixing).
+ *
+ * Non-text messages (tool-use, status, error, permission-request, thinking)
+ * and user messages always start their own group.
  */
 function groupMessages(messages: OutputMessage[]): OutputMessage[][] {
   const groups: OutputMessage[][] = []
@@ -42,21 +65,34 @@ function groupMessages(messages: OutputMessage[]): OutputMessage[][] {
 
   for (const msg of messages) {
     const isAiText = msg.sender !== 'user' && msg.output.type === 'text'
+    const lastMsg = current[current.length - 1]
     const lastIsAiText =
       current.length > 0 &&
       current[0].sender !== 'user' &&
       current[0].output.type === 'text'
 
-    if (isAiText && lastIsAiText) {
-      // Only group if timestamps are within 2 seconds (streaming fragments)
-      const lastMsg = current[current.length - 1]
-      const timeDiff = (msg.timestamp && lastMsg.timestamp)
-        ? msg.timestamp - lastMsg.timestamp
-        : 0
-      if (timeDiff < 2000) {
+    if (isAiText && lastIsAiText && lastMsg) {
+      const msgTurnId = msg.turnId ?? msg.output.turnId
+      const lastTurnId = lastMsg.turnId ?? lastMsg.output.turnId
+
+      let shouldGroup: boolean
+      if (msgTurnId && lastTurnId) {
+        // Both sides have a turnId — group iff they match, no time heuristic.
+        shouldGroup = msgTurnId === lastTurnId
+      } else {
+        // Fallback for older sessions: 2-second timestamp window.
+        // If either side is missing a timestamp we cannot know the gap,
+        // so default to NOT grouping (Infinity > 2000).
+        const timeDiff =
+          msg.timestamp && lastMsg.timestamp
+            ? msg.timestamp - lastMsg.timestamp
+            : Infinity
+        shouldGroup = timeDiff < 2000
+      }
+
+      if (shouldGroup) {
         current.push(msg)
       } else {
-        // Different turn — start a new group
         if (current.length) groups.push(current)
         current = [msg]
       }
@@ -134,8 +170,8 @@ export default function OutputDisplay({ messages, onPermissionResponse, onSaveAs
                   : null
                 usageIdx++
                 return badge
-                  ? <div key={`turn-${first.id}`}>{badge}<UserBubble content={first.output.content} timestamp={first.timestamp} /></div>
-                  : <UserBubble key={first.id} content={first.output.content} timestamp={first.timestamp} />
+                  ? <div key={`turn-${first.id}`}>{badge}<UserBubble content={first.output.content} timestamp={first.timestamp} contextAnnotation={first.contextAnnotation} /></div>
+                  : <UserBubble key={first.id} content={first.output.content} timestamp={first.timestamp} contextAnnotation={first.contextAnnotation} />
               }
 
               // Grouped AI text messages (only groups streaming fragments from same response)
@@ -180,20 +216,31 @@ function formatTime(ts?: number): string {
   return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
 }
 
-function UserBubble({ content, timestamp }: { content: string; timestamp?: number }): JSX.Element {
+function UserBubble({ content, timestamp, contextAnnotation }: { content: string; timestamp?: number; contextAnnotation?: string }): JSX.Element {
   return (
-    <div className="flex justify-end animate-fadeIn">
-      <div className="max-w-[80%] flex items-end gap-2.5">
-        {timestamp && <span className="text-[10px] text-gray-600 mb-1 flex-shrink-0">{formatTime(timestamp)}</span>}
-        <div className="text-white rounded-2xl rounded-br-md px-4 py-2.5 shadow-sm" style={{ backgroundColor: 'var(--brand-btn-primary)' }}>
-          <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{content}</p>
-        </div>
-        <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: 'var(--brand-btn-hover)' }}>
-          <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-          </svg>
+    <div className="flex flex-col items-end animate-fadeIn">
+      <div className="flex justify-end w-full">
+        <div className="max-w-[80%] flex items-end gap-2.5">
+          {timestamp && <span className="text-[10px] text-gray-600 mb-1 flex-shrink-0">{formatTime(timestamp)}</span>}
+          <div className="text-white rounded-2xl rounded-br-md px-4 py-2.5 shadow-sm" style={{ backgroundColor: 'var(--brand-btn-primary)' }}>
+            <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{content}</p>
+          </div>
+          <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: 'var(--brand-btn-hover)' }}>
+            <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+            </svg>
+          </div>
         </div>
       </div>
+      {contextAnnotation && (
+        <p
+          className="text-[10px] text-gray-500 italic mt-1 mr-12 max-w-[80%] text-right"
+          aria-label="Context attached"
+          title="Context attached to this message"
+        >
+          {contextAnnotation}
+        </p>
+      )}
     </div>
   )
 }

@@ -1,4 +1,3 @@
-import { useState, useEffect } from 'react'
 import type { SessionInfo } from '../../types/ipc'
 import type { OutputMessage } from '../OutputDisplay'
 
@@ -9,51 +8,28 @@ interface SessionCard {
 
 interface Props {
   recentSessions: SessionCard[]
-  onNewSession: () => void
+  /** Primary CTA — opens the new-session flow with no prompt. */
+  onStartBlank: () => void
+  /** Row click — continue/view the session. */
   onContinueSession: (session: SessionInfo) => void
-  onViewSession: (sessionId: string) => void
-  onStartWithPrompt?: (prompt: string, agentId: string) => void
+  /** "See all" link — opens the full session manager. */
+  onBrowseAll: () => void
 }
 
 function timeAgo(ms: number): string {
   const diff = Date.now() - ms
   const mins = Math.floor(diff / 60000)
   if (mins < 1) return 'Just now'
-  if (mins < 60) return `${mins}m ago`
+  if (mins < 60) return `${mins} minute${mins !== 1 ? 's' : ''} ago`
   const hours = Math.floor(mins / 60)
-  if (hours < 24) return `${hours}h ago`
+  if (hours < 24) return `${hours} hour${hours !== 1 ? 's' : ''} ago`
   const days = Math.floor(hours / 24)
   if (days === 1) return 'Yesterday'
-  return `${days}d ago`
+  return `${days} days ago`
 }
 
-function sessionDuration(startMs: number, messages: OutputMessage[]): string {
-  // Use last message timestamp approximation or current time
-  const elapsed = Date.now() - startMs
-  const secs = Math.floor(elapsed / 1000)
-  if (secs < 60) return `${secs}s`
-  const mins = Math.floor(secs / 60)
-  if (mins < 60) return `${mins}m`
-  return `${Math.floor(mins / 60)}h ${mins % 60}m`
-}
-
-function getFirstPrompt(messages: OutputMessage[]): string | null {
-  const userMsg = messages.find((m) => m.sender === 'user')
-  if (!userMsg) return null
-  const text = userMsg.output.content
-  return text.length > 80 ? text.slice(0, 80) + '...' : text
-}
-
-export default function WelcomeBack({ recentSessions, onNewSession, onContinueSession, onViewSession, onStartWithPrompt }: Props): JSX.Element {
-  const [suggestions, setSuggestions] = useState<Array<{ id: string; displayText: string; targetAgentId: string }>>([])
-
-  useEffect(() => {
-    void (window.electronAPI.invoke('starter-pack:get-prompts') as Promise<Array<{ id: string; displayText: string; targetAgentId: string }>>)
-      .then(setSuggestions)
-      .catch(() => {})
-  }, [])
-
-  const promptCounts = recentSessions.map((s) => s.messages.filter((m) => m.sender === 'user').length)
+export default function WelcomeBack({ recentSessions, onStartBlank, onContinueSession, onBrowseAll }: Props): JSX.Element {
+  const compactList = recentSessions.slice(0, 5)
 
   return (
     <div className="flex-1 flex flex-col items-center justify-center px-6 py-10 overflow-y-auto">
@@ -64,93 +40,46 @@ export default function WelcomeBack({ recentSessions, onNewSession, onContinueSe
           <p className="text-gray-400 text-sm">Pick up where you left off, or start something new.</p>
         </div>
 
-        {/* Primary action */}
+        {/* Primary CTA */}
         <button
-          onClick={onNewSession}
-          className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold rounded-xl transition-colors flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/20"
+          onClick={onStartBlank}
+          className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-500 text-white text-base font-semibold rounded-xl transition-colors flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/20"
+          style={{ backgroundColor: 'var(--brand-btn-primary, #4F46E5)' }}
         >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
           </svg>
-          Start New Session
+          Start a session
         </button>
 
-        {/* Quick starts from starter pack */}
-        {suggestions.length > 0 && (
-          <div className="space-y-2">
-            <h3 className="text-gray-500 text-xs font-medium uppercase tracking-wider px-1">Quick Starts</h3>
-            <div className="space-y-1.5">
-              {suggestions.map((s) => (
-                <button
-                  key={s.id}
-                  onClick={() => onStartWithPrompt?.(s.displayText, s.targetAgentId)}
-                  className="w-full text-left bg-gray-900 border border-gray-800 rounded-xl px-4 py-3 hover:border-indigo-700/50 hover:bg-gray-800/80 transition-all group"
-                >
-                  <span className="text-sm text-gray-300 group-hover:text-white">{s.displayText}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Recent sessions */}
-        {recentSessions.length > 0 && (
-          <div className="space-y-2">
-            <h3 className="text-gray-500 text-xs font-medium uppercase tracking-wider px-1">Recent Sessions</h3>
-            <div className="space-y-2">
-              {recentSessions.map((session, idx) => {
-                const firstPrompt = getFirstPrompt(session.messages)
-                const prompts = promptCounts[idx]
-                const isStopped = session.info.status === 'stopped'
-
-                return (
-                  <div
-                    key={session.info.sessionId}
-                    className="bg-gray-900 border border-gray-800 rounded-xl p-3.5 hover:border-gray-700 transition-colors group"
+        {/* Recent — deprioritized, compact */}
+        {compactList.length > 0 && (
+          <div className="space-y-1.5">
+            <h3 className="text-gray-500 text-[11px] font-medium uppercase tracking-wider px-1">Recent</h3>
+            <ul className="divide-y divide-gray-800/60 rounded-lg border border-gray-800/60 overflow-hidden">
+              {compactList.map((session) => (
+                <li key={session.info.sessionId}>
+                  <button
+                    onClick={() => onContinueSession(session.info)}
+                    className="w-full flex items-center justify-between gap-3 px-3 py-2 text-left hover:bg-gray-800/40 transition-colors"
                   >
-                    <div className="flex items-start justify-between gap-3">
-                      {/* Session info */}
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-                            session.info.cli === 'copilot' ? 'bg-green-400' : 'bg-orange-400'
-                          }`} />
-                          <span className="text-white text-sm font-medium truncate">
-                            {session.info.name ?? session.info.sessionId.slice(0, 8)}
-                          </span>
-                          <span className="text-gray-600 text-xs flex-shrink-0">
-                            {session.info.cli === 'copilot' ? 'Copilot' : 'Claude'}
-                          </span>
-                        </div>
-                        {firstPrompt && (
-                          <p className="text-gray-500 text-xs truncate mb-1.5">{firstPrompt}</p>
-                        )}
-                        <div className="flex items-center gap-3 text-xs text-gray-600">
-                          <span>{timeAgo(session.info.startedAt)}</span>
-                          <span>{prompts} prompt{prompts !== 1 ? 's' : ''}</span>
-                          {isStopped && <span>{sessionDuration(session.info.startedAt, session.messages)}</span>}
-                        </div>
-                      </div>
-
-                      {/* Actions */}
-                      <div className="flex items-center gap-1.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button
-                          onClick={() => onViewSession(session.info.sessionId)}
-                          className="px-2.5 py-1.5 text-xs text-gray-400 border border-gray-700 rounded-lg hover:bg-gray-800 hover:text-gray-200 transition-colors"
-                        >
-                          View
-                        </button>
-                        <button
-                          onClick={() => onContinueSession(session.info)}
-                          className="px-2.5 py-1.5 text-xs text-indigo-400 border border-indigo-700/50 rounded-lg hover:bg-indigo-900/30 hover:text-indigo-300 transition-colors"
-                        >
-                          Continue
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )
-              })}
+                    <span className="text-sm text-gray-300 truncate">
+                      {session.info.name ?? session.info.sessionId.slice(0, 8)}
+                    </span>
+                    <span className="text-xs text-gray-500 flex-shrink-0">
+                      {timeAgo(session.info.startedAt)}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <div className="text-right px-1 pt-1">
+              <button
+                onClick={onBrowseAll}
+                className="text-xs text-gray-500 hover:text-gray-300 transition-colors"
+              >
+                See all
+              </button>
             </div>
           </div>
         )}

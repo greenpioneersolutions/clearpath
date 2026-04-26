@@ -1,6 +1,20 @@
 import type { IpcMain } from 'electron'
+import { EventEmitter } from 'events'
 import Store from 'electron-store'
 import { getStoreEncryptionKey } from '../utils/storeEncryption'
+
+// ── Flag-change event bus ────────────────────────────────────────────────────
+// Other subsystems (e.g. ClearMemoryService) subscribe here to react when a
+// specific flag flips. Payload is `{ key, value, flags }`. Exported so
+// src/main/index.ts can wire lifecycle side-effects without importing
+// electron-store directly.
+export const featureFlagEvents = new EventEmitter()
+
+export interface FlagChangeEvent {
+  key: string
+  value: boolean
+  flags: FeatureFlags
+}
 
 // ── Feature flag definitions ─────────────────────────────────────────────────
 
@@ -21,6 +35,7 @@ export interface FeatureFlags {
   showPolicies: boolean
   showIntegrations: boolean
   showMemory: boolean
+  showClearMemory: boolean
   showSkillsManagement: boolean
   showSessionWizard: boolean
   showWorkspaces: boolean
@@ -52,6 +67,12 @@ export interface FeatureFlags {
   showPrScores: boolean
   prScoresAiReview: boolean
   showEfficiencyCoach: boolean
+
+  // Backend adapters — phased-rollout gates for SDK support.
+  // Default to `true` now that phase 2/3 adapters are in place; phase 5 cleanup
+  // removes these flags entirely.
+  enableClaudeSdk: boolean
+  enableCopilotSdk: boolean
 }
 
 const DEFAULTS: FeatureFlags = {
@@ -70,6 +91,7 @@ const DEFAULTS: FeatureFlags = {
   showPolicies: false,
   showIntegrations: false,
   showMemory: false,
+  showClearMemory: false,
   showSkillsManagement: false,
   showSessionWizard: false,
   showWorkspaces: false,
@@ -101,6 +123,11 @@ const DEFAULTS: FeatureFlags = {
   showPrScores: false,
   prScoresAiReview: false,
   showEfficiencyCoach: false,
+
+  // SDK adapters — on by default during phase 2/3 rollout. Can be flipped off
+  // in settings if the SDK misbehaves for a user's environment.
+  enableClaudeSdk: true,
+  enableCopilotSdk: true,
 }
 
 // ── Presets ──────────────────────────────────────────────────────────────────
@@ -114,6 +141,41 @@ export interface FlagPreset {
 
 const PRESETS: FlagPreset[] = [
   {
+    id: 'progressive',
+    name: 'Auto-Reveal',
+    description: 'Start simple. Features unlock automatically as you complete more sessions. Best for new users.',
+    // The renderer applies stage overrides on top of the stored flags when this
+    // preset is active, so the stored values here are a sane "starter" baseline.
+    flags: {
+      showDashboard: true,
+      showWork: true,
+      showInsights: false,
+      showConfigure: true,
+      showLearn: true,
+      showSetupWizard: true,
+      showSettings: true,
+      showMemory: true,
+      showAgentSelection: false,
+      showSkillsManagement: false,
+      showSessionWizard: false,
+      showWorkspaces: false,
+      showTeamHub: false,
+      showScheduler: false,
+      showComposer: false,
+      showSubAgents: false,
+      showTemplates: false,
+      showKnowledgeBase: false,
+      showVoice: false,
+      showPolicies: false,
+      showIntegrations: false,
+      showPlugins: false,
+      showEnvVars: false,
+      showWebhooks: false,
+      showDataManagement: false,
+      showCostTracking: false,
+    },
+  },
+  {
     id: 'all-on',
     name: 'Everything On',
     description: 'All features enabled — unlocks every section, tool, and experimental feature.',
@@ -121,6 +183,7 @@ const PRESETS: FlagPreset[] = [
       showPolicies: true,
       showIntegrations: true,
       showMemory: true,
+      showClearMemory: true,
       showSkillsManagement: true,
       showSessionWizard: true,
       showWorkspaces: true,
@@ -265,19 +328,25 @@ export function registerFeatureFlagHandlers(ipcMain: IpcMain): void {
 
   /** Set individual flag overrides. */
   ipcMain.handle('feature-flags:set', (_e, args: Partial<FeatureFlags>) => {
+    const previous = resolveFlags()
     const current = store.get('flags')
     store.set('flags', { ...current, ...args })
     store.set('activePresetId', null) // Custom override = no preset
-    return resolveFlags()
+    const next = resolveFlags()
+    emitFlagChanges(previous, next)
+    return next
   })
 
   /** Apply a preset (replaces all overrides). */
   ipcMain.handle('feature-flags:apply-preset', (_e, args: { presetId: string }) => {
     const preset = PRESETS.find((p) => p.id === args.presetId)
     if (!preset) return { error: 'Unknown preset' }
+    const previous = resolveFlags()
     store.set('flags', preset.flags)
     store.set('activePresetId', args.presetId)
-    return resolveFlags()
+    const next = resolveFlags()
+    emitFlagChanges(previous, next)
+    return next
   })
 
   /** Get available presets. */
@@ -285,8 +354,32 @@ export function registerFeatureFlagHandlers(ipcMain: IpcMain): void {
 
   /** Reset to all-on defaults. */
   ipcMain.handle('feature-flags:reset', () => {
+    const previous = resolveFlags()
     store.set('flags', {})
     store.set('activePresetId', 'all-on')
-    return resolveFlags()
+    const next = resolveFlags()
+    emitFlagChanges(previous, next)
+    return next
   })
+}
+
+// ── Internals ────────────────────────────────────────────────────────────────
+
+function emitFlagChanges(previous: FeatureFlags, next: FeatureFlags): void {
+  for (const key of Object.keys(next) as (keyof FeatureFlags)[]) {
+    if (previous[key] !== next[key]) {
+      const payload: FlagChangeEvent = {
+        key,
+        value: next[key],
+        flags: next,
+      }
+      featureFlagEvents.emit('change', payload)
+      featureFlagEvents.emit(`change:${key}`, payload)
+    }
+  }
+}
+
+/** Read current flags without going through IPC — for main-process subsystems. */
+export function readCurrentFlags(): FeatureFlags {
+  return resolveFlags()
 }

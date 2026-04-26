@@ -9,8 +9,11 @@
     "skipLibCheck": true,
     "noEmit": true,
     "outDir": "out/renderer",
-    "rootDir": "src/renderer",
+    // `rootDirs` virtually merges `src/renderer` and `src/shared` so renderer
+    // files can import dependency-free type modules from `src/shared/**`.
+    "rootDir": "src",
+    "rootDirs": ["src/renderer", "src/shared"],
     "types": ["vitest/globals"]
   },
-  "include": ["src/renderer/**/*"]
+  "include": ["src/renderer/**/*", "src/shared/**/*"]
 }

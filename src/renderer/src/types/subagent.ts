@@ -1,11 +1,12 @@
 import type { ParsedOutput } from './ipc'
+import type { BackendId } from '../../../shared/backends'
 
 export type SubAgentStatus = 'running' | 'completed' | 'failed' | 'killed'
 
 export interface SubAgentInfo {
   id: string
   name: string
-  cli: 'copilot' | 'claude'
+  cli: BackendId
   status: SubAgentStatus
   prompt: string
   model?: string
@@ -23,7 +24,7 @@ export interface QueuedTask {
   priority: number
   status: 'pending' | 'running' | 'completed' | 'failed' | 'rate-limited'
   estimatedTokens?: number
-  cli: 'copilot' | 'claude'
+  cli: BackendId
   model?: string
   createdAt: number
   startedAt?: number

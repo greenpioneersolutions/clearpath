@@ -10,12 +10,14 @@ const ALL_ON: FeatureFlags = {
   showHomeHub: true,
   showDashboard: true, showWork: true, showInsights: true, showConfigure: true, showLearn: true,
   showSetupWizard: true, showSettings: true, showPolicies: true, showIntegrations: true,
-  showMemory: true, showSkillsManagement: true, showSessionWizard: true, showWorkspaces: true,
+  showMemory: true, showClearMemory: false, showSkillsManagement: true, showSessionWizard: true, showWorkspaces: true,
   showTeamHub: true, showScheduler: false,
   showComposer: false, showSubAgents: false, showTemplates: true, showKnowledgeBase: false, showVoice: false,
   showUseContext: true, showAgentSelection: true, showCostTracking: true, showComplianceLogs: false,
   showDataManagement: true, showBudgetLimits: true, showPlugins: false, showEnvVars: false, showWebhooks: false,
   enableExperimentalFeatures: false, showPrScores: false, prScoresAiReview: false,
+  showEfficiencyCoach: false, showBackstageExplorer: false,
+  enableClaudeSdk: true, enableCopilotSdk: true,
 }
 
 const mockPresets = [
@@ -97,13 +99,10 @@ describe('FeatureFlagSettings', () => {
 
   it('calls feature-flags:set when a flag is toggled', async () => {
     renderWithProvider()
-    await waitFor(() => {
-      const switches = screen.getAllByRole('switch')
-      expect(switches.length).toBeGreaterThan(0)
-    })
-    // Click the first toggle
-    const switches = screen.getAllByRole('switch')
-    fireEvent.click(switches[0])
+    await waitFor(() => expect(screen.getByLabelText('Toggle Simple Home')).toBeInTheDocument())
+    // Target a specific flag toggle — the first switch by role is the progressive
+    // disclosure toggle, which fires applyPreset, not setFlag.
+    fireEvent.click(screen.getByLabelText('Toggle Simple Home'))
     await waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledWith('feature-flags:set', expect.any(Object))
     })

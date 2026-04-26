@@ -1,0 +1,149 @@
+[
+  {
+    "id": "filesystem",
+    "displayName": "Filesystem",
+    "description": "Read and write files on the local filesystem, scoped to a specific directory.",
+    "homepageUrl": "https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-filesystem"],
+    "envSchema": [],
+    "recommendedFor": ["copilot", "claude"]
+  },
+  {
+    "id": "github",
+    "displayName": "GitHub",
+    "description": "Interact with GitHub repositories, issues, pull requests, and code search.",
+    "homepageUrl": "https://github.com/modelcontextprotocol/servers/tree/main/src/github",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-github"],
+    "envSchema": [
+      {
+        "name": "GITHUB_PERSONAL_ACCESS_TOKEN",
+        "description": "GitHub Personal Access Token with appropriate scopes (repo, read:org, etc.).",
+        "secret": true,
+        "required": true,
+        "placeholder": "ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      }
+    ],
+    "recommendedFor": ["copilot", "claude"]
+  },
+  {
+    "id": "postgres",
+    "displayName": "PostgreSQL",
+    "description": "Query and inspect a PostgreSQL database. Read-only by default.",
+    "homepageUrl": "https://github.com/modelcontextprotocol/servers/tree/main/src/postgres",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-postgres"],
+    "envSchema": [
+      {
+        "name": "DATABASE_URL",
+        "description": "PostgreSQL connection string (postgresql://user:pass@host:port/db).",
+        "secret": true,
+        "required": true,
+        "placeholder": "postgresql://user:password@localhost:5432/mydb"
+      }
+    ],
+    "recommendedFor": ["claude"]
+  },
+  {
+    "id": "sqlite",
+    "displayName": "SQLite",
+    "description": "Query a local SQLite database file.",
+    "homepageUrl": "https://github.com/modelcontextprotocol/servers/tree/main/src/sqlite",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-sqlite"],
+    "envSchema": [],
+    "recommendedFor": ["claude"]
+  },
+  {
+    "id": "slack",
+    "displayName": "Slack",
+    "description": "Read channels, post messages, and search Slack workspaces.",
+    "homepageUrl": "https://github.com/modelcontextprotocol/servers/tree/main/src/slack",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-slack"],
+    "envSchema": [
+      {
+        "name": "SLACK_BOT_TOKEN",
+        "description": "Slack Bot User OAuth Token (starts with xoxb-).",
+        "secret": true,
+        "required": true,
+        "placeholder": "xoxb-xxxxxxxxxxxx-xxxxxxxxxxxx-xxxxxxxxxxxxxxxxxxxxxxxx"
+      },
+      {
+        "name": "SLACK_TEAM_ID",
+        "description": "Your Slack workspace team ID (starts with T).",
+        "secret": false,
+        "required": true,
+        "placeholder": "T01234567"
+      }
+    ],
+    "recommendedFor": ["copilot", "claude"]
+  },
+  {
+    "id": "brave-search",
+    "displayName": "Brave Search",
+    "description": "Web search and local search via the Brave Search API.",
+    "homepageUrl": "https://github.com/modelcontextprotocol/servers/tree/main/src/brave-search",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-brave-search"],
+    "envSchema": [
+      {
+        "name": "BRAVE_API_KEY",
+        "description": "API key from https://brave.com/search/api/.",
+        "secret": true,
+        "required": true,
+        "placeholder": "BSA-xxxxxxxxxxxxxxxxxxxxxxxx"
+      }
+    ],
+    "recommendedFor": ["copilot", "claude"]
+  },
+  {
+    "id": "puppeteer",
+    "displayName": "Puppeteer",
+    "description": "Control a headless Chromium browser for automation and web scraping.",
+    "homepageUrl": "https://github.com/modelcontextprotocol/servers/tree/main/src/puppeteer",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-puppeteer"],
+    "envSchema": [],
+    "recommendedFor": ["claude"]
+  },
+  {
+    "id": "fetch",
+    "displayName": "Fetch",
+    "description": "Fetch and convert URLs to markdown for LLM consumption.",
+    "homepageUrl": "https://github.com/modelcontextprotocol/servers/tree/main/src/fetch",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-fetch"],
+    "envSchema": [],
+    "recommendedFor": ["copilot", "claude"]
+  },
+  {
+    "id": "google-drive",
+    "displayName": "Google Drive",
+    "description": "Search and read files in Google Drive. Requires OAuth credentials.",
+    "homepageUrl": "https://github.com/modelcontextprotocol/servers/tree/main/src/gdrive",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-gdrive"],
+    "envSchema": [
+      {
+        "name": "GDRIVE_CREDENTIALS_PATH",
+        "description": "Path to the OAuth client_credentials.json file.",
+        "secret": false,
+        "required": true,
+        "placeholder": "/Users/you/.gdrive/credentials.json"
+      }
+    ],
+    "recommendedFor": ["claude"]
+  },
+  {
+    "id": "memory",
+    "displayName": "Memory",
+    "description": "A persistent knowledge graph for long-term agent memory across sessions.",
+    "homepageUrl": "https://github.com/modelcontextprotocol/servers/tree/main/src/memory",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-memory"],
+    "envSchema": [],
+    "recommendedFor": ["copilot", "claude"]
+  }
+]

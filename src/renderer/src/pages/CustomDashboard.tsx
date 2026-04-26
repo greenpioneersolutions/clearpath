@@ -11,7 +11,6 @@ const WIDGET_DEFS: Array<{ type: string; name: string; description: string }> = 
   { type: 'quick-prompt', name: 'Quick Prompt', description: 'Fast text input to start a new session' },
   { type: 'running-agents', name: 'Running Agents', description: 'Active processes with status' },
   { type: 'recent-sessions', name: 'Recent Sessions', description: 'Last 5 sessions with resume' },
-  { type: 'cost-summary', name: 'Cost Summary', description: 'Spend overview for today, week, month' },
   { type: 'security-events', name: 'Security Events', description: 'Recent security and compliance alerts' },
   { type: 'workspace-activity', name: 'Workspace Activity', description: 'Recent workspace events' },
   { type: 'quick-launch', name: 'Quick Launch', description: 'Common action shortcuts' },
@@ -157,9 +156,6 @@ function WidgetBody({ type }: { type: string; config: Record<string, unknown> })
       try {
         let result: unknown = null
         switch (type) {
-          case 'cost-summary':
-            result = await window.electronAPI.invoke('cost:summary')
-            break
           case 'running-agents':
             result = await window.electronAPI.invoke('subagent:list')
             break
@@ -222,28 +218,6 @@ function WidgetBody({ type }: { type: string; config: Record<string, unknown> })
   if (loading) return <Placeholder />
 
   switch (type) {
-    // ── Cost Summary ──────────────────────────────────────────────────
-    case 'cost-summary': {
-      const s = data as Record<string, number> | null
-      if (!s) return <EmptyState text="No cost data yet" />
-      return (
-        <div className="grid grid-cols-3 gap-3 text-center">
-          <div>
-            <div className="text-lg font-bold text-gray-900">${(s['todaySpend'] ?? 0).toFixed(2)}</div>
-            <div className="text-xs text-gray-500">Today</div>
-          </div>
-          <div>
-            <div className="text-lg font-bold text-gray-900">${(s['weekSpend'] ?? 0).toFixed(2)}</div>
-            <div className="text-xs text-gray-500">This Week</div>
-          </div>
-          <div>
-            <div className="text-lg font-bold text-gray-900">${(s['monthSpend'] ?? 0).toFixed(2)}</div>
-            <div className="text-xs text-gray-500">This Month</div>
-          </div>
-        </div>
-      )
-    }
-
     // ── Running Agents ────────────────────────────────────────────────
     case 'running-agents': {
       const agents = data as Array<{ id: string; name: string; status: string }> | null
@@ -560,7 +534,7 @@ function QuickLaunchWidget(): JSX.Element {
   const actions = [
     { label: 'New Session', icon: '⚡', route: '/work' },
     { label: 'Templates', icon: '📋', route: '/work' },
-    { label: 'Analytics', icon: '📊', route: '/insights' },
+    { label: 'Activity', icon: '📊', route: '/insights' },
     { label: 'Settings', icon: '⚙️', route: '/configure' },
     { label: 'Schedule', icon: '🕐', route: '/work' },
     { label: 'Knowledge', icon: '📚', route: '/work' },
