@@ -12,8 +12,6 @@ import {
   navigateSidebarTo,
   navigateToConfigureTab,
   isConfigureTabSelected,
-  waitForText,
-  buttonExists,
   clickButton,
   getRootHTML,
   getToggleState,
@@ -33,7 +31,8 @@ describe('ClearPathAI — Configure Page', () => {
 
   describe('Tab Navigation', () => {
     it('navigates to Configure page from sidebar', async () => {
-      await navigateSidebarTo('Configure')
+      // PR #47: sidebar link to /configure is now labeled "Settings"
+      await navigateSidebarTo('Settings')
       const root = await $('#root')
       expect(await root.isExisting()).toBe(true)
     })
@@ -45,11 +44,14 @@ describe('ClearPathAI — Configure Page', () => {
     })
 
     it('renders all expected tab buttons', async () => {
+      // PR #47: integrations/extensions moved to /connect; tools tab added.
+      // Visible labels were also renamed (keys unchanged):
+      //   agents="Prompts", skills="Playbooks", memory="Notes & Context",
+      //   settings="General", branding="Branding", tools="Tools & Permissions".
       const expectedTabs = [
-        'Setup Wizard', 'Accessibility', 'Settings', 'Policies',
-        'Integrations', 'Extensions', 'Memory', 'Agents',
-        'Skills', 'Session Wizard', 'Workspaces', 'Team Hub',
-        'Scheduler', 'White Label',
+        'Setup Wizard', 'Accessibility', 'General', 'Tools & Permissions',
+        'Policies', 'Notes & Context', 'Prompts', 'Playbooks',
+        'Session Wizard', 'Workspaces', 'Team Hub', 'Scheduler', 'Branding',
       ]
 
       for (const label of expectedTabs) {
@@ -65,8 +67,8 @@ describe('ClearPathAI — Configure Page', () => {
     })
 
     it('switches tabs when clicked and updates aria-selected', async () => {
-      await navigateToConfigureTab('integrations')
-      expect(await isConfigureTabSelected('integrations')).toBe(true)
+      await navigateToConfigureTab('policies')
+      expect(await isConfigureTabSelected('policies')).toBe(true)
       expect(await isConfigureTabSelected('settings')).toBe(false)
     })
   })
@@ -87,69 +89,15 @@ describe('ClearPathAI — Configure Page', () => {
     })
   })
 
-  describe('Integrations Tab', () => {
-    before(async () => {
-      await navigateToConfigureTab('integrations')
-    })
+  // Integrations and Extensions tabs were moved to /connect in PR #47.
+  // Their tests now live in e2e/integrations.spec.ts and e2e/extensions.spec.ts
+  // (which navigate via navigateToConnectTab).
 
-    it('renders the Integrations tab content', async () => {
-      const html = await getRootHTML()
-      expect(html.length).toBeGreaterThan(300)
-    })
-
-    it('shows GitHub integration card', async () => {
-      await waitForText('GitHub')
-      const html = await getRootHTML()
-      expect(html).toContain('GitHub')
-    })
-
-    it('shows integration connection options', async () => {
-      // Should show at least one "Connect" button or connected status
-      const html = await getRootHTML()
-      const hasConnect = html.includes('Connect') || html.includes('Connected')
-      expect(hasConnect).toBe(true)
-    })
-
-    it('has no critical errors on Integrations tab', async () => {
-      const errors = await getCriticalConsoleErrors()
-      expect(Array.isArray(errors)).toBe(true)
-    })
-  })
-
-  describe('Extensions Tab', () => {
-    before(async () => {
-      await navigateToConfigureTab('extensions')
-    })
-
-    it('renders the Extensions tab content', async () => {
+  describe('Tools & Permissions Tab', () => {
+    it('renders the Tools tab content', async () => {
+      await navigateToConfigureTab('tools')
       const html = await getRootHTML()
       expect(html.length).toBeGreaterThan(200)
-    })
-
-    it('shows the Extensions heading', async () => {
-      await waitForText('Extensions')
-      const html = await getRootHTML()
-      expect(html).toContain('Extensions')
-    })
-
-    it('shows Refresh and Install Extension buttons', async () => {
-      const hasRefresh = await buttonExists('Refresh')
-      const hasInstall = await buttonExists('Install Extension')
-      expect(hasRefresh).toBe(true)
-      expect(hasInstall).toBe(true)
-    })
-
-    it('shows empty state or extension list', async () => {
-      const html = await getRootHTML()
-      // Either "No extensions installed" or a grid with extension cards
-      const hasEmptyState = html.includes('No extensions installed')
-      const hasExtensions = html.includes('bundled') || html.includes('user')
-      expect(hasEmptyState || hasExtensions).toBe(true)
-    })
-
-    it('has no critical errors on Extensions tab', async () => {
-      const errors = await getCriticalConsoleErrors()
-      expect(Array.isArray(errors)).toBe(true)
     })
   })
 
@@ -373,8 +321,9 @@ describe('ClearPathAI — Configure Page', () => {
 
   describe('Tab Round-Trip Stability', () => {
     it('cycles through all tabs without crashing', async () => {
+      // PR #47: integrations/extensions removed; tools added.
       const tabs = [
-        'settings', 'integrations', 'extensions', 'policies',
+        'settings', 'tools', 'policies',
         'memory', 'agents', 'skills', 'workspaces',
         'team', 'scheduler', 'branding', 'setup',
         'accessibility', 'wizard',

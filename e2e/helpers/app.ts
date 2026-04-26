@@ -64,18 +64,19 @@ export async function getCriticalConsoleErrors(): Promise<string[]> {
  * and wait briefly for the route transition to settle.
  *
  * The sidebar renders NavLink elements with text content matching the
- * route labels defined in Sidebar.tsx: Home, Work, Insights, Configure, Learn.
+ * route labels defined in Sidebar.tsx: Home, Work, Insights, Clear Memory,
+ * Learn, plus Connect and Settings (pinned to the bottom).
  *
- * Note: "Configure" is pinned to the bottom of the sidebar in a <div>
- * outside the main <nav> element, so we search the entire <aside> for
- * any anchor containing the label text.
+ * Note: "Connect" and "Settings" are pinned to the bottom of the sidebar
+ * in a <div> outside the main <nav> element, so we search the entire
+ * <aside> for any anchor containing the label text.
  *
  * Uses XPath text matching since WebdriverIO's `=` text-selector syntax
  * is not reliably translated in Electron's Chromedriver context.
  */
 export async function navigateSidebarTo(label: string): Promise<void> {
-  // Search the entire sidebar aside (not just nav) to handle Configure which is
-  // rendered in a div pinned to the bottom, outside the primary <nav>
+  // Search the entire sidebar aside (not just nav) to handle pinned-bottom
+  // links (Connect, Settings) that live in a div outside the primary <nav>
   const xpath = `//aside//a[contains(., '${label}')]`
   const link = await $(xpath)
 
@@ -107,12 +108,19 @@ export async function mainContentIsRendered(): Promise<boolean> {
 
 /**
  * Navigate to the Configure page and select a specific tab.
- * Tab keys: setup, accessibility, settings, policies, integrations,
- * extensions, memory, agents, skills, wizard, workspaces, team,
- * scheduler, branding.
+ *
+ * The sidebar link to /configure has the visible label "Settings" (the
+ * route path itself is still /configure, the label was changed in PR #47).
+ *
+ * Tab keys: setup, accessibility, settings, tools, policies, memory,
+ * agents, skills, wizard, workspaces, team, scheduler, branding.
+ *
+ * Tabs that previously lived under Configure but moved to /connect in
+ * PR #47 — integrations, extensions, plus the Settings sub-tabs Plugins,
+ * Environment, Webhooks — should be reached via navigateToConnectTab().
  */
 export async function navigateToConfigureTab(tabKey: string): Promise<void> {
-  await navigateSidebarTo('Configure')
+  await navigateSidebarTo('Settings')
 
   const tabButton = await $(`#tab-${tabKey}`)
   await tabButton.waitForExist({ timeout: ELEMENT_TIMEOUT })
@@ -120,6 +128,23 @@ export async function navigateToConfigureTab(tabKey: string): Promise<void> {
   await tabButton.click()
 
   // Wait for tab content to render
+  await browser.pause(500)
+}
+
+// ── Connect Page Helpers ────────────────────────────────────────────────────
+
+/**
+ * Navigate to the Connect page and switch to a specific sub-tab via
+ * the ?tab= URL param (which Connect.tsx reads on mount).
+ *
+ * Sub-tab keys: integrations, extensions, mcp, environment, plugins,
+ * webhooks. PR #47 introduced Connect as the home for integration-style
+ * surfaces that previously lived in Configure.
+ */
+export async function navigateToConnectTab(tabKey: string): Promise<void> {
+  await browser.execute((key: string) => {
+    window.location.hash = `#/connect?tab=${key}`
+  }, tabKey)
   await browser.pause(500)
 }
 
