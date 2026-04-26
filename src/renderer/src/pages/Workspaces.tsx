@@ -440,7 +440,13 @@ function WorkspaceSettings({ workspace, onUpdate, onDelete }: {
             <span className="text-gray-400">Repos:</span> {workspace.repoPaths.length}
           </div>
           <div className="col-span-2">
-            <span className="text-gray-400">ID:</span> <code className="bg-gray-100 px-1 rounded text-[10px]">{workspace.id}</code>
+            <span className="text-gray-400">ID:</span>{' '}
+            <code
+              className="bg-gray-100 px-1 rounded text-[10px]"
+              data-screenshot-stub="ws-aaaa1111-bbbb-2222-cccc-3333dddd4444"
+            >
+              {workspace.id}
+            </code>
           </div>
         </div>
       </div>

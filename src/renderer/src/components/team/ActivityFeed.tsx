@@ -65,7 +65,12 @@ export default function ActivityFeed({ workingDirectory }: Props): JSX.Element {
 
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="text-sm text-gray-800 truncate">{entry.message}</span>
+                  <span
+                    className="text-sm text-gray-800 truncate"
+                    data-screenshot-stub="Recent commit on the working directory"
+                  >
+                    {entry.message}
+                  </span>
                   {entry.isAiGenerated && (
                     <span className="text-xs bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded flex-shrink-0">
                       AI
@@ -73,8 +78,8 @@ export default function ActivityFeed({ workingDirectory }: Props): JSX.Element {
                   )}
                 </div>
                 <div className="flex items-center gap-2 text-xs text-gray-400 mt-0.5">
-                  <span>{entry.author}</span>
-                  <span className="font-mono">{entry.hash.slice(0, 7)}</span>
+                  <span data-screenshot-stub="stub-author">{entry.author}</span>
+                  <span className="font-mono" data-screenshot-stub="abc1234">{entry.hash.slice(0, 7)}</span>
                   <span>{new Date(entry.date).toLocaleDateString()}</span>
                   <span>{new Date(entry.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                 </div>
