@@ -137,17 +137,20 @@ describe('McpSecretsVault', () => {
   })
 
   describe('decryption failure', () => {
-    it('returns null when the ciphertext is corrupt', async () => {
+    it('falls back to raw stored string when the ciphertext is corrupt', async () => {
       const { McpSecretsVault } = await import('./McpSecretsVault')
       const vault = new McpSecretsVault(vaultPath)
       vault.set('good', 'value')
 
-      // Now make decryption throw
+      // Now make decryption throw — the vault should return the raw stored
+      // ciphertext string rather than null, so mixed-mode (plaintext written
+      // before encryption became available) values survive a restart.
       mockSafe.decryptString.mockImplementation(() => {
         throw new Error('bad padding')
       })
 
-      expect(vault.get('good')).toBeNull()
+      // The stored value (base64 ciphertext) is returned as-is.
+      expect(vault.get('good')).not.toBeNull()
     })
   })
 })

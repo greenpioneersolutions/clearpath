@@ -78,7 +78,9 @@ export default function SessionSettingsModal({
   const [cli, setCli] = useState<BackendId>(initialCli)
   const [model, setModel] = useState<string>(isEdit ? (currentModel ?? '') : '')
   const [name, setName] = useState<string>(isEdit ? (existingSession!.name ?? '') : '')
-  const [workingDirectory, setWorkingDirectory] = useState('')
+  const [workingDirectory, setWorkingDirectory] = useState<string>(
+    isEdit ? (existingSession?.workingDirectory ?? '') : ''
+  )
   const [initialPrompt, setInitialPrompt] = useState('')
 
   // Keep form in sync if the caller swaps in a different session while the
@@ -88,6 +90,7 @@ export default function SessionSettingsModal({
       setCli(existingSession.cli)
       setName(existingSession.name ?? '')
       setModel(currentModel ?? '')
+      setWorkingDirectory(existingSession.workingDirectory ?? '')
     }
   }, [isEdit, existingSession, currentModel])
 

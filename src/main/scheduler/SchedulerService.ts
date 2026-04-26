@@ -115,19 +115,21 @@ export class SchedulerService {
    * BackendId shape. Idempotent.
    */
   private migratePersistedJobs(): void {
-    const jobs = store.get('jobs')
+    const raw = store.get('jobs')
+    const jobs = Array.isArray(raw) ? raw : []
     let rewrote = 0
     for (const job of jobs) {
-      const raw = job.cli as string
-      const migrated = migrateLegacyBackendId(raw)
-      if (raw !== migrated) { job.cli = migrated; rewrote++ }
+      const rawId = job.cli as string
+      const migrated = migrateLegacyBackendId(rawId)
+      if (rawId !== migrated) { job.cli = migrated; rewrote++ }
     }
     if (rewrote > 0) store.set('jobs', jobs)
   }
 
   /** Load all enabled jobs and register them with node-cron. */
   start(): void {
-    const jobs = store.get('jobs')
+    const raw = store.get('jobs')
+    const jobs = Array.isArray(raw) ? raw : []
     for (const job of jobs) {
       if (job.enabled) this.registerCronTask(job)
     }
