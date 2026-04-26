@@ -1,4 +1,5 @@
 import type { IpcRendererEvent } from 'electron'
+import type { BackendId } from '../../../shared/backends'
 
 export interface AgentConfig {
   description: string
@@ -13,7 +14,13 @@ export interface AgentConfig {
  */
 export interface SessionOptions {
   // ── Required ────────────────────────────────────────────────────────────────
-  cli: 'copilot' | 'claude'
+  /**
+   * Which backend to route this session through. Uses the 4-backend ids:
+   * `copilot-cli` | `copilot-sdk` | `claude-cli` | `claude-sdk`. Call sites
+   * that branch on provider should use `providerOf(cli)` from
+   * `src/shared/backends.ts`, not string equality.
+   */
+  cli: BackendId
   mode: 'interactive' | 'prompt'
 
   // ── Common (both CLIs) ──────────────────────────────────────────────────────
@@ -22,7 +29,7 @@ export interface SessionOptions {
   agent?: string              // --agent
   workingDirectory?: string   // spawn cwd
   additionalDirs?: string[]   // --add-dir (both CLIs)
-  pluginDir?: string          // --plugin-dir (both CLIs)
+  pluginDirs?: string[]       // --plugin-dir (both CLIs, repeatable on Claude; Copilot accepts the same shape)
   mcpConfig?: string          // Claude: --mcp-config  |  Copilot: --additional-mcp-config
   allowedTools?: string[]     // Claude: --allowedTools  |  Copilot: --allow-tool (repeated)
   outputFormat?: string       // --output-format (both CLIs, different valid values)
@@ -159,12 +166,22 @@ export interface ParsedOutput {
   type: 'text' | 'tool-use' | 'permission-request' | 'error' | 'status' | 'thinking'
   content: string
   metadata?: Record<string, unknown>
+  /**
+   * Id of the turn this output belongs to. Main process stamps this on every
+   * `cli:output` event between `cli:turn-start` and `cli:turn-end`. The
+   * renderer groups consecutive AI text messages sharing the same `turnId`
+   * into a single chat bubble regardless of streaming pauses. Undefined for
+   * output emitted outside of a turn (rare) and for older persisted sessions
+   * that predate this field — `OutputDisplay.groupMessages` falls back to a
+   * 2-second timestamp window in that case.
+   */
+  turnId?: string
 }
 
 export interface SessionInfo {
   sessionId: string
   name?: string
-  cli: 'copilot' | 'claude'
+  cli: BackendId
   status: 'running' | 'stopped'
   startedAt: number
 }
@@ -182,18 +199,33 @@ export interface AuthStatus {
   checkedAt: number
 }
 
+/**
+ * Per-provider auth state grouped by transport.
+ *
+ * `cli` tracks an installed CLI binary + its auth. `sdk` tracks SDK-style auth
+ * (env vars + a cheap HTTP probe). Top-level `installed` / `authenticated` /
+ * `binaryPath` / `version` / `tokenSource` / `checkedAt` remain as a
+ * **deprecated compat projection** of the CLI state so existing renderer code
+ * keeps reading `state.copilot.installed`. Phase 5 cleanup removes them after
+ * all call sites migrate to explicit `.cli` / `.sdk`.
+ */
+export interface ProviderAuthState extends AuthStatus {
+  cli: AuthStatus
+  sdk: AuthStatus
+}
+
 export interface AuthState {
-  copilot: AuthStatus
-  claude: AuthStatus
+  copilot: ProviderAuthState
+  claude:  ProviderAuthState
 }
 
 export interface LoginOutputEvent {
-  cli: 'copilot' | 'claude'
+  cli: 'copilot' | 'claude'  // login flow only targets the CLI binaries
   line: string
 }
 
 export interface LoginCompleteEvent {
-  cli: 'copilot' | 'claude'
+  cli: 'copilot' | 'claude'  // login flow only targets the CLI binaries
   success: boolean
   error?: string
 }
@@ -212,7 +244,8 @@ export interface AgentDef {
   prompt?: string
   /** 'builtin' = ships with the CLI, no file on disk */
   source: 'builtin' | 'file'
-  cli: 'copilot' | 'claude'
+  /** Which backend family this agent targets — typically set by provider (not transport). */
+  cli: BackendId
   /** Absolute path to the markdown file (file-based agents only) */
   filePath?: string
 }
@@ -241,7 +274,7 @@ export interface ActiveAgents {
 
 export interface HistoricalSession {
   sessionId: string
-  cli: 'copilot' | 'claude'
+  cli: BackendId
   name?: string
   firstPrompt?: string
   startedAt: number

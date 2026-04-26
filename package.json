@@ -27,6 +27,7 @@
     "e2e:screenshots:update": "npm run build && wdio run wdio.screenshots.conf.ts --update-visual-baseline"
   },
   "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.118",
     "@codemirror/lang-json": "^6.0.2",
     "@codemirror/lang-markdown": "^6.5.0",
     "@uiw/react-codemirror": "^4.25.9",

@@ -80,4 +80,50 @@ describe('OutputDisplay', () => {
     const thinkingEl = document.querySelector('.animate-pulse') ?? document.querySelector('[class*="animate"]')
     expect(thinkingEl).toBeTruthy()
   })
+
+  // ── groupMessages behavior (black-box via rendered bubble count) ────────
+  //
+  // Grouped AI text messages render as a single <AIBubble>, each with its own
+  // `.prose-chat` wrapper. Counting those wrappers tells us how many bubbles
+  // (i.e. groups) were produced.
+  describe('turn-based grouping', () => {
+    const base = 1_700_000_000_000
+    const countAiBubbles = () => document.querySelectorAll('.prose-chat').length
+
+    it('groups two AI messages with the same turnId even 10s apart', () => {
+      const messages: OutputMessage[] = [
+        { id: '1', sender: 'ai', output: { type: 'text', content: 'chunk one', turnId: 'turn-A' }, timestamp: base, turnId: 'turn-A' },
+        { id: '2', sender: 'ai', output: { type: 'text', content: 'chunk two', turnId: 'turn-A' }, timestamp: base + 10_000, turnId: 'turn-A' },
+      ]
+      render(<OutputDisplay messages={messages} onPermissionResponse={onPermissionResponse} />)
+      expect(countAiBubbles()).toBe(1)
+    })
+
+    it('does NOT group two AI messages with different turnIds even 500ms apart', () => {
+      const messages: OutputMessage[] = [
+        { id: '1', sender: 'ai', output: { type: 'text', content: 'first turn', turnId: 'turn-A' }, timestamp: base, turnId: 'turn-A' },
+        { id: '2', sender: 'ai', output: { type: 'text', content: 'second turn', turnId: 'turn-B' }, timestamp: base + 500, turnId: 'turn-B' },
+      ]
+      render(<OutputDisplay messages={messages} onPermissionResponse={onPermissionResponse} />)
+      expect(countAiBubbles()).toBe(2)
+    })
+
+    it('falls back to 2s timestamp window when both messages lack turnIds — groups within 500ms', () => {
+      const messages: OutputMessage[] = [
+        { id: '1', sender: 'ai', output: { type: 'text', content: 'alpha' }, timestamp: base },
+        { id: '2', sender: 'ai', output: { type: 'text', content: 'bravo' }, timestamp: base + 500 },
+      ]
+      render(<OutputDisplay messages={messages} onPermissionResponse={onPermissionResponse} />)
+      expect(countAiBubbles()).toBe(1)
+    })
+
+    it('falls back to 2s timestamp window when both messages lack turnIds — splits beyond 2s', () => {
+      const messages: OutputMessage[] = [
+        { id: '1', sender: 'ai', output: { type: 'text', content: 'alpha' }, timestamp: base },
+        { id: '2', sender: 'ai', output: { type: 'text', content: 'bravo' }, timestamp: base + 5_000 },
+      ]
+      render(<OutputDisplay messages={messages} onPermissionResponse={onPermissionResponse} />)
+      expect(countAiBubbles()).toBe(2)
+    })
+  })
 })

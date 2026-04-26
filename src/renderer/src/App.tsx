@@ -7,6 +7,8 @@ import Home from './pages/Home'
 import Work from './pages/Work'
 import Insights from './pages/Insights'
 import Configure from './pages/Configure'
+import Connect from './pages/Connect'
+import ClearMemory from './pages/ClearMemory'
 import Learn from './pages/Learn'
 import SubAgentPopout from './pages/SubAgentPopout'
 import PrScores from './pages/PrScores'
@@ -28,6 +30,8 @@ export default function App(): JSX.Element {
           <Route path="pr-scores" element={<PrScores />} />
           <Route path="backstage-explorer" element={<BackstageExplorer />} />
           <Route path="ext/:extensionId/*" element={<ExtensionPage />} />
+          <Route path="connect" element={<Connect />} />
+          <Route path="clear-memory" element={<ClearMemory />} />
           <Route path="configure" element={<Configure />} />
         </Route>
         <Route path="/subagent-popout/:id" element={<SubAgentPopout />} />
@@ -48,6 +52,7 @@ export default function App(): JSX.Element {
         <Route path="/usage" element={<Navigate to="/insights" replace />} />
         <Route path="/compliance" element={<Navigate to="/insights" replace />} />
         <Route path="/schedules" element={<Navigate to="/configure" replace />} />
+        <Route path="/connections" element={<Navigate to="/connect?tab=mcp" replace />} />
         <Route path="/knowledge" element={<Navigate to="/work" replace />} />
         <Route path="/dashboard" element={<Navigate to="/" replace />} />
         <Route path="/settings" element={<Navigate to="/configure" replace />} />

@@ -1,7 +1,6 @@
 import { useState, useMemo } from 'react'
-import Analytics from './Analytics'
+import Activity from './Activity'
 import Compliance from './Compliance'
-import UsageAnalytics from './UsageAnalytics'
 import { useExtensions } from '../hooks/useExtensions'
 import ExtensionHost from '../components/extensions/ExtensionHost'
 
@@ -15,13 +14,12 @@ interface TabDef {
 }
 
 const BUILTIN_TABS: TabDef[] = [
-  { key: 'analytics', label: 'Analytics', type: 'builtin' },
+  { key: 'activity', label: 'Activity', type: 'builtin' },
   { key: 'compliance', label: 'Compliance', type: 'builtin' },
-  { key: 'usage', label: 'Usage', type: 'builtin' },
 ]
 
 export default function Insights(): JSX.Element {
-  const [tab, setTab] = useState<Tab>('analytics')
+  const [tab, setTab] = useState<Tab>('activity')
   const { enabledExtensions } = useExtensions()
 
   // Build the full tab list: builtin + extension-contributed tabs
@@ -75,9 +73,8 @@ export default function Insights(): JSX.Element {
       </div>
 
       {/* Tab content */}
-      {tab === 'analytics' && <Analytics />}
+      {tab === 'activity' && <Activity />}
       {tab === 'compliance' && <Compliance />}
-      {tab === 'usage' && <UsageAnalytics />}
 
       {/* Extension tab content */}
       {activeExtension && (

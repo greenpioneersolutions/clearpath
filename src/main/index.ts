@@ -17,7 +17,11 @@ import { registerAuthHandlers } from './ipc/authHandlers'
 import { registerAgentHandlers } from './ipc/agentHandlers'
 import { registerSessionHistoryHandlers } from './ipc/sessionHistoryHandlers'
 import { registerMemoryHandlers } from './ipc/memoryHandlers'
+import { registerClearMemoryHandlers } from './ipc/clearMemoryHandlers'
+import { clearMemoryService } from './clearmemory/ClearMemoryService'
+import { featureFlagEvents, readCurrentFlags, type FlagChangeEvent } from './ipc/featureFlagHandlers'
 import { registerToolHandlers } from './ipc/toolHandlers'
+import { registerMcpHandlers } from './ipc/mcpHandlers'
 import { registerSubAgentHandlers } from './ipc/subAgentHandlers'
 import { registerSettingsHandlers } from './ipc/settingsHandlers'
 import { registerCostHandlers } from './ipc/costHandlers'
@@ -39,6 +43,8 @@ import { registerLocalModelHandlers } from './ipc/localModelHandlers'
 import { registerWorkflowHandlers } from './ipc/workflowHandlers'
 import { registerLearnHandlers } from './ipc/learnHandlers'
 import { registerSkillHandlers } from './ipc/skillHandlers'
+import { registerPluginHandlers } from './ipc/pluginHandlers'
+import { PluginManager } from './plugins/PluginManager'
 import { registerIntegrationHandlers } from './ipc/integrationHandlers'
 import { registerAtlassianHandlers } from './integrations/atlassian'
 import { registerServiceNowHandlers } from './integrations/servicenow'
@@ -57,6 +63,8 @@ import { registerContextSourceHandlers } from './ipc/contextSourceHandlers'
 // PR Scores is now a bundled extension — see extensions/com.clearpathai.pr-scores/
 import { registerAccessibilityHandlers } from './ipc/accessibilityHandlers'
 import { CLIManager } from './cli/CLIManager'
+import { ClaudeSdkAdapter } from './cli/ClaudeSdkAdapter'
+import { CopilotSdkAdapter } from './cli/CopilotSdkAdapter'
 import { AuthManager } from './auth/AuthManager'
 import { AgentManager } from './agents/AgentManager'
 import { initShellEnv } from './utils/shellEnv'
@@ -80,8 +88,28 @@ const getWebContents = () => mainWindow?.webContents ?? null
 // Singletons — created before app.ready so ipcMain.handle calls are registered
 // before any renderer window connects (Electron requirement).
 const cliManager = new CLIManager(getWebContents)
+
+// Register SDK adapters into the CLIManager registry, gated by feature flags so
+// we can disable either adapter without redeploying if they misbehave. The
+// flags currently default to `true`; phase 5 cleanup removes the gating.
+function wireSdkAdapters(): void {
+  const flags = readCurrentFlags()
+  if (flags.enableClaudeSdk) {
+    cliManager.registerAdapter('claude-sdk', new ClaudeSdkAdapter())
+  }
+  if (flags.enableCopilotSdk) {
+    cliManager.registerAdapter('copilot-sdk', new CopilotSdkAdapter())
+  }
+}
+wireSdkAdapters()
+// Re-wire when the user flips either flag at runtime so the change takes
+// effect without an app restart.
+featureFlagEvents.on('change:enableClaudeSdk', () => wireSdkAdapters())
+featureFlagEvents.on('change:enableCopilotSdk', () => wireSdkAdapters())
+
 const authManager = new AuthManager(getWebContents)
 const agentManager = new AgentManager()
+const pluginManager = new PluginManager()
 const notificationManager = new NotificationManager(getWebContents)
 const schedulerService = new SchedulerService(cliManager, notificationManager)
 const extensionRegistry = new ExtensionRegistry()
@@ -93,7 +121,9 @@ registerAuthHandlers(ipcMain, authManager)
 registerAgentHandlers(ipcMain, agentManager)
 registerSessionHistoryHandlers(ipcMain)
 registerMemoryHandlers(ipcMain)
+registerClearMemoryHandlers(ipcMain, getWebContents)
 registerToolHandlers(ipcMain)
+const { syncService: mcpSyncService } = registerMcpHandlers(ipcMain, { workingDirectory: process.cwd() })
 registerSubAgentHandlers(ipcMain, cliManager)
 registerSettingsHandlers(ipcMain)
 registerCostHandlers(ipcMain, notificationManager)
@@ -113,6 +143,7 @@ registerLocalModelHandlers(ipcMain)
 registerWorkflowHandlers(ipcMain)
 registerLearnHandlers(ipcMain)
 registerSkillHandlers(ipcMain)
+registerPluginHandlers(ipcMain, pluginManager)
 registerIntegrationHandlers(ipcMain)
 registerAtlassianHandlers(ipcMain)
 registerServiceNowHandlers(ipcMain)
@@ -548,6 +579,55 @@ app.whenReady().then(async () => {
 
   schedulerService.start()
 
+  // ── MCP: one-shot importExisting + sync on ready, then watch for external edits ──
+  try {
+    const cwd = process.cwd()
+    mcpSyncService.importExisting([cwd])
+    mcpSyncService.syncAll([cwd])
+  } catch (err) {
+    log.warn('[mcp] startup import/sync failed: %s', err)
+  }
+
+  app.on('browser-window-focus', () => {
+    try {
+      const changes = mcpSyncService.detectExternalChanges([process.cwd()])
+      if (changes.length > 0 && mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('mcp:external-changes-detected', changes)
+      }
+    } catch (err) {
+      log.warn('[mcp] detectExternalChanges failed: %s', err)
+    }
+  })
+
+  // ── ClearMemory lifecycle ─────────────────────────────────────────────────
+  // If the user has the flag on, spawn the daemon non-blocking. React to flag
+  // flips so toggling `showClearMemory` in Feature Flags starts/stops the
+  // daemon without an app restart.
+  try {
+    const flags = readCurrentFlags()
+    if (flags.showClearMemory) {
+      void clearMemoryService.start().catch((err) => {
+        log.warn('[clearmemory] initial start failed: %s', err?.message ?? err)
+      })
+    }
+  } catch (err) {
+    log.warn('[clearmemory] could not read initial flag state: %s', err)
+  }
+
+  featureFlagEvents.on('change:showClearMemory', (payload: FlagChangeEvent) => {
+    if (payload.value) {
+      log.info('[clearmemory] flag flipped on — starting daemon')
+      void clearMemoryService.start().catch((err) => {
+        log.warn('[clearmemory] start failed: %s', err?.message ?? err)
+      })
+    } else {
+      log.info('[clearmemory] flag flipped off — stopping daemon')
+      void clearMemoryService.stop().catch((err) => {
+        log.warn('[clearmemory] stop failed: %s', err?.message ?? err)
+      })
+    }
+  })
+
   // ── Auto-updater (checks GitHub Releases) ──────────────────────────────
   autoUpdater.autoDownload = true
   autoUpdater.autoInstallOnAppQuit = true
@@ -627,4 +707,19 @@ app.whenReady().then(async () => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
+})
+
+// Ensure the clearmemory daemon is torn down cleanly when the app exits so
+// we don't leave an orphaned `clearmemory serve` process bound to 8080/9700.
+let clearMemoryShutdownStarted = false
+app.on('before-quit', (event) => {
+  if (clearMemoryShutdownStarted) return
+  if (clearMemoryService.status === 'stopped' || clearMemoryService.status === 'missing-binary') return
+  clearMemoryShutdownStarted = true
+  event.preventDefault()
+  log.info('[clearmemory] before-quit: stopping daemon')
+  const timeout = new Promise<void>((resolve) => setTimeout(resolve, 6_000))
+  void Promise.race([clearMemoryService.stop(5_000), timeout]).finally(() => {
+    app.quit()
+  })
 })

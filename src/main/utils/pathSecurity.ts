@@ -1,6 +1,6 @@
 import { resolve, sep } from 'path'
 import { realpathSync, lstatSync } from 'fs'
-import { homedir } from 'os'
+import { homedir, tmpdir } from 'os'
 
 /**
  * Validate that a resolved path stays within one of the allowed root directories.
@@ -69,6 +69,25 @@ export function getMemoryAllowedRoots(workingDirectory?: string): string[] {
 export function getWorkspaceAllowedRoots(): string[] {
   const home = homedir()
   return [home]
+}
+
+/**
+ * Returns allowed roots for Clear Memory import operations:
+ * - Home directory (covers ~/.claude, ~/.copilot, user documents, etc.)
+ * - Current working directory
+ * - OS temp directory (for downloaded/unzipped exports)
+ *
+ * We intentionally do NOT allow `/`, `/etc`, `/System`, `/usr`, etc. — the
+ * root-level paths are still blocked via `assertPathWithinRoots` scoping.
+ * Callers should also run `isSensitiveSystemPath` for extra defence.
+ */
+export function getImportAllowedRoots(workingDirectory?: string): string[] {
+  const roots = [homedir(), tmpdir()]
+  if (workingDirectory) {
+    roots.push(resolve(workingDirectory))
+  }
+  roots.push(resolve(process.cwd()))
+  return roots
 }
 
 /**

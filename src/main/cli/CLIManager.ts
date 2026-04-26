@@ -3,10 +3,12 @@ import { log } from '../utils/logger'
 import { getStoreEncryptionKey } from '../utils/storeEncryption'
 import type { WebContents } from 'electron'
 import type { SessionOptions, SessionInfo } from './types'
-import type { ActiveSession, SubAgentProcess, SubAgentInfo, SubAgentStatus } from './types'
-import type { ChildProcess } from 'child_process'
+import type { ActiveSession, SubAgentProcess, SubAgentInfo, SubAgentStatus, ICLIAdapter, SessionHandle } from './types'
 import { CopilotAdapter } from './CopilotAdapter'
 import { ClaudeCodeAdapter } from './ClaudeCodeAdapter'
+import { PluginManager } from '../plugins/PluginManager'
+import type { BackendId } from '../../shared/backends'
+import { isBackendId, migrateLegacyBackendId, providerOf } from '../../shared/backends'
 import Store from 'electron-store'
 
 export type NotifyCallback = (args: {
@@ -22,7 +24,7 @@ export type AuditCallback = (entry: {
 }) => void
 
 export type CostRecordCallback = (args: {
-  sessionId: string; sessionName: string; cli: 'copilot' | 'claude'
+  sessionId: string; sessionName: string; cli: BackendId
   model: string; agent?: string; inputTokens: number; outputTokens: number
   totalTokens: number; estimatedCostUsd: number; promptCount: number; timestamp: number
 }) => void
@@ -38,7 +40,7 @@ interface MessageLogEntry {
 
 interface PersistedSession {
   sessionId: string
-  cli: 'copilot' | 'claude'
+  cli: BackendId
   name?: string
   firstPrompt?: string
   startedAt: number
@@ -65,8 +67,19 @@ const SESSION_RETENTION_MS = 30 * 24 * 60 * 60 * 1000 // 30 days
 export class CLIManager {
   private readonly sessions = new Map<string, ActiveSession>()
   private readonly subAgents = new Map<string, SubAgentProcess>()
+  /**
+   * Adapter registry keyed by BackendId. SDK adapters slot in here alongside
+   * CLI adapters — selection is a single Map.get() in `adapterFor`, no branching
+   * on provider/transport at the call site.
+   *
+   * NOTE: the SDK entries are `null` until their adapters land (phases 2-3).
+   * `adapterFor` falls back to the matching CLI adapter so the build is green
+   * during plumbing and starting an SDK-labelled session won't blow up.
+   */
+  private readonly adapters: Map<BackendId, ICLIAdapter | null>
   private readonly copilot = new CopilotAdapter()
   private readonly claude = new ClaudeCodeAdapter()
+  private readonly pluginManager = new PluginManager()
 
   private readonly getWebContents: () => WebContents | null
   private onNotify: NotifyCallback | null = null
@@ -76,8 +89,64 @@ export class CLIManager {
 
   constructor(getWebContents: () => WebContents | null) {
     this.getWebContents = getWebContents
+
+    this.adapters = new Map<BackendId, ICLIAdapter | null>([
+      ['copilot-cli', this.copilot],
+      ['copilot-sdk', null],  // populated in phase 3
+      ['claude-cli',  this.claude],
+      ['claude-sdk',  null],  // populated in phase 2
+    ])
+
+    // One-time migration: rewrite legacy `cli: 'copilot' | 'claude'` to new BackendId
+    // shape on any persisted sessions. Idempotent — runs every boot but is a no-op
+    // once migration has been applied.
+    this.migratePersistedSessions()
+
     // Auto-purge expired sessions on startup
     this.purgeExpiredSessions()
+  }
+
+  /**
+   * Resolve a BackendId to the adapter that handles it. Falls back to the
+   * matching CLI adapter while SDK adapters are still being built (phases 2-3),
+   * so an out-of-the-box install with only the CLIs still works when a profile
+   * happens to be set to an SDK backend.
+   */
+  private adapterFor(backend: BackendId): ICLIAdapter {
+    const adapter = this.adapters.get(backend)
+    if (adapter) return adapter
+    // SDK adapter not yet registered — fall through to CLI for same provider.
+    return providerOf(backend) === 'copilot' ? this.copilot : this.claude
+  }
+
+  /**
+   * Register an adapter for a backend. Used by the SDK adapter modules to
+   * install themselves once their runtime deps are available (phase 2 / 3).
+   */
+  registerAdapter(backend: BackendId, adapter: ICLIAdapter): void {
+    this.adapters.set(backend, adapter)
+  }
+
+  /**
+   * Rewrite persisted `cli: 'copilot' | 'claude'` entries to modern BackendId
+   * values. Safe to call repeatedly.
+   */
+  private migratePersistedSessions(): void {
+    const sessions = sessionStore.get('sessions')
+    let rewritten = 0
+    for (const s of sessions) {
+      // `as string` because TypeScript now says `cli: BackendId` but older
+      // persisted rows have legacy values still on disk.
+      const raw = s.cli as string
+      if (!isBackendId(raw)) {
+        s.cli = migrateLegacyBackendId(raw)
+        rewritten++
+      }
+    }
+    if (rewritten > 0) {
+      sessionStore.set('sessions', sessions)
+      log.info(`[CLIManager] Migrated ${rewritten} persisted session(s) to new backend ids`)
+    }
   }
 
   /** Remove persisted sessions older than the retention TTL. */
@@ -271,7 +340,7 @@ export class CLIManager {
     const inputTokens = Math.ceil(inputChars / 4)
     const outputTokens = Math.ceil(outputBytes / 4)
     const totalTokens = inputTokens + outputTokens
-    const model = session.originalOptions.model ?? (session.info.cli === 'copilot' ? 'gpt-5-mini' : 'sonnet')
+    const model = session.originalOptions.model ?? (providerOf(session.info.cli) === 'copilot' ? 'gpt-5-mini' : 'sonnet')
 
     // Rough pricing per 1M tokens (input, output)
     const pricing: Record<string, [number, number]> = {
@@ -303,6 +372,11 @@ export class CLIManager {
     })
   }
 
+  /**
+   * Install-state by provider. Keeps the existing two-key shape so legacy
+   * callers stay compatible — SDK install-state rides on AuthManager now,
+   * not on this method.
+   */
   async checkInstalled(): Promise<{ copilot: boolean; claude: boolean }> {
     const [copilot, claude] = await Promise.all([
       this.copilot.isInstalled(),
@@ -322,13 +396,23 @@ export class CLIManager {
   // ── Session lifecycle ────────────────────────────────────────────────────
 
   async startSession(options: SessionOptions): Promise<{ sessionId: string }> {
-    const adapter = options.cli === 'copilot' ? this.copilot : this.claude
+    const adapter = this.adapterFor(options.cli)
     const sessionId = randomUUID()
 
     // Ensure adapter binary is resolved
     await adapter.isInstalled()
 
-    log.info(`[CLIManager] startSession cli=${options.cli} sessionId=${sessionId.slice(0, 8)}`)
+    // Inject enabled plugin dirs for this CLI unless the caller already provided some.
+    // This is what wires the Plugins page through to every spawned session.
+    // Plugins are addressed by provider (copilot | claude), not by transport.
+    if (!options.pluginDirs || options.pluginDirs.length === 0) {
+      const enabledPlugins = this.pluginManager.getEnabledPaths(providerOf(options.cli))
+      if (enabledPlugins.length > 0) {
+        options = { ...options, pluginDirs: enabledPlugins }
+      }
+    }
+
+    log.info(`[CLIManager] startSession cli=${options.cli} sessionId=${sessionId.slice(0, 8)} plugins=${options.pluginDirs?.length ?? 0}`)
 
     const session: ActiveSession = {
       info: {
@@ -498,10 +582,15 @@ export class CLIManager {
     log.info(`[CLIManager] spawned pid=${proc.pid ?? 'unknown'} for session ${sessionId.slice(0, 8)}`)
     log.debug(`[CLIManager] turn #${session.turnCount} started — waiting for CLI response...`)
 
+    // Assign a fresh turn id — threaded onto every output event for this
+    // turn so the renderer can group streaming fragments into one bubble.
+    const turnId = randomUUID()
+    session.currentTurnId = turnId
+
     // Notify renderer a turn started
     const wc0 = this.getWebContents()
     if (wc0 && !wc0.isDestroyed()) {
-      wc0.send('cli:turn-start', { sessionId })
+      wc0.send('cli:turn-start', { sessionId, turnId })
     }
 
     // Broadcast turn:started to extensions
@@ -514,7 +603,7 @@ export class CLIManager {
 
   async spawnSubAgent(options: {
     name: string
-    cli: 'copilot' | 'claude'
+    cli: BackendId
     prompt: string
     model?: string
     workingDirectory?: string
@@ -524,7 +613,7 @@ export class CLIManager {
     maxBudget?: number
     maxTurns?: number
   }): Promise<SubAgentInfo> {
-    const adapter = options.cli === 'copilot' ? this.copilot : this.claude
+    const adapter = this.adapterFor(options.cli)
     await adapter.isInstalled()
     const id = randomUUID()
 
@@ -540,12 +629,17 @@ export class CLIManager {
       maxTurns: options.maxTurns,
     }
 
-    if (options.cli === 'claude' && options.permissionMode) {
+    const provider = providerOf(options.cli)
+    if (provider === 'claude' && options.permissionMode) {
       sessionOpts.permissionMode = options.permissionMode as SessionOptions['permissionMode']
     }
-    if (options.cli === 'copilot' && options.permissionMode === 'yolo') {
+    if (provider === 'copilot' && options.permissionMode === 'yolo') {
       sessionOpts.yolo = true
     }
+
+    // Inject enabled plugin dirs so sub-agents get the same plugin context as sessions.
+    const enabledPlugins = this.pluginManager.getEnabledPaths(provider)
+    if (enabledPlugins.length > 0) sessionOpts.pluginDirs = enabledPlugins
 
     const proc = adapter.startSession(sessionOpts)
 
@@ -582,7 +676,7 @@ export class CLIManager {
     return info
   }
 
-  private attachSubAgentListeners(id: string, subAgent: SubAgentProcess, proc: ChildProcess): void {
+  private attachSubAgentListeners(id: string, subAgent: SubAgentProcess, proc: SessionHandle): void {
     proc.stdout?.on('data', (chunk: Buffer) => {
       const raw = chunk.toString()
       subAgent.buffer += raw
@@ -645,7 +739,7 @@ export class CLIManager {
         const inputChars = subAgent.info.prompt.length
         const inputTokens = Math.ceil(inputChars / 4)
         const outputTokens = Math.ceil(outputBytes / 4)
-        const model = subAgent.info.model ?? (subAgent.info.cli === 'copilot' ? 'claude-sonnet-4.5' : 'sonnet')
+        const model = subAgent.info.model ?? (providerOf(subAgent.info.cli) === 'copilot' ? 'claude-sonnet-4.5' : 'sonnet')
         const pricing: Record<string, [number, number]> = {
           'claude-sonnet-4.5': [3, 15], 'sonnet': [3, 15], 'opus': [15, 75],
           'haiku': [0.25, 1.25], 'gpt-5': [5, 15],
@@ -740,7 +834,7 @@ export class CLIManager {
 
   // ── Session listeners (existing) ─────────────────────────────────────────
 
-  private attachListeners(sessionId: string, session: ActiveSession, proc: ChildProcess): void {
+  private attachListeners(sessionId: string, session: ActiveSession, proc: SessionHandle): void {
     proc.stdout?.on('data', (chunk: Buffer) => {
       const raw = chunk.toString()
       // Only log byte count in production — never log AI output content
@@ -768,7 +862,7 @@ export class CLIManager {
         if (parsed.type === 'permission-request') {
           wc.send('cli:permission-request', { sessionId, request: parsed })
         } else {
-          wc.send('cli:output', { sessionId, output: parsed })
+          wc.send('cli:output', { sessionId, output: { ...parsed, turnId: session.currentTurnId } })
         }
       }
     })
@@ -797,7 +891,7 @@ export class CLIManager {
       const isAgentError = /no (?:such )?agent|agent.*not found|cannot find agent|unknown agent/i.test(trimmed)
       if (isAgentError) {
         log.warn(`[CLIManager:${session.info.cli}] agent error suppressed: ${trimmed.slice(0, 100)}`)
-        wc.send('cli:output', { sessionId, output: { type: 'status', content: 'Agent not found — running without agent. You can re-create it from the Agents page.' } })
+        wc.send('cli:output', { sessionId, output: { type: 'status', content: 'Agent not found — running without agent. You can re-create it from the Agents page.', turnId: session.currentTurnId } })
         session.messageLog.push({ type: 'status', content: 'Agent not found — running without agent.', sender: 'system', timestamp: Date.now() })
         return
       }
@@ -819,7 +913,7 @@ export class CLIManager {
 
       if (isPolicyWarning) {
         // Send as a status message (grey pill) instead of a red error block
-        wc.send('cli:output', { sessionId, output: { type: 'status', content: trimmed, metadata: { source: 'policy' } } })
+        wc.send('cli:output', { sessionId, output: { type: 'status', content: trimmed, metadata: { source: 'policy' }, turnId: session.currentTurnId } })
         session.messageLog.push({ type: 'status', content: trimmed, metadata: { source: 'policy' }, sender: 'system', timestamp: Date.now() })
       } else {
         wc.send('cli:error', { sessionId, error: trimmed })
@@ -830,10 +924,12 @@ export class CLIManager {
       log.error(`[CLIManager:${session.info.cli}] spawn error:`, err.message)
       session.processingTurn = false
       session.process = null
+      const endedTurnId = session.currentTurnId
+      session.currentTurnId = undefined
       const wc = this.getWebContents()
       if (!wc || wc.isDestroyed()) return
       wc.send('cli:error', { sessionId, error: `Failed to start process: ${err.message}` })
-      wc.send('cli:turn-end', { sessionId })
+      wc.send('cli:turn-end', { sessionId, turnId: endedTurnId })
     })
 
     proc.on('exit', (code, signal) => {
@@ -846,13 +942,18 @@ export class CLIManager {
         session.buffer = ''
         const wc = this.getWebContents()
         if (wc && !wc.isDestroyed()) {
-          wc.send('cli:output', { sessionId, output: parsed })
+          wc.send('cli:output', { sessionId, output: { ...parsed, turnId: session.currentTurnId } })
         }
       }
 
       session.process = null
       session.processingTurn = false
       session.turnCount++
+
+      // Capture then clear the turn id so any late events (shouldn't happen,
+      // but safe) don't get attributed to a turn that's already ended.
+      const endedTurnId = session.currentTurnId
+      session.currentTurnId = undefined
 
       const wc = this.getWebContents()
       if (!wc || wc.isDestroyed()) return
@@ -861,21 +962,21 @@ export class CLIManager {
         // Non-zero exit — send turn-end so the UI stops showing the processing
         // indicator, but keep the session alive so the user can retry.
         // The stderr handler already showed any error messages to the user.
-        wc.send('cli:turn-end', { sessionId })
+        wc.send('cli:turn-end', { sessionId, turnId: endedTurnId })
 
         // Only notify on first-turn failures (likely auth/install issues)
         if (session.turnCount === 1) {
           this.onNotify?.({
             type: 'error', severity: 'warning',
             title: `Session issue`,
-            message: `The ${session.info.cli === 'copilot' ? 'Copilot' : 'Claude'} process exited unexpectedly. You can try again from the session.`,
+            message: `The ${providerOf(session.info.cli) === 'copilot' ? 'Copilot' : 'Claude'} process exited unexpectedly. You can try again from the session.`,
             source: 'cli-manager', sessionId,
             action: { label: 'View Session', navigate: '/work' },
           })
         }
       } else {
         // Turn completed normally — session stays open for next input
-        wc.send('cli:turn-end', { sessionId })
+        wc.send('cli:turn-end', { sessionId, turnId: endedTurnId })
         // Record cost for this completed turn
         this.estimateCostFromOutput(sessionId, session, session.turnOutputBytes, session.lastPrompt)
       }

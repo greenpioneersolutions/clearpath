@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import type { AgentDef } from '../types/ipc'
+import { providerOf } from '../../../shared/backends'
 
 interface StarterAgent {
   id: string
@@ -298,7 +299,7 @@ export function StarterAgentWalkthrough({
                 <div>
                   <h3 className="text-sm font-bold text-gray-900">{createdAgent.name}</h3>
                   <p className="text-xs text-gray-500">
-                    Agent created for {createdAgent.cli === 'copilot' ? 'GitHub Copilot' : 'Claude Code'}
+                    Agent created for {providerOf(createdAgent.cli) === 'copilot' ? 'GitHub Copilot' : 'Claude Code'}
                   </p>
                 </div>
               </div>

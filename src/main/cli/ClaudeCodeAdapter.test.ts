@@ -388,15 +388,22 @@ describe('ClaudeCodeAdapter', () => {
       expect(adapter.buildArgs(options)).toContain('--strict-mcp-config')
     })
 
-    it('adds --plugin-dir', () => {
+    it('adds --plugin-dir for each entry in pluginDirs', () => {
       const options: SessionOptions = {
         cli: 'claude',
         mode: 'interactive',
-        pluginDir: '/my/plugins',
+        pluginDirs: ['/my/plugins', '/other/plugins'],
       }
       const args = adapter.buildArgs(options)
-      expect(args).toContain('--plugin-dir')
+      const flags = args.filter((a) => a === '--plugin-dir')
+      expect(flags.length).toBe(2)
       expect(args).toContain('/my/plugins')
+      expect(args).toContain('/other/plugins')
+    })
+
+    it('omits --plugin-dir when pluginDirs is empty or undefined', () => {
+      expect(adapter.buildArgs({ cli: 'claude', mode: 'interactive' } as SessionOptions)).not.toContain('--plugin-dir')
+      expect(adapter.buildArgs({ cli: 'claude', mode: 'interactive', pluginDirs: [] as string[] } as SessionOptions)).not.toContain('--plugin-dir')
     })
 
     // ── Workspace / directories ──────────────────────────────────────────────

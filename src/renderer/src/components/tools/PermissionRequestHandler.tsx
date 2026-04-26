@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import type { ParsedOutput, SessionInfo } from '../../types/ipc'
+import { providerOf, type BackendProvider } from '../../../../shared/backends'
 
 interface PermissionRequest {
   id: string
   sessionId: string
   sessionName: string
-  cli: 'copilot' | 'claude'
+  cli: BackendProvider
   description: string
   timestamp: number
   status: 'pending' | 'approved' | 'denied'
@@ -36,7 +37,7 @@ export default function PermissionRequestHandler(): JSX.Element {
           id: `req-${++requestCounter}`,
           sessionId: data.sessionId,
           sessionName: session?.name ?? data.sessionId.slice(0, 8),
-          cli: session?.cli ?? 'copilot',
+          cli: session?.cli ? providerOf(session.cli) : 'copilot',
           description: data.request.content,
           timestamp: Date.now(),
           status: 'pending',

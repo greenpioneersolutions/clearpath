@@ -4,6 +4,8 @@ import { BrowserWindow } from 'electron'
 import type { CLIManager } from '../cli/CLIManager'
 import { resolveInShell } from '../utils/shellEnv'
 import { checkRateLimit } from '../utils/rateLimiter'
+import type { BackendId } from '../../shared/backends'
+import { migrateLegacyBackendId } from '../../shared/backends'
 
 export function registerSubAgentHandlers(ipcMain: IpcMain, cliManager: CLIManager): void {
   // ── Spawn a delegated task / sub-agent ──────────────────────────────────────
@@ -12,7 +14,7 @@ export function registerSubAgentHandlers(ipcMain: IpcMain, cliManager: CLIManage
     'subagent:spawn',
     (_e, args: {
       name: string
-      cli: 'copilot' | 'claude'
+      cli: BackendId | 'copilot' | 'claude'
       prompt: string
       model?: string
       workingDirectory?: string
@@ -24,7 +26,7 @@ export function registerSubAgentHandlers(ipcMain: IpcMain, cliManager: CLIManage
     }) => {
       const rl = checkRateLimit('subagent:spawn')
       if (!rl.allowed) return { error: `Rate limited — try again in ${Math.ceil((rl.retryAfterMs ?? 0) / 1000)}s` }
-      return cliManager.spawnSubAgent(args)
+      return cliManager.spawnSubAgent({ ...args, cli: migrateLegacyBackendId(args.cli) })
     },
   )
 

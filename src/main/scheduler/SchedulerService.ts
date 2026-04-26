@@ -5,6 +5,8 @@ import { getStoreEncryptionKey } from '../utils/storeEncryption'
 import type { CLIManager } from '../cli/CLIManager'
 import type { NotificationManager } from '../notifications/NotificationManager'
 import type { ParsedOutput } from '../cli/types'
+import type { BackendId } from '../../shared/backends'
+import { migrateLegacyBackendId } from '../../shared/backends'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -14,7 +16,7 @@ export interface ScheduledJob {
   description: string
   prompt: string
   cronExpression: string
-  cli: 'copilot' | 'claude'
+  cli: BackendId
   model?: string
   permissionMode?: string
   workingDirectory?: string
@@ -50,7 +52,7 @@ export const SCHEDULE_TEMPLATES: Array<Omit<ScheduledJob, 'id' | 'createdAt' | '
     description: 'Runs project tests every night and reports failures',
     prompt: 'Run the project test suite. Report any failures with file names, test names, and error messages. If all tests pass, confirm with a summary of tests run.',
     cronExpression: '0 0 * * *',
-    cli: 'claude', enabled: false, permissionMode: 'acceptEdits',
+    cli: 'claude-cli', enabled: false, permissionMode: 'acceptEdits',
     flags: {}, maxTurns: 10,
   },
   {
@@ -58,7 +60,7 @@ export const SCHEDULE_TEMPLATES: Array<Omit<ScheduledJob, 'id' | 'createdAt' | '
     description: 'Reviews codebase for security vulnerabilities every Monday',
     prompt: 'Perform a security audit of the codebase focusing on OWASP Top 10 vulnerabilities. Check for: injection attacks, broken auth, sensitive data exposure, XSS, and insecure dependencies. Rate each finding by severity.',
     cronExpression: '0 9 * * 1',
-    cli: 'claude', model: 'opus', enabled: false, permissionMode: 'plan',
+    cli: 'claude-cli', model: 'opus', enabled: false, permissionMode: 'plan',
     flags: {}, maxBudget: 5,
   },
   {
@@ -66,7 +68,7 @@ export const SCHEDULE_TEMPLATES: Array<Omit<ScheduledJob, 'id' | 'createdAt' | '
     description: 'Checks for outdated or vulnerable dependencies every morning',
     prompt: 'Check all project dependencies for known vulnerabilities and outdated versions. Run the appropriate audit command (npm audit, pip audit, etc). Report any issues found with recommended update versions.',
     cronExpression: '0 8 * * 1-5',
-    cli: 'claude', enabled: false, permissionMode: 'plan',
+    cli: 'claude-cli', enabled: false, permissionMode: 'plan',
     flags: {}, maxTurns: 5,
   },
   {
@@ -74,7 +76,7 @@ export const SCHEDULE_TEMPLATES: Array<Omit<ScheduledJob, 'id' | 'createdAt' | '
     description: 'Generates or updates documentation every Friday',
     prompt: 'Review the codebase for undocumented or poorly documented modules. Update JSDoc/docstrings for any functions that have been modified since last week. Generate a changelog entry for this week\'s changes.',
     cronExpression: '0 17 * * 5',
-    cli: 'claude', enabled: false, permissionMode: 'acceptEdits',
+    cli: 'claude-cli', enabled: false, permissionMode: 'acceptEdits',
     flags: {}, maxTurns: 15,
   },
   {
@@ -82,7 +84,7 @@ export const SCHEDULE_TEMPLATES: Array<Omit<ScheduledJob, 'id' | 'createdAt' | '
     description: 'Runs build command every hour during work hours',
     prompt: 'Run the project build command. If the build fails, identify the error and report the file and line number. Do not fix the error, just report it.',
     cronExpression: '0 9-17 * * 1-5',
-    cli: 'claude', enabled: false, permissionMode: 'plan',
+    cli: 'claude-cli', enabled: false, permissionMode: 'plan',
     flags: {}, maxTurns: 3,
   },
 ]
@@ -105,11 +107,29 @@ export class SchedulerService {
   constructor(cliManager: CLIManager, notificationManager: NotificationManager | null) {
     this.cliManager = cliManager
     this.notificationManager = notificationManager
+    this.migratePersistedJobs()
+  }
+
+  /**
+   * Rewrite any persisted `cli: 'copilot' | 'claude'` entries to the new
+   * BackendId shape. Idempotent.
+   */
+  private migratePersistedJobs(): void {
+    const raw = store.get('jobs')
+    const jobs = Array.isArray(raw) ? raw : []
+    let rewrote = 0
+    for (const job of jobs) {
+      const rawId = job.cli as string
+      const migrated = migrateLegacyBackendId(rawId)
+      if (rawId !== migrated) { job.cli = migrated; rewrote++ }
+    }
+    if (rewrote > 0) store.set('jobs', jobs)
   }
 
   /** Load all enabled jobs and register them with node-cron. */
   start(): void {
-    const jobs = store.get('jobs')
+    const raw = store.get('jobs')
+    const jobs = Array.isArray(raw) ? raw : []
     for (const job of jobs) {
       if (job.enabled) this.registerCronTask(job)
     }

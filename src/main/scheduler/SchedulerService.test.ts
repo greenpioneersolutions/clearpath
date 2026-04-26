@@ -559,7 +559,8 @@ describe('SchedulerService', () => {
 
       expect(mockSpawnSubAgent).toHaveBeenCalledWith({
         name: 'Scheduled: Build Job',
-        cli: 'claude',
+        // Scheduler migrates legacy `cli: 'claude'` to `'claude-cli'` on load.
+        cli: 'claude-cli',
         prompt: 'run build',
         model: 'opus',
         workingDirectory: '/tmp/project',
@@ -1012,7 +1013,7 @@ describe('SchedulerService', () => {
 
     it('all templates use claude as cli', () => {
       for (const t of SCHEDULE_TEMPLATES) {
-        expect(t.cli).toBe('claude')
+        expect(t.cli).toBe('claude-cli')
       }
     })
   })

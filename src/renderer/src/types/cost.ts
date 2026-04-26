@@ -1,8 +1,10 @@
+import type { BackendId } from '../../../shared/backends'
+
 export interface CostRecord {
   id: string
   sessionId: string
   sessionName: string
-  cli: 'copilot' | 'claude'
+  cli: BackendId
   model: string
   agent?: string
   inputTokens: number
@@ -22,7 +24,7 @@ export interface DailySpend {
 export interface SessionCostSummary {
   sessionId: string
   sessionName: string
-  cli: 'copilot' | 'claude'
+  cli: BackendId
   totalCost: number
   totalTokens: number
   promptCount: number

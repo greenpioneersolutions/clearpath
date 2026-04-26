@@ -74,10 +74,10 @@ describe('Dashboard', () => {
     expect(mockInvoke).toHaveBeenCalledWith('auth:refresh')
   })
 
-  it('shows not installed status for claude', async () => {
+  it('shows Install Now button for not-installed claude', async () => {
     render(<Dashboard />)
     await waitFor(() => {
-      expect(screen.getByText('Not Installed')).toBeInTheDocument()
+      expect(screen.getByText('Install Now')).toBeInTheDocument()
     })
   })
 })

@@ -27,6 +27,12 @@ interface MockAuthManager {
   refresh: ReturnType<typeof vi.fn>
   startLogin: ReturnType<typeof vi.fn>
   cancelLogin: ReturnType<typeof vi.fn>
+  checkNode: ReturnType<typeof vi.fn>
+  installCopilot: ReturnType<typeof vi.fn>
+  installClaude: ReturnType<typeof vi.fn>
+  installNodeManaged: ReturnType<typeof vi.fn>
+  cancelInstall: ReturnType<typeof vi.fn>
+  openExternalUrl: ReturnType<typeof vi.fn>
 }
 
 function createMockAuthManager(): MockAuthManager {
@@ -41,6 +47,17 @@ function createMockAuthManager(): MockAuthManager {
     }),
     startLogin: vi.fn(),
     cancelLogin: vi.fn(),
+    checkNode: vi.fn().mockResolvedValue({
+      installed: true,
+      version: '22.10.0',
+      satisfies22: true,
+      platform: 'darwin',
+    }),
+    installCopilot: vi.fn(),
+    installClaude: vi.fn(),
+    installNodeManaged: vi.fn(),
+    cancelInstall: vi.fn(),
+    openExternalUrl: vi.fn().mockReturnValue(true),
   }
 }
 
@@ -72,10 +89,15 @@ describe('authHandlers', () => {
       expect(registeredChannels).toContain('auth:refresh')
       expect(registeredChannels).toContain('auth:login-start')
       expect(registeredChannels).toContain('auth:login-cancel')
+      expect(registeredChannels).toContain('auth:check-node')
+      expect(registeredChannels).toContain('auth:install-start')
+      expect(registeredChannels).toContain('auth:install-node-managed')
+      expect(registeredChannels).toContain('auth:install-cancel')
+      expect(registeredChannels).toContain('auth:open-external')
     })
 
-    it('registers exactly 4 handlers', () => {
-      expect(ipcMain.handle).toHaveBeenCalledTimes(4)
+    it('registers exactly 9 handlers', () => {
+      expect(ipcMain.handle).toHaveBeenCalledTimes(9)
     })
   })
 
@@ -194,6 +216,110 @@ describe('authHandlers', () => {
       handler(mockEvent, { extraArg: 'ignored' })
 
       expect(authManager.refresh).toHaveBeenCalledWith()
+    })
+  })
+
+  // ── auth:check-node ─────────────────────────────────────────────────────────
+
+  describe('auth:check-node', () => {
+    it('delegates to authManager.checkNode() with no force flag by default', async () => {
+      const handler = getHandler(ipcMain, 'auth:check-node')
+      const result = await handler(mockEvent)
+
+      expect(authManager.checkNode).toHaveBeenCalledWith(false)
+      expect(result).toEqual({
+        installed: true,
+        version: '22.10.0',
+        satisfies22: true,
+        platform: 'darwin',
+      })
+    })
+
+    it('passes forceRefresh option through', async () => {
+      const handler = getHandler(ipcMain, 'auth:check-node')
+      await handler(mockEvent, { forceRefresh: true })
+
+      expect(authManager.checkNode).toHaveBeenCalledWith(true)
+    })
+  })
+
+  // ── auth:install-start ──────────────────────────────────────────────────────
+
+  describe('auth:install-start', () => {
+    it('installs copilot', () => {
+      const handler = getHandler(ipcMain, 'auth:install-start')
+      handler(mockEvent, { cli: 'copilot' })
+
+      expect(authManager.installCopilot).toHaveBeenCalledTimes(1)
+      expect(authManager.installClaude).not.toHaveBeenCalled()
+    })
+
+    it('installs claude', () => {
+      const handler = getHandler(ipcMain, 'auth:install-start')
+      handler(mockEvent, { cli: 'claude' })
+
+      expect(authManager.installClaude).toHaveBeenCalledTimes(1)
+      expect(authManager.installCopilot).not.toHaveBeenCalled()
+    })
+
+    it('ignores unknown cli values', () => {
+      const handler = getHandler(ipcMain, 'auth:install-start')
+      handler(mockEvent, { cli: 'bogus' as unknown as 'copilot' })
+
+      expect(authManager.installCopilot).not.toHaveBeenCalled()
+      expect(authManager.installClaude).not.toHaveBeenCalled()
+    })
+  })
+
+  // ── auth:install-node-managed ───────────────────────────────────────────────
+
+  describe('auth:install-node-managed', () => {
+    it('delegates to authManager.installNodeManaged()', () => {
+      const handler = getHandler(ipcMain, 'auth:install-node-managed')
+      handler(mockEvent)
+
+      expect(authManager.installNodeManaged).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  // ── auth:install-cancel ─────────────────────────────────────────────────────
+
+  describe('auth:install-cancel', () => {
+    it('cancels install for the given target', () => {
+      const handler = getHandler(ipcMain, 'auth:install-cancel')
+      handler(mockEvent, { target: 'copilot' })
+
+      expect(authManager.cancelInstall).toHaveBeenCalledWith('copilot')
+    })
+
+    it('cancels node install', () => {
+      const handler = getHandler(ipcMain, 'auth:install-cancel')
+      handler(mockEvent, { target: 'node' })
+
+      expect(authManager.cancelInstall).toHaveBeenCalledWith('node')
+    })
+  })
+
+  // ── auth:open-external ──────────────────────────────────────────────────────
+
+  describe('auth:open-external', () => {
+    it('delegates to authManager.openExternalUrl() and returns the result', () => {
+      authManager.openExternalUrl.mockReturnValue(true)
+
+      const handler = getHandler(ipcMain, 'auth:open-external')
+      const result = handler(mockEvent, { url: 'https://github.com/login/device' })
+
+      expect(authManager.openExternalUrl).toHaveBeenCalledWith('https://github.com/login/device')
+      expect(result).toBe(true)
+    })
+
+    it('returns false when the manager rejects the URL', () => {
+      authManager.openExternalUrl.mockReturnValue(false)
+
+      const handler = getHandler(ipcMain, 'auth:open-external')
+      const result = handler(mockEvent, { url: 'file:///etc/passwd' })
+
+      expect(result).toBe(false)
     })
   })
 })

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import type { ParsedOutput, SessionInfo } from '../../types/ipc'
+import { providerOf } from '../../../../shared/backends'
 
 interface TokenBreakdown {
   systemPrompt: number
@@ -98,7 +99,7 @@ export default function ContextUsage({ activeSessions: initialSessions }: Props)
 
     // Determine CLI for this session
     const session = sessions.find((s) => s.sessionId === selectedSessionId)
-    const command = session?.cli === 'claude' ? '/cost' : '/context'
+    const command = session?.cli && providerOf(session.cli) === 'claude' ? '/cost' : '/context'
 
     // Listen for output from this session
     const offOutput = window.electronAPI.on('cli:output', (data: { sessionId: string; output: ParsedOutput }) => {

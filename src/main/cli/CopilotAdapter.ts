@@ -13,7 +13,7 @@ const PERMISSION_LINE_RE = /\[y\/n(?:\/a)?\]\s*[?:]*\s*$/i
 const ANSI_RE = /\x1b(?:[@-Z\\-_]|\[[0-9;]*[ -/]*[@-~])/g
 
 export class CopilotAdapter implements ICLIAdapter {
-  readonly cliName = 'copilot'
+  readonly cliName = 'copilot-cli'
   binaryPath = 'copilot'
 
   async isInstalled(): Promise<boolean> {
@@ -104,7 +104,7 @@ export class CopilotAdapter implements ICLIAdapter {
     if (options.enableAllGithubMcpTools) args.push('--enable-all-github-mcp-tools')
 
     // ── Plugin ────────────────────────────────────────────────────────────────
-    if (options.pluginDir) args.push('--plugin-dir', options.pluginDir)
+    for (const dir of options.pluginDirs ?? []) args.push('--plugin-dir', dir)
 
     // ── Output behaviour ──────────────────────────────────────────────────────
     if (options.stream === false) args.push('--stream', 'false')

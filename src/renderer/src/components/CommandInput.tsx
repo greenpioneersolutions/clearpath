@@ -1,4 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
+import type { BackendId } from '../../../shared/backends'
+import { providerOf } from '../../../shared/backends'
 
 const COPILOT_SLASH_COMMANDS = [
   '/allow-all',
@@ -53,7 +55,7 @@ const SELF_CONTAINED = new Set([
 ])
 
 interface Props {
-  cli: 'copilot' | 'claude'
+  cli: BackendId
   onSend: (input: string) => void
   onSlashCommand: (command: string) => void
   disabled?: boolean
@@ -73,7 +75,7 @@ export default function CommandInput({
   const [justAccepted, setJustAccepted] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
-  const commands = cli === 'copilot' ? COPILOT_SLASH_COMMANDS : CLAUDE_SLASH_COMMANDS
+  const commands = providerOf(cli) === 'copilot' ? COPILOT_SLASH_COMMANDS : CLAUDE_SLASH_COMMANDS
 
   // Auto-resize textarea
   useEffect(() => {

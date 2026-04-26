@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import type { AgentDef } from '../types/ipc'
+import type { BackendId } from '../../../shared/backends'
 
 interface Props {
   isOpen: boolean
@@ -69,8 +70,12 @@ export function AgentWizard({ isOpen, onClose, onCreated, workingDir, defaultCli
   const handleCreate = () => {
     setSaving(true)
     setError(null)
+    // Agents are edited by provider, but AgentDef.cli is a BackendId — use the
+    // CLI-transport backend as the canonical binding; session wizards can still
+    // route the agent to an SDK backend of the same provider.
+    const backendId: BackendId = form.cli === 'copilot' ? 'copilot-cli' : 'claude-cli'
     const def: Omit<AgentDef, 'id' | 'source' | 'filePath'> = {
-      cli: form.cli,
+      cli: backendId,
       name: form.name.trim(),
       description: form.description.trim(),
       model: form.model.trim() || undefined,

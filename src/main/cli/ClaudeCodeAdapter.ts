@@ -13,7 +13,7 @@ const PERMISSION_LINE_RE = /\ballow\b.+\?\s*\[y\/n\]/i
 const ANSI_RE = /\x1b(?:[@-Z\\-_]|\[[0-9;]*[ -/]*[@-~])/g
 
 export class ClaudeCodeAdapter implements ICLIAdapter {
-  readonly cliName = 'claude'
+  readonly cliName = 'claude-cli'
   binaryPath = 'claude'
 
   async isInstalled(): Promise<boolean> {
@@ -93,7 +93,7 @@ export class ClaudeCodeAdapter implements ICLIAdapter {
     // ── MCP & plugins ─────────────────────────────────────────────────────────
     if (options.mcpConfig) args.push('--mcp-config', options.mcpConfig)
     if (options.strictMcpConfig) args.push('--strict-mcp-config')
-    if (options.pluginDir) args.push('--plugin-dir', options.pluginDir)
+    for (const dir of options.pluginDirs ?? []) args.push('--plugin-dir', dir)
 
     // ── Workspace ─────────────────────────────────────────────────────────────
     for (const dir of options.additionalDirs ?? []) args.push('--add-dir', dir)

@@ -13,6 +13,8 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
 
   // Auth
   'auth:get-status', 'auth:refresh', 'auth:login-start', 'auth:login-cancel',
+  'auth:check-node', 'auth:install-start', 'auth:install-node-managed',
+  'auth:install-cancel', 'auth:open-external',
 
   // CLI Sessions
   'cli:check-installed', 'cli:check-auth',
@@ -34,6 +36,24 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   'memory:list-memory-entries',
   'notes:list', 'notes:get', 'notes:create', 'notes:update', 'notes:delete',
   'notes:tags', 'notes:stats', 'notes:pick-files', 'notes:read-attachment', 'notes:get-full-content',
+
+  // Clear Memory (cross-session AI memory engine)
+  'clearmemory:install-status', 'clearmemory:enable', 'clearmemory:disable',
+  'clearmemory:status', 'clearmemory:get-logs',
+  'clearmemory:recall', 'clearmemory:expand', 'clearmemory:retain', 'clearmemory:forget',
+  'clearmemory:streams-list', 'clearmemory:streams-create', 'clearmemory:streams-switch',
+  'clearmemory:streams-describe',
+  'clearmemory:tags-list', 'clearmemory:tags-add', 'clearmemory:tags-remove',
+  'clearmemory:tags-rename',
+  'clearmemory:reflect',
+  'clearmemory:import', 'clearmemory:pick-import-path', 'clearmemory:import-preview',
+  'clearmemory:import-cancel',
+  'clearmemory:backup', 'clearmemory:restore',
+  'clearmemory:pick-backup-path', 'clearmemory:list-backups',
+  'clearmemory:backup-now', 'clearmemory:restore-now', 'clearmemory:backup-cancel',
+  'clearmemory:backup-schedule-get', 'clearmemory:backup-schedule-set',
+  'clearmemory:mcp-status', 'clearmemory:mcp-repair',
+  'clearmemory:config-get', 'clearmemory:config-set',
 
   // File Explorer
   'files:list', 'files:is-protected', 'files:watch', 'files:unwatch',
@@ -66,10 +86,20 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   'tools:list-mcp-servers', 'tools:add-mcp-server', 'tools:remove-mcp-server',
   'tools:toggle-mcp-server', 'tools:get-settings', 'tools:save-settings',
 
+  // MCP Registry (centralized management — source of truth for both CLIs)
+  'mcp:registry-list', 'mcp:registry-add', 'mcp:registry-update',
+  'mcp:registry-remove', 'mcp:registry-toggle',
+  'mcp:catalog-list', 'mcp:secrets-get-meta', 'mcp:sync-now',
+  'mcp:test-server',
+
   // Skills
   'skills:list', 'skills:get', 'skills:save', 'skills:toggle', 'skills:delete',
   'skills:record-usage', 'skills:get-usage-stats', 'skills:get-starters',
   'skills:export', 'skills:import',
+
+  // CLI Plugins (Copilot + Claude --plugin-dir auto-injection)
+  'plugins:list', 'plugins:rescan', 'plugins:add-custom',
+  'plugins:remove-custom', 'plugins:set-enabled', 'plugins:open-folder',
 
   // Templates & Workflows
   'templates:list', 'templates:get', 'templates:save', 'templates:delete',
@@ -252,12 +282,16 @@ loadExtensionChannels()
 // Channels the main process pushes to the renderer via webContents.send()
 const ALLOWED_RECEIVE_CHANNELS = new Set([
   'auth:login-output', 'auth:login-complete', 'auth:status-changed',
+  'auth:install-output', 'auth:install-complete', 'auth:login-browser-opened',
   'cli:output', 'cli:error', 'cli:exit', 'cli:turn-start', 'cli:turn-end',
   'cli:permission-request', 'cli:usage',
+  'clearmemory:init-progress', 'clearmemory:state-change', 'clearmemory:import-progress',
+  'clearmemory:backup-progress',
   'files:changed',
   'notification:new',
   'subagent:output', 'subagent:spawned', 'subagent:status-changed',
   'updater:status',
+  'mcp:external-changes-detected',
   'integration:powerbi-device-code',
   'integration:powerbi-auth-complete',
   'extension:updated', 'extension:removed', 'extension:event',
