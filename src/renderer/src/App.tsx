@@ -1,3 +1,4 @@
+import { lazy, Suspense, type ComponentType } from 'react'
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { FeatureFlagProvider } from './contexts/FeatureFlagContext'
 import { BrandingProvider } from './contexts/BrandingContext'
@@ -11,9 +12,23 @@ import Connect from './pages/Connect'
 import ClearMemory from './pages/ClearMemory'
 import Learn from './pages/Learn'
 import SubAgentPopout from './pages/SubAgentPopout'
-import PrScores from './pages/PrScores'
-import BackstageExplorer from './pages/BackstageExplorer'
 import ExtensionPage from './components/extensions/ExtensionPage'
+
+// `__FEATURES__` is a Vite `define` literal (see electron.vite.config.ts) so
+// the conditions below are statically replaced at build time. When an
+// experimental flag is compiled out (features.json: experimental:true +
+// enabled:false), the surrounding `if` becomes `if (false) { … }` and Rollup
+// drops the dynamic `import()` along with the page chunk it would have
+// produced. Verified by grepping the production bundle for unique strings
+// from each page (see tests in features.spec.ts).
+declare const __FEATURES__: import('../../shared/featureFlags.generated').FeatureFlags
+
+const PrScores: ComponentType | null = __FEATURES__.showPrScores
+  ? lazy(() => import('./pages/PrScores'))
+  : null
+const BackstageExplorer: ComponentType | null = __FEATURES__.showBackstageExplorer
+  ? lazy(() => import('./pages/BackstageExplorer'))
+  : null
 
 export default function App(): JSX.Element {
   return (
@@ -27,8 +42,26 @@ export default function App(): JSX.Element {
           <Route path="work" element={<Work />} />
           <Route path="learn" element={<Learn />} />
           <Route path="insights" element={<Insights />} />
-          <Route path="pr-scores" element={<PrScores />} />
-          <Route path="backstage-explorer" element={<BackstageExplorer />} />
+          {PrScores && (
+            <Route
+              path="pr-scores"
+              element={
+                <Suspense fallback={null}>
+                  <PrScores />
+                </Suspense>
+              }
+            />
+          )}
+          {BackstageExplorer && (
+            <Route
+              path="backstage-explorer"
+              element={
+                <Suspense fallback={null}>
+                  <BackstageExplorer />
+                </Suspense>
+              }
+            />
+          )}
           <Route path="ext/:extensionId/*" element={<ExtensionPage />} />
           <Route path="connect" element={<Connect />} />
           <Route path="clear-memory" element={<ClearMemory />} />

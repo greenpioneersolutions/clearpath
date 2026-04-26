@@ -1,57 +1,11 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react'
 import { getProgressionStage, getStageFlagOverrides, type ProgressionStage } from '../lib/progressiveDisclosure'
+import { BUILD_FLAGS, type FeatureFlags } from '../../../shared/featureFlags.generated'
 
-// ── Types ────────────────────────────────────────────────────────────────────
-
-export interface FeatureFlags {
-  showHomeHub: boolean
-
-  showDashboard: boolean
-  showWork: boolean
-  showInsights: boolean
-  showConfigure: boolean
-  showLearn: boolean
-
-  showSetupWizard: boolean
-  showSettings: boolean
-  showPolicies: boolean
-  showIntegrations: boolean
-  showMemory: boolean
-  showClearMemory: boolean
-  showSkillsManagement: boolean
-  showSessionWizard: boolean
-  showWorkspaces: boolean
-  showTeamHub: boolean
-  showScheduler: boolean
-
-  showComposer: boolean
-  showSubAgents: boolean
-  showTemplates: boolean
-  showKnowledgeBase: boolean
-  showVoice: boolean
-
-  showUseContext: boolean
-  showAgentSelection: boolean
-  showCostTracking: boolean
-  showComplianceLogs: boolean
-
-  showDataManagement: boolean
-  showBudgetLimits: boolean
-  showPlugins: boolean
-  showEnvVars: boolean
-  showWebhooks: boolean
-
-  // Experimental features
-  enableExperimentalFeatures: boolean
-  showPrScores: boolean
-  prScoresAiReview: boolean
-  showEfficiencyCoach: boolean
-  showBackstageExplorer: boolean
-
-  // Backend adapters — phased rollout gates for SDK support.
-  enableClaudeSdk: boolean
-  enableCopilotSdk: boolean
-}
+// Re-export so existing call sites that did `import { FeatureFlags } from
+// '../contexts/FeatureFlagContext'` continue to compile. The single source of
+// truth for the type is now src/shared/featureFlags.generated.ts.
+export type { FeatureFlags } from '../../../shared/featureFlags.generated'
 
 interface FlagPreset {
   id: string
@@ -73,35 +27,9 @@ interface FlagContextValue {
   sessionCount: number
 }
 
-// ── Defaults (conservative — plugins off, core nav on) ──────────────────────
-
-const DEFAULTS: FeatureFlags = {
-  showHomeHub: true,
-
-  // Core navigation — always on
-  showDashboard: true, showWork: true, showInsights: true, showConfigure: true, showLearn: true,
-
-  // Configure sub-sections — essential settings on, plugins off
-  showSetupWizard: true, showSettings: true, showPolicies: false, showIntegrations: false,
-  showMemory: false, showClearMemory: false, showSkillsManagement: false, showSessionWizard: false, showWorkspaces: false,
-  showTeamHub: false, showScheduler: false,
-
-  // Work page features — all off by default
-  showComposer: false, showSubAgents: false, showTemplates: false, showKnowledgeBase: false, showVoice: false,
-
-  // Session features — all off by default
-  showUseContext: false, showAgentSelection: false, showCostTracking: false, showComplianceLogs: false,
-
-  // Settings features — all off by default
-  showDataManagement: false, showBudgetLimits: false, showPlugins: false, showEnvVars: false, showWebhooks: false,
-
-  // Experimental features — all off by default
-  enableExperimentalFeatures: false, showPrScores: false, prScoresAiReview: false,
-  showEfficiencyCoach: false, showBackstageExplorer: false,
-
-  // SDK adapters — on by default during phase 2/3 rollout.
-  enableClaudeSdk: true, enableCopilotSdk: true,
-}
+// Defaults come from features.json via the build-time generated module so the
+// renderer and main process can never drift out of sync.
+const DEFAULTS: FeatureFlags = { ...BUILD_FLAGS }
 
 // ── Context ──────────────────────────────────────────────────────────────────
 

@@ -1,5 +1,10 @@
 import { useFeatureFlags, type FeatureFlags } from '../../contexts/FeatureFlagContext'
 import { getStageInfo } from '../../lib/progressiveDisclosure'
+import { BUILD_FLAGS, EXPERIMENTAL_FLAG_KEYS } from '../../../../shared/featureFlags.generated'
+
+const COMPILED_OUT: ReadonlySet<keyof FeatureFlags> = new Set(
+  EXPERIMENTAL_FLAG_KEYS.filter((k) => !BUILD_FLAGS[k]),
+)
 
 // ── Flag groups for organized display ────────────────────────────────────────
 
@@ -76,6 +81,8 @@ const FLAG_GROUPS: FlagGroup[] = [
       { key: 'enableExperimentalFeatures', label: 'Experimental Features', description: 'Master toggle for all experimental features' },
       { key: 'showPrScores', label: 'PR Scores', description: 'Pull request scoring and analytics (requires GitHub integration)' },
       { key: 'prScoresAiReview', label: 'PR Scores AI Review', description: 'Enable AI-powered PR code review via connected CLI' },
+      { key: 'showEfficiencyCoach', label: 'Efficiency Coach', description: 'Cost and efficiency insights extension surface.' },
+      { key: 'showBackstageExplorer', label: 'Backstage Explorer', description: 'Backstage entity browser experimental page.' },
     ],
   },
   {
@@ -167,26 +174,36 @@ export default function FeatureFlagSettings(): JSX.Element {
           <div key={group.label}>
             <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">{group.label}</h3>
             <div className="bg-white border border-gray-200 rounded-xl divide-y divide-gray-100">
-              {group.flags.map(({ key, label, description }) => (
+              {group.flags.map(({ key, label, description }) => {
+                const compiledOut = COMPILED_OUT.has(key)
+                return (
                 <div key={key} className="flex items-center justify-between px-4 py-2.5">
                   <div>
-                    <span className="text-sm text-gray-800">{label}</span>
-                    <p className="text-[10px] text-gray-400">{description}</p>
+                    <span className={`text-sm ${compiledOut ? 'text-gray-400' : 'text-gray-800'}`}>{label}</span>
+                    <p className="text-[10px] text-gray-400">
+                      {description}
+                      {compiledOut && (
+                        <span className="ml-1 italic">— not included in this build</span>
+                      )}
+                    </p>
                   </div>
                   <button
-                    onClick={() => setFlag(key, !flags[key])}
+                    onClick={() => { if (!compiledOut) setFlag(key, !flags[key]) }}
+                    disabled={compiledOut}
                     className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                      flags[key] ? 'bg-indigo-600' : 'bg-gray-300'
+                      compiledOut ? 'bg-gray-200 cursor-not-allowed' : flags[key] ? 'bg-indigo-600' : 'bg-gray-300'
                     }`}
                     role="switch"
                     aria-checked={flags[key]}
+                    aria-disabled={compiledOut}
                     aria-label={`Toggle ${label}`}>
                     <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
                       flags[key] ? 'translate-x-4' : 'translate-x-0.5'
                     }`} />
                   </button>
                 </div>
-              ))}
+                )
+              })}
             </div>
           </div>
         ))}
