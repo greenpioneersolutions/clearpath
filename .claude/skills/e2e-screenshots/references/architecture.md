@@ -4,27 +4,23 @@
 
 | File | Role |
 |---|---|
-| `e2e/helpers/screenshots.ts` | Core utilities — path resolution, `captureScreenshot`, `captureFailureScreenshot` |
+| `e2e/helpers/screenshots.ts` | `captureScreenshot` for ad-hoc spec captures + `captureFailureScreenshot` for the wdio-runner failure hook |
 | `e2e/screenshot-crawl.spec.ts` | Data-driven crawl spec — data tables + describe blocks |
 | `wdio.screenshots.conf.ts` | Dedicated wdio runner config for the crawl (separate from `wdio.conf.ts`) |
-| `wdio.conf.ts` | Main functional test config — excludes crawl spec, has `afterEach` failure hook |
+| `wdio.conf.ts` | Main functional test config — excludes crawl spec, has `afterTest` failure hook |
 | `.gitattributes` | LFS rule: `e2e/screenshots/**/*.png filter=lfs diff=lfs merge=lfs -text` |
-| `.gitignore` | Ignores `actual/`, `failures/`, `diff/` — only `baseline/` is committed |
+| `.gitignore` | Ignores `e2e/screenshots/{actual,failures,diff}/` and `.tmp/visual/` — only `e2e/screenshots/baseline/` is committed |
 
 ## `e2e/helpers/screenshots.ts` — key exports
 
 ```typescript
-// Resolved from SCREENSHOT_DIR env var, defaults to e2e/screenshots/baseline
-export const SCREENSHOT_DIR: string
-
-// Sanitize name → lowercase hyphens, mkdirSync, return .png path
-export function resolveScreenshotPath(name: string): string
-
-// browser.saveScreenshot(path) + console.log("[screenshot] Saved: ...")
-export async function captureScreenshot(name: string): Promise<string>
+// Save a named screenshot under `.tmp/visual/captures/{tag}.png` (override
+// with the SCREENSHOT_DIR env var). Tags may include `/` for subdirectories;
+// parent dirs are created on demand. Errors are logged, not thrown.
+export async function captureScreenshot(tag: string): Promise<void>
 
 // Best-effort: saves to e2e/screenshots/failures/{timestamp}--{title}.png
-// Never throws — wraps everything in try/catch
+// Never throws — wraps everything in try/catch.
 export async function captureFailureScreenshot(testTitle: string): Promise<void>
 ```
 
@@ -47,12 +43,14 @@ exclude: [
   './e2e/screenshot-crawl.spec.ts',  // ← run via npm run e2e:screenshots / e2e:screenshots:compare instead
 ]
 
-// Capture failure screenshot for any failing functional test
-afterEach: async function (test, _ctx, result) {
-  if (result && !result.passed) {
-    const { captureFailureScreenshot } = await import('./e2e/helpers/screenshots.js')
-    await captureFailureScreenshot(test.title ?? 'unknown-test')
-  }
+// Capture failure screenshot for any failing functional test.
+// `afterTest` is the WebdriverIO per-test runner hook (NOT `afterEach`,
+// which is reserved for the Mocha spec-level hook and is silently ignored
+// if put in the wdio runner config).
+afterTest: async function (test, _context, { passed }) {
+  if (passed) return
+  const { captureFailureScreenshot } = await import('./e2e/helpers/screenshots.js')
+  await captureFailureScreenshot(test.title ?? 'unknown-test')
 }
 ```
 

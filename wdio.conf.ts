@@ -9,7 +9,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 // the wdio runner always gets a real Electron window regardless of how it is invoked.
 delete process.env.ELECTRON_RUN_AS_NODE
 
-// Screenshot capture: afterEach saves failure screenshots to e2e/screenshots/failures/
+// Screenshot capture: afterTest saves failure screenshots to e2e/screenshots/failures/
 // Full visual crawl: npm run e2e:screenshots (compare mode; CI parity)
 // Force-overwrite all baselines: npm run e2e:screenshots:update
 
@@ -59,15 +59,18 @@ export const config: Options.Testrunner = {
     timeout: 60000,
   },
 
-  afterEach: async function (test, _ctx, result) {
-    // Capture screenshot on test failure for debugging
-    if (result && !result.passed) {
-      try {
-        const { captureFailureScreenshot } = await import('./e2e/helpers/screenshots.js')
-        await captureFailureScreenshot(test.title ?? 'unknown-test')
-      } catch {
-        // Best-effort — don't fail the test over a screenshot error
-      }
+  /**
+   * Per-test failure screenshot. WebdriverIO's per-test runner hook is
+   * `afterTest` (not `afterEach` — that name is reserved for the Mocha
+   * spec-level hook and would be silently ignored if put here).
+   */
+  afterTest: async function (test, _context, { passed }) {
+    if (passed) return
+    try {
+      const { captureFailureScreenshot } = await import('./e2e/helpers/screenshots.js')
+      await captureFailureScreenshot(test.title ?? 'unknown-test')
+    } catch {
+      // Best-effort — don't fail the test over a screenshot error
     }
   },
 

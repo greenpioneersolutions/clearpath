@@ -331,8 +331,10 @@ async function waitForLoadingToSettle(timeout = 3000): Promise<void> {
       async () => {
         const body = await $('body')
         const html = await body.getHTML()
-        // Match common loading patterns: "Loading...", "Loading setup wizard..."
-        return !html.match(/Loading\s+(setup|data|wizard|content)?\.{3}/i)
+        // Match common loading patterns: "Loading...", "Loading setup...", "Loading data..."
+        // The `\s+...` qualifier was previously mandatory, which meant the bare
+        // "Loading..." string never matched and the helper exited prematurely.
+        return !html.match(/Loading(?:\s+(?:setup|data|wizard|content))?\.{3}/i)
       },
       { timeout, interval: 200 },
     )

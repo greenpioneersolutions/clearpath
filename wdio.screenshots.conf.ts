@@ -91,6 +91,14 @@ export const config: Options.Testrunner = {
         // Save actual screenshots on every run (even when they match) so CI
         // artifacts always contain the full set for manual inspection.
         alwaysSaveActualImage: true,
+        // ── Stability flags ────────────────────────────────────────────────
+        // These reduce non-determinism that would otherwise produce noisy
+        // pixel diffs (and trigger spurious baseline-update commits via the
+        // CI promote step). They run inside the renderer right before each
+        // capture and are reset on the next page load.
+        disableCSSAnimation: true,
+        disableBlinkingCursor: true,
+        hideScrollBars: true,
         // Ignore sub-pixel anti-aliasing differences that occur when comparing
         // macOS (CoreText) vs Linux (FreeType) font rendering. Real layout and
         // colour regressions still register as clearly distinct mismatch.

@@ -3,13 +3,19 @@
     "target": "ESNext",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
-    "lib": ["ESNext"],
+    "lib": ["ESNext", "DOM"],
     "strict": true,
     "esModuleInterop": true,
     "resolveJsonModule": true,
     "outDir": "out/e2e",
     "baseUrl": ".",
-    "types": ["@wdio/globals/types", "@wdio/visual-service", "node", "mocha"],
+    "types": [
+      "@wdio/globals/types",
+      "@wdio/visual-service",
+      "wdio-electron-service",
+      "node",
+      "mocha"
+    ],
     "skipLibCheck": true
   },
   "include": ["e2e/**/*.ts", "wdio.conf.ts", "wdio.screenshots.conf.ts"],

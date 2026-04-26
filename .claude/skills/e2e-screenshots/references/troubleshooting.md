@@ -69,10 +69,12 @@ ls -la e2e/screenshots/
 
 - name: Start virtual display
   run: |
-    Xvfb :99 -screen 0 1280x800x24 &
+    Xvfb :99 -screen 0 1440x900x24 &
     echo "DISPLAY=:99" >> $GITHUB_ENV
     sleep 2
 ```
+
+The exact Xvfb screen size doesn't have to match the crawl viewport — `wdio.screenshots.conf.ts` pins the BrowserWindow content area to `1280×800` via `setContentSize` regardless of host display.
 
 ---
 
@@ -99,11 +101,15 @@ git commit -m "chore: remove stale screenshot baseline"
 
 ## Tests pass but no screenshots are written
 
-**Cause:** `SCREENSHOT_DIR` env var is missing or resolves to an unexpected path.
+**Cause:** You're checking the wrong output location. The screenshot crawl uses `@wdio/visual-service`, which writes actuals to `.tmp/visual/actual/{tag}.png` and diffs to `.tmp/visual/diff/{tag}.png`. Baseline images live under the configured `baselineFolder` (`e2e/screenshots/baseline/`), not under any `SCREENSHOT_DIR` env var.
 
 **Check:**
 ```bash
-echo $SCREENSHOT_DIR
-# Should be set by the npm script; if running npx directly, set it:
-SCREENSHOT_DIR=e2e/screenshots/baseline npx wdio run wdio.screenshots.conf.ts
+ls -R .tmp/visual
+# Re-run the crawl with the dedicated config:
+npx wdio run wdio.screenshots.conf.ts
+
+# `captureScreenshot()` (helpers/screenshots.ts) writes to .tmp/visual/captures/
+# by default — override with SCREENSHOT_DIR if you need to write elsewhere.
+SCREENSHOT_DIR=e2e/screenshots/baseline npx wdio run wdio.conf.ts
 ```
