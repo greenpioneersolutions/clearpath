@@ -45,15 +45,18 @@ jobs:
   # Always runs after the main test job (on every push and PR).
   #
   # Policy: this job *captures* visual changes; it does NOT gate the CI on
-  # pixel mismatches. wdio is invoked with --update-visual-baseline so every
-  # baseline is overwritten with the current actual screenshot, and the
-  # downstream commit step pushes those updates back as a separate
-  # "Auto-update screenshot baselines" commit. Reviewers see the visual
-  # changes as PR diffs (LFS pointer hash changes) without the test failing.
+  # pixel mismatches. The crawl runs in compare mode (no
+  # --update-visual-baseline), and the spec doesn't assert on mismatch %.
+  # The visual service writes a diff PNG to .tmp/visual/diff/{tag}.png ONLY
+  # for tags that changed beyond `ignoreAntialiasing`; the post-step then
+  # promotes the matching actual to the baseline for those tags only.
+  # Tags with identical pixels leave their baseline files untouched, so an
+  # unrelated commit (e.g. CLAUDE.md, package.json) doesn't churn baselines
+  # via PNG re-encoder non-determinism.
   #
   # Real failures still bubble up: navigation timeouts, missing elements,
   # JS errors during the crawl, and app-load failures all surface as job
-  # errors here. Only the pixel-mismatch comparison was removed.
+  # errors here.
   #
   # Requires the repo to allow Actions to create commits:
   #   Settings → Actions → Workflow permissions → "Read and write permissions"
@@ -96,23 +99,57 @@ jobs:
           sleep 2
 
       - name: Run screenshot crawl
-        # Always run with --update-visual-baseline. This captures the current
-        # state of every page/tab as the new baseline; the next "Commit new
-        # baselines" step pushes those updates back so reviewers see what
-        # changed in the PR diff. Real test failures (navigation timeouts,
-        # missing elements, app crashes) still fail this step and stop CI.
-        run: npx wdio run wdio.screenshots.conf.ts --update-visual-baseline
+        # Compare mode (no --update-visual-baseline). The spec doesn't assert
+        # on mismatch %, so a mismatch only produces .tmp/visual/diff/{tag}.png
+        # plus .tmp/visual/actual/{tag}.png — the test passes either way.
+        # autoSaveBaseline:true in wdio.screenshots.conf.ts still creates a
+        # baseline on first run for newly-added tags. Real failures
+        # (navigation timeouts, missing elements, app crashes) still fail
+        # this step and stop CI.
+        run: npx wdio run wdio.screenshots.conf.ts
         env:
           DISPLAY: ':99'
+
+      - name: Promote actuals to baselines for changed tags
+        # Update baselines only for tags the visual service flagged as
+        # different (a diff PNG was written). Tags whose pixels match leave
+        # their baselines untouched — this prevents PNG re-encode noise
+        # (4-byte metadata diffs from identical pixels) from churning
+        # baselines on unrelated commits.
+        run: |
+          set -e
+          diff_dir=".tmp/visual/diff"
+          actual_dir=".tmp/visual/actual"
+          baseline_dir="e2e/screenshots/baseline"
+          if [ ! -d "$diff_dir" ]; then
+            echo "No diff directory at $diff_dir — nothing to promote."
+            exit 0
+          fi
+          shopt -s nullglob
+          promoted=0
+          for diff in "$diff_dir"/*.png; do
+            tag="$(basename "$diff" .png)"
+            actual="$actual_dir/$tag.png"
+            baseline="$baseline_dir/$tag.png"
+            if [ -f "$actual" ]; then
+              cp "$actual" "$baseline"
+              echo "promoted: $tag"
+              promoted=$((promoted + 1))
+            else
+              echo "warn: actual missing for $tag (diff present)" >&2
+            fi
+          done
+          echo "promoted $promoted baseline(s) from changed actuals"
 
       - name: Commit updated baselines
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add e2e/screenshots/baseline/
-          # Commit only when something actually changed. With --update-visual-baseline
-          # a baseline only diffs if the captured pixels differ from the previous
-          # baseline, so this commit is skipped when nothing visual changed.
+          # Commit only when a baseline was actually promoted. Tags that the
+          # visual service judged unchanged (within ignoreAntialiasing) leave
+          # their baselines untouched, so this commit is skipped on unrelated
+          # commits like docs/config-only changes.
           git diff --staged --quiet || git commit -m "Auto-update screenshot baselines [skip ci]"
           # --force-with-lease is safer than --force — it only overwrites if the
           # remote ref matches what we fetched at checkout, protecting against
