@@ -5,6 +5,7 @@
   "description": "ClearPathAI — Desktop control tower for AI coding agents",
   "main": "out/main/index.js",
   "scripts": {
+    "===test-ci-1===": "command to just trigger CI changes - 1"
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
