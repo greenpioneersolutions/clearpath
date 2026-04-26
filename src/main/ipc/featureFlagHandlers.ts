@@ -6,6 +6,7 @@ import {
   BUILD_FLAGS,
   EXPERIMENTAL_FLAG_KEYS,
   type FeatureFlags,
+  type FeatureFlagKey,
 } from '../../shared/featureFlags.generated'
 
 // ── Flag-change event bus ────────────────────────────────────────────────────
@@ -16,7 +17,7 @@ import {
 export const featureFlagEvents = new EventEmitter()
 
 export interface FlagChangeEvent {
-  key: string
+  key: FeatureFlagKey
   value: boolean
   flags: FeatureFlags
 }
@@ -240,12 +241,14 @@ export function registerFeatureFlagHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('feature-flags:set', (_e, args: Partial<FeatureFlags>) => {
     const previous = resolveFlags()
     const current = store.get('flags')
-    // Drop attempts to enable experimental flags whose code is compiled out of
-    // this build — the override would be silently clamped on the next read,
-    // and saving it would just leak across re-builds.
+    // Drop overrides for experimental flags whose code is compiled out of this
+    // build. Deleting the key (instead of writing an explicit `false`) avoids
+    // a stale override leaking forward: if the flag later becomes compiled-in
+    // and default-on, a persisted `false` from this session would silently
+    // override the new default.
     const sanitized: Partial<FeatureFlags> = { ...args }
     for (const key of EXPERIMENTAL_FLAG_KEYS) {
-      if (!BUILD_FLAGS[key] && sanitized[key]) sanitized[key] = false
+      if (!BUILD_FLAGS[key]) delete sanitized[key]
     }
     store.set('flags', { ...current, ...sanitized })
     store.set('activePresetId', null) // Custom override = no preset
