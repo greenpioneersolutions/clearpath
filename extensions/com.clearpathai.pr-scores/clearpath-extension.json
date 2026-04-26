@@ -54,7 +54,8 @@
         "path": "/pr-scores",
         "label": "PR Scores",
         "icon": "chart-bar-square",
-        "position": "after:insights"
+        "position": "after:insights",
+        "featureGate": ["showPrScores"]
       }
     ],
     "featureFlags": [

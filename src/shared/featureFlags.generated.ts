@@ -18,11 +18,13 @@ export type FeatureFlagKey =
   | 'showDataManagement'
   | 'showEfficiencyCoach'
   | 'showEnvVars'
+  | 'showExtensions'
   | 'showHomeHub'
   | 'showInsights'
   | 'showIntegrations'
   | 'showKnowledgeBase'
   | 'showLearn'
+  | 'showMcpServers'
   | 'showMemory'
   | 'showPlugins'
   | 'showPolicies'
@@ -58,11 +60,13 @@ export type FeatureFlags = {
   showDataManagement: boolean;
   showEfficiencyCoach: boolean;
   showEnvVars: boolean;
+  showExtensions: boolean;
   showHomeHub: boolean;
   showInsights: boolean;
   showIntegrations: boolean;
   showKnowledgeBase: boolean;
   showLearn: boolean;
+  showMcpServers: boolean;
   showMemory: boolean;
   showPlugins: boolean;
   showPolicies: boolean;
@@ -110,11 +114,13 @@ export const BUILD_FLAGS: Readonly<FeatureFlags> = Object.freeze({
   showDataManagement: false,
   showEfficiencyCoach: false,
   showEnvVars: false,
+  showExtensions: false,
   showHomeHub: true,
   showInsights: true,
   showIntegrations: false,
   showKnowledgeBase: false,
   showLearn: true,
+  showMcpServers: false,
   showMemory: false,
   showPlugins: false,
   showPolicies: false,
@@ -134,6 +140,16 @@ export const BUILD_FLAGS: Readonly<FeatureFlags> = Object.freeze({
   showWorkspaces: false,
 });
 
+/**
+ * When true, the runtime layer must treat BUILD_FLAGS as the absolute
+ * floor *and* ceiling: stored overrides are ignored, presets are
+ * inert, the Settings → Feature Flags page hides off-by-default flags
+ * entirely. Set CLEARPATH_FLAGS_LOCKED=1 at generation/build time to
+ * turn this on (used by the dev:preview / preview:locked scripts to
+ * simulate an end-user with the features.json defaults frozen).
+ */
+export const BUILD_FLAGS_LOCKED = false as const;
+
 export const FEATURE_FLAG_META: Readonly<Record<FeatureFlagKey, FeatureFlagMetadata>> = Object.freeze({
   enableClaudeSdk: { experimental: false, enabled: true, addedIn: "1.8.0" },
   enableCopilotSdk: { experimental: false, enabled: true, addedIn: "1.8.0" },
@@ -151,11 +167,13 @@ export const FEATURE_FLAG_META: Readonly<Record<FeatureFlagKey, FeatureFlagMetad
   showDataManagement: { experimental: false, enabled: false, addedIn: "1.0.0" },
   showEfficiencyCoach: { experimental: true, enabled: false, addedIn: "1.6.0" },
   showEnvVars: { experimental: false, enabled: false, addedIn: "1.0.0" },
+  showExtensions: { experimental: true, enabled: false, addedIn: "1.9.0" },
   showHomeHub: { experimental: false, enabled: true, addedIn: "1.0.0" },
   showInsights: { experimental: false, enabled: true, addedIn: "1.0.0" },
   showIntegrations: { experimental: false, enabled: false, addedIn: "1.0.0" },
   showKnowledgeBase: { experimental: false, enabled: false, addedIn: "1.0.0" },
   showLearn: { experimental: false, enabled: true, addedIn: "1.0.0" },
+  showMcpServers: { experimental: true, enabled: false, addedIn: "1.9.0" },
   showMemory: { experimental: false, enabled: false, addedIn: "1.0.0" },
   showPlugins: { experimental: false, enabled: false, addedIn: "1.0.0" },
   showPolicies: { experimental: false, enabled: false, addedIn: "1.0.0" },
@@ -181,6 +199,8 @@ export const EXPERIMENTAL_FLAG_KEYS: readonly FeatureFlagKey[] = Object.freeze([
   'showBackstageExplorer',
   'showClearMemory',
   'showEfficiencyCoach',
+  'showExtensions',
+  'showMcpServers',
   'showPrScores',
 ]);
 
@@ -201,11 +221,13 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = Object.freeze([
   'showDataManagement',
   'showEfficiencyCoach',
   'showEnvVars',
+  'showExtensions',
   'showHomeHub',
   'showInsights',
   'showIntegrations',
   'showKnowledgeBase',
   'showLearn',
+  'showMcpServers',
   'showMemory',
   'showPlugins',
   'showPolicies',

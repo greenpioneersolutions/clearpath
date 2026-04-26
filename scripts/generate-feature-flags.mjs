@@ -43,6 +43,9 @@ function buildSource(features) {
   const expEnv =
     process.env.CLEARPATH_E2E_EXPERIMENTAL === '1' ||
     process.env.CLEARPATH_E2E_EXPERIMENTAL === 'true'
+  const lockedEnv =
+    process.env.CLEARPATH_FLAGS_LOCKED === '1' ||
+    process.env.CLEARPATH_FLAGS_LOCKED === 'true'
 
   const flagLines = keys.map((k) => {
     const def = features.flags[k]
@@ -94,6 +97,16 @@ export interface FeatureFlagMetadata {
 export const BUILD_FLAGS: Readonly<FeatureFlags> = Object.freeze({
 ${flagLines.join('\n')}
 });
+
+/**
+ * When true, the runtime layer must treat BUILD_FLAGS as the absolute
+ * floor *and* ceiling: stored overrides are ignored, presets are
+ * inert, the Settings → Feature Flags page hides off-by-default flags
+ * entirely. Set CLEARPATH_FLAGS_LOCKED=1 at generation/build time to
+ * turn this on (used by the dev:preview / preview:locked scripts to
+ * simulate an end-user with the features.json defaults frozen).
+ */
+export const BUILD_FLAGS_LOCKED = ${lockedEnv ? 'true' : 'false'} as const;
 
 export const FEATURE_FLAG_META: Readonly<Record<FeatureFlagKey, FeatureFlagMetadata>> = Object.freeze({
 ${meta.join('\n')}

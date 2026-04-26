@@ -1,11 +1,24 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { lazy, Suspense, useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useFeatureFlags } from '../contexts/FeatureFlagContext'
 import IntegrationsTab from '../components/integrations/IntegrationsTab'
-import ExtensionManager from '../components/extensions/ExtensionManager'
-import McpTab from '../components/mcp/McpTab'
 import EnvVarsTab from '../components/settings/EnvVarsTab'
 import PluginsManagement from './PluginsManagement'
 import WebhookManager from '../components/notifications/WebhookManager'
+
+// Build-time-gated lazy imports. Each conditional is statically replaced by
+// Vite (see `__FEATURES__` define in electron.vite.config.ts), so when a flag
+// is compiled out the expression becomes `false ? lazy(...) : null` and
+// Rollup drops the dynamic `import()` along with every transitive chunk
+// it would have emitted. Already-installed extensions continue to render in
+// the /ext/:id/* route via ExtensionPage — only the management UI is gated.
+declare const __FEATURES__: import('../../../shared/featureFlags.generated').FeatureFlags
+const McpTab = __FEATURES__.showMcpServers
+  ? lazy(() => import('../components/mcp/McpTab'))
+  : null
+const ExtensionManager = __FEATURES__.showExtensions
+  ? lazy(() => import('../components/extensions/ExtensionManager'))
+  : null
 
 type SubTab = 'integrations' | 'extensions' | 'mcp' | 'environment' | 'plugins' | 'webhooks'
 
@@ -19,6 +32,7 @@ const SUB_TABS: { key: SubTab; label: string; description: string }[] = [
 ]
 
 export default function Connect(): JSX.Element {
+  const { flags } = useFeatureFlags()
   const [tab, setTab] = useState<SubTab>('integrations')
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -27,10 +41,32 @@ export default function Connect(): JSX.Element {
   const [showRestartModal, setShowRestartModal] = useState(false)
   const pendingTabRef = useRef<SubTab | null>(null)
 
+  // Hide tabs whose feature flag is off. `clampToCompiledIn` keeps these
+  // flags false in builds where the chunk was tree-shaken, so this single
+  // check covers both compile-out and runtime-off cases.
+  const isTabVisible = useCallback(
+    (key: SubTab) => {
+      if (key === 'mcp') return flags.showMcpServers
+      if (key === 'extensions') return flags.showExtensions
+      return true
+    },
+    [flags.showMcpServers, flags.showExtensions],
+  )
+  const visibleTabs = SUB_TABS.filter((t) => isTabVisible(t.key))
+
   useEffect(() => {
     const urlTab = searchParams.get('tab') as SubTab | null
-    if (urlTab && SUB_TABS.some(t => t.key === urlTab)) setTab(urlTab)
-  }, [searchParams])
+    if (!urlTab) return
+    if (SUB_TABS.some((t) => t.key === urlTab) && isTabVisible(urlTab)) {
+      setTab(urlTab)
+    } else if (urlTab === 'mcp' || urlTab === 'extensions') {
+      // /connections still redirects here with ?tab=mcp; deep links to
+      // ?tab=extensions exist in the wild too. Fall back to integrations
+      // when the requested tab is gated off in this build.
+      setTab('integrations')
+      setSearchParams({ tab: 'integrations' }, { replace: true })
+    }
+  }, [searchParams, isTabVisible, setSearchParams])
 
   const handlePendingRestartChange = useCallback((pending: boolean) => {
     setExtensionPendingRestart(pending)
@@ -108,7 +144,7 @@ export default function Connect(): JSX.Element {
         </div>
 
         <div className="flex gap-1 mt-4 bg-gray-800 rounded-lg p-1 w-fit" role="tablist" aria-label="Connect sections">
-          {SUB_TABS.map((t) => (
+          {visibleTabs.map((t) => (
             <button
               key={t.key}
               onClick={() => handleTabChange(t.key)}
@@ -130,10 +166,16 @@ export default function Connect(): JSX.Element {
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-6" role="tabpanel" aria-labelledby={`connect-tab-${tab}`}>
         {tab === 'integrations' && <IntegrationsTab />}
-        {tab === 'extensions' && (
-          <ExtensionManager onPendingRestartChange={handlePendingRestartChange} />
+        {tab === 'extensions' && ExtensionManager && (
+          <Suspense fallback={null}>
+            <ExtensionManager onPendingRestartChange={handlePendingRestartChange} />
+          </Suspense>
         )}
-        {tab === 'mcp' && <McpTab />}
+        {tab === 'mcp' && McpTab && (
+          <Suspense fallback={null}>
+            <McpTab />
+          </Suspense>
+        )}
         {tab === 'environment' && <EnvVarsTab />}
         {tab === 'plugins' && <PluginsManagement />}
         {tab === 'webhooks' && <WebhookManager />}

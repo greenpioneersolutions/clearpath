@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react'
 import { getProgressionStage, getStageFlagOverrides, type ProgressionStage } from '../lib/progressiveDisclosure'
-import { BUILD_FLAGS, type FeatureFlags } from '../../../shared/featureFlags.generated'
+import { BUILD_FLAGS, BUILD_FLAGS_LOCKED, type FeatureFlags } from '../../../shared/featureFlags.generated'
 
 // Re-export so existing call sites that did `import { FeatureFlags } from
 // '../contexts/FeatureFlagContext'` continue to compile. The single source of
@@ -25,6 +25,12 @@ interface FlagContextValue {
   progressionStage: ProgressionStage | null
   /** Number of sessions used to compute the progression stage. */
   sessionCount: number
+  /**
+   * True when the build was produced with CLEARPATH_FLAGS_LOCKED=1.
+   * In that mode the runtime ignores stored overrides and the Settings →
+   * Feature Flags page renders read-only with off-by-default flags hidden.
+   */
+  locked: boolean
 }
 
 // Defaults come from features.json via the build-time generated module so the
@@ -43,6 +49,7 @@ const FlagContext = createContext<FlagContextValue>({
   loading: true,
   progressionStage: null,
   sessionCount: 0,
+  locked: BUILD_FLAGS_LOCKED,
 })
 
 export function useFeatureFlags(): FlagContextValue {
@@ -58,12 +65,15 @@ export function useFlag(key: keyof FeatureFlags): boolean {
 
 export function FeatureFlagProvider({ children }: { children: ReactNode }): JSX.Element {
   const [storedFlags, setStoredFlags] = useState<FeatureFlags>(DEFAULTS)
-  const [activePresetId, setActivePresetId] = useState<string | null>('all-on')
+  const [activePresetId, setActivePresetId] = useState<string | null>(BUILD_FLAGS_LOCKED ? null : 'all-on')
   const [presets, setPresets] = useState<FlagPreset[]>([])
-  const [loading, setLoading] = useState(true)
+  // Locked builds need no async load — BUILD_FLAGS is the single source of
+  // truth and there are no overrides or presets to fetch.
+  const [loading, setLoading] = useState(!BUILD_FLAGS_LOCKED)
   const [sessionCount, setSessionCount] = useState(0)
 
   const load = useCallback(async () => {
+    if (BUILD_FLAGS_LOCKED) return
     try {
       const [result, presetList, sessions] = await Promise.all([
         window.electronAPI.invoke('feature-flags:get') as Promise<{ flags: FeatureFlags; activePresetId: string | null }>,
@@ -83,12 +93,14 @@ export function FeatureFlagProvider({ children }: { children: ReactNode }): JSX.
   useEffect(() => { void load() }, [load])
 
   const setFlag = useCallback((key: keyof FeatureFlags, value: boolean) => {
+    if (BUILD_FLAGS_LOCKED) return // Locked: setter is inert
     setStoredFlags((prev) => ({ ...prev, [key]: value }))
     setActivePresetId(null)
     void window.electronAPI.invoke('feature-flags:set', { [key]: value })
   }, [])
 
   const applyPreset = useCallback((presetId: string) => {
+    if (BUILD_FLAGS_LOCKED) return
     void (async () => {
       const result = await window.electronAPI.invoke('feature-flags:apply-preset', { presetId }) as FeatureFlags
       setStoredFlags(result)
@@ -97,6 +109,7 @@ export function FeatureFlagProvider({ children }: { children: ReactNode }): JSX.
   }, [])
 
   const resetFlags = useCallback(() => {
+    if (BUILD_FLAGS_LOCKED) return
     void (async () => {
       const result = await window.electronAPI.invoke('feature-flags:reset') as FeatureFlags
       setStoredFlags(result)
@@ -105,14 +118,17 @@ export function FeatureFlagProvider({ children }: { children: ReactNode }): JSX.
   }, [])
 
   // Progressive disclosure: when 'progressive' preset is active, derive flags from session count.
-  // Otherwise stored flags are used as-is.
-  const progressionStage = activePresetId === 'progressive' ? getProgressionStage(sessionCount) : null
+  // Otherwise stored flags are used as-is. Locked builds bypass both.
+  const progressionStage =
+    !BUILD_FLAGS_LOCKED && activePresetId === 'progressive'
+      ? getProgressionStage(sessionCount)
+      : null
   const flags = progressionStage
     ? { ...storedFlags, ...getStageFlagOverrides(progressionStage) }
     : storedFlags
 
   return (
-    <FlagContext.Provider value={{ flags, activePresetId, presets, setFlag, applyPreset, resetFlags, loading, progressionStage, sessionCount }}>
+    <FlagContext.Provider value={{ flags, activePresetId, presets, setFlag, applyPreset, resetFlags, loading, progressionStage, sessionCount, locked: BUILD_FLAGS_LOCKED }}>
       {children}
     </FlagContext.Provider>
   )

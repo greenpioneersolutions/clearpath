@@ -151,7 +151,7 @@
     },
     "showCostTracking": {
       "description": "Per-turn cost estimates and badges.",
-      "experimental": false,
+      "experimental": true,
       "enabled": false,
       "addedIn": "1.0.0"
     },
@@ -216,6 +216,18 @@
       "experimental": true,
       "enabled": false,
       "addedIn": "1.6.0"
+    },
+    "showMcpServers": {
+      "description": "MCP Servers tab on the Connect page (catalog, registry, secrets, sync).",
+      "experimental": true,
+      "enabled": false,
+      "addedIn": "1.9.0"
+    },
+    "showExtensions": {
+      "description": "Extensions tab on the Connect page (install / enable / manage extensions). Already-installed extensions continue to run regardless.",
+      "experimental": true,
+      "enabled": false,
+      "addedIn": "1.9.0"
     },
     "showBackstageExplorer": {
       "description": "Backstage entity explorer page.",
