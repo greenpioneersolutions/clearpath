@@ -84,6 +84,7 @@ const FLAG_GROUPS: FlagGroup[] = [
       { key: 'showEfficiencyCoach', label: 'Efficiency Coach', description: 'Cost and efficiency insights extension surface.' },
       { key: 'showBackstageExplorer', label: 'Backstage Explorer', description: 'Backstage entity browser experimental page.' },
       { key: 'showMcpServers', label: 'MCP Servers', description: 'MCP server catalog, registry, secrets, and sync (under Connect).' },
+      { key: 'showExtensions', label: 'Extensions Manager', description: 'Install / enable / manage extensions (under Connect). Already-installed extensions still load when this is off.' },
     ],
   },
   {

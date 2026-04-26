@@ -223,6 +223,12 @@
       "enabled": false,
       "addedIn": "1.9.0"
     },
+    "showExtensions": {
+      "description": "Extensions tab on the Connect page (install / enable / manage extensions). Already-installed extensions continue to run regardless.",
+      "experimental": true,
+      "enabled": false,
+      "addedIn": "1.9.0"
+    },
     "showBackstageExplorer": {
       "description": "Backstage entity explorer page.",
       "experimental": true,

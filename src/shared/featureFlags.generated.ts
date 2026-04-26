@@ -18,6 +18,7 @@ export type FeatureFlagKey =
   | 'showDataManagement'
   | 'showEfficiencyCoach'
   | 'showEnvVars'
+  | 'showExtensions'
   | 'showHomeHub'
   | 'showInsights'
   | 'showIntegrations'
@@ -59,6 +60,7 @@ export type FeatureFlags = {
   showDataManagement: boolean;
   showEfficiencyCoach: boolean;
   showEnvVars: boolean;
+  showExtensions: boolean;
   showHomeHub: boolean;
   showInsights: boolean;
   showIntegrations: boolean;
@@ -112,6 +114,7 @@ export const BUILD_FLAGS: Readonly<FeatureFlags> = Object.freeze({
   showDataManagement: false,
   showEfficiencyCoach: false,
   showEnvVars: false,
+  showExtensions: false,
   showHomeHub: true,
   showInsights: true,
   showIntegrations: false,
@@ -164,6 +167,7 @@ export const FEATURE_FLAG_META: Readonly<Record<FeatureFlagKey, FeatureFlagMetad
   showDataManagement: { experimental: false, enabled: false, addedIn: "1.0.0" },
   showEfficiencyCoach: { experimental: true, enabled: false, addedIn: "1.6.0" },
   showEnvVars: { experimental: false, enabled: false, addedIn: "1.0.0" },
+  showExtensions: { experimental: true, enabled: false, addedIn: "1.9.0" },
   showHomeHub: { experimental: false, enabled: true, addedIn: "1.0.0" },
   showInsights: { experimental: false, enabled: true, addedIn: "1.0.0" },
   showIntegrations: { experimental: false, enabled: false, addedIn: "1.0.0" },
@@ -195,6 +199,7 @@ export const EXPERIMENTAL_FLAG_KEYS: readonly FeatureFlagKey[] = Object.freeze([
   'showBackstageExplorer',
   'showClearMemory',
   'showEfficiencyCoach',
+  'showExtensions',
   'showMcpServers',
   'showPrScores',
 ]);
@@ -216,6 +221,7 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = Object.freeze([
   'showDataManagement',
   'showEfficiencyCoach',
   'showEnvVars',
+  'showExtensions',
   'showHomeHub',
   'showInsights',
   'showIntegrations',
