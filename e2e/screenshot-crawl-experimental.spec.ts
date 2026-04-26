@@ -73,6 +73,13 @@ describe('ClearPathAI — Experimental Features Screenshot Crawl', () => {
       // loudly rather than silently capturing a blank page.
       const root = await $('#root')
       await root.waitForExist({ timeout: ELEMENT_TIMEOUT })
+      await browser.waitUntil(
+        async () => (await root.getText()).includes(page.marker),
+        {
+          timeout: ELEMENT_TIMEOUT,
+          timeoutMsg: `Expected experimental route "${page.route}" to render marker text "${page.marker}" before screenshot — build likely missing CLEARPATH_E2E_EXPERIMENTAL=1.`,
+        },
+      )
 
       await checkScreenshot(page.screenshot)
     })

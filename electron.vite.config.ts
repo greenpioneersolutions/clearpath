@@ -11,8 +11,12 @@ import { execFileSync } from 'node:child_process'
 // branches from the production bundle.
 //
 // The matching TS module (src/shared/featureFlags.generated.ts) gives the
-// renderer/main code a typed view of the same data via BUILD_FLAGS — which
-// internally reads `__FEATURES__` so the value remains tree-shakeable.
+// renderer/main code a typed view of the same flag data via BUILD_FLAGS.
+// BUILD_FLAGS is a generation-time literal written by
+// scripts/generate-feature-flags.mjs from features.json (+ the same
+// CLEARPATH_E2E_EXPERIMENTAL env var), while `__FEATURES__` is the Vite
+// `define` literal that survives bundling and lets Rollup constant-fold +
+// tree-shake disabled experimental code paths.
 
 interface FeatureDef {
   experimental: boolean

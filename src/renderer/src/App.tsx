@@ -17,10 +17,9 @@ import ExtensionPage from './components/extensions/ExtensionPage'
 // `__FEATURES__` is a Vite `define` literal (see electron.vite.config.ts) so
 // the conditions below are statically replaced at build time. When an
 // experimental flag is compiled out (features.json: experimental:true +
-// enabled:false), the surrounding `if` becomes `if (false) { … }` and Rollup
-// drops the dynamic `import()` along with the page chunk it would have
-// produced. Verified by grepping the production bundle for unique strings
-// from each page (see tests in features.spec.ts).
+// enabled:false), the conditional becomes `false ? lazy(...) : null` and
+// Rollup drops the dynamic `import()` along with the page chunk it would
+// have produced.
 declare const __FEATURES__: import('../../shared/featureFlags.generated').FeatureFlags
 
 const PrScores: ComponentType | null = __FEATURES__.showPrScores
@@ -42,26 +41,34 @@ export default function App(): JSX.Element {
           <Route path="work" element={<Work />} />
           <Route path="learn" element={<Learn />} />
           <Route path="insights" element={<Insights />} />
-          {PrScores && (
-            <Route
-              path="pr-scores"
-              element={
+          {/* Experimental routes stay registered even when compiled out so
+              extensions / sidebar links targeting `#/pr-scores` etc. resolve
+              to a real route and React Router still matches the parent
+              Layout. When the flag is off the route redirects to /work. */}
+          <Route
+            path="pr-scores"
+            element={
+              PrScores ? (
                 <Suspense fallback={null}>
                   <PrScores />
                 </Suspense>
-              }
-            />
-          )}
-          {BackstageExplorer && (
-            <Route
-              path="backstage-explorer"
-              element={
+              ) : (
+                <Navigate to="/work" replace />
+              )
+            }
+          />
+          <Route
+            path="backstage-explorer"
+            element={
+              BackstageExplorer ? (
                 <Suspense fallback={null}>
                   <BackstageExplorer />
                 </Suspense>
-              }
-            />
-          )}
+              ) : (
+                <Navigate to="/work" replace />
+              )
+            }
+          />
           <Route path="ext/:extensionId/*" element={<ExtensionPage />} />
           <Route path="connect" element={<Connect />} />
           <Route path="clear-memory" element={<ClearMemory />} />
