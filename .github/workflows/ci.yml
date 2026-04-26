@@ -256,46 +256,21 @@ jobs:
           echo "promoted $promoted experimental baseline(s)"
 
       - name: Commit updated experimental baselines
-        # The default screenshot-regression job may have already pushed an
-        # auto-baseline commit to this same branch — pull --rebase before
-        # pushing so we don't lose it. Both jobs use --force-with-lease for
-        # safety against unrelated concurrent pushes.
-        #
-        # The experimental build runs with CLEARPATH_E2E_EXPERIMENTAL=1, which
-        # makes the prebuild hook regenerate src/shared/featureFlags.generated.ts
-        # with experimental flags forced on. That diff is a build artifact we
-        # must not push, but `git rebase` refuses to run with a dirty tree —
-        # so we discard everything not staged before the rebase loop.
+        # `needs: screenshot-regression` serializes us after the sibling job,
+        # so our checkout already includes anything it pushed — no rebase
+        # needed. Mirror the simpler push pattern used by the sibling.
+        # `--force-with-lease` protects against concurrent pushes from
+        # outside CI without requiring a clean working tree, which matters
+        # here because the experimental build (CLEARPATH_E2E_EXPERIMENTAL=1)
+        # leaves featureFlags.generated.ts modified relative to HEAD.
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add e2e/screenshots/baseline/experimental-features/ || true
-          if git diff --staged --quiet; then
-            echo "no experimental baseline changes to commit"
-            exit 0
-          fi
-          git commit -m "Auto-update experimental screenshot baselines [skip ci]"
-          # Stash unstaged changes (e.g. featureFlags.generated.ts regenerated
-          # with experimental flags forced on) so `git rebase` can run. We use
-          # stash instead of `checkout -- .` because the latter triggers the
-          # Git LFS smudge filter on every tracked binary, which complains
-          # ("should have been pointers, but weren't") and aborts the step.
-          # Stash is cheap and the resulting orphan stash dies with the runner.
-          git stash push --include-untracked --quiet || true
-          # Try a few times in case the sibling job pushes between fetch and push.
-          for attempt in 1 2 3; do
-            git fetch origin "$BRANCH"
-            git rebase "origin/$BRANCH" || { git rebase --abort || true; exit 1; }
-            if git push --force-with-lease; then
-              exit 0
-            fi
-            sleep 5
-          done
-          echo "failed to push experimental baselines after retries"
-          exit 1
+          git diff --staged --quiet || git commit -m "Auto-update experimental screenshot baselines [skip ci]"
+          git push --force-with-lease
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          BRANCH: ${{ github.head_ref || github.ref_name }}
 
       - name: Upload experimental screenshots artifact
         if: always()
