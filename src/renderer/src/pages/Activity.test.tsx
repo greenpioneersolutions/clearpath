@@ -116,11 +116,17 @@ describe('Activity', () => {
 
   it('switches date range and refetches session data', async () => {
     renderActivity()
-    await waitFor(() => screen.getByText('Today'))
+    // Wait for initial fetch to complete so `before` is stable
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith('cost:by-session', expect.any(Object))
+    })
 
     const byRangeCalls = () => mockInvoke.mock.calls.filter(([ch]) => ch === 'cost:by-session').length
     const before = byRangeCalls()
-    fireEvent.click(screen.getByText('Today'))
+    // Click "All Time" — its since=0 is guaranteed different from the default 'week'
+    // range regardless of day-of-week (on Sundays, 'today' collapses to the same
+    // value as 'week' and would not trigger a refetch).
+    fireEvent.click(screen.getByText('All Time'))
     await waitFor(() => {
       expect(byRangeCalls()).toBeGreaterThan(before)
     })
