@@ -2,23 +2,19 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import { FeatureFlagProvider, type FeatureFlags } from '../../contexts/FeatureFlagContext'
+import { FEATURE_FLAG_KEYS } from '../../../../shared/featureFlags.generated'
 import FeatureFlagSettings from './FeatureFlagSettings'
 
 const mockInvoke = vi.fn()
 
-const ALL_ON: FeatureFlags = {
-  showHomeHub: true,
-  showDashboard: true, showWork: true, showInsights: true, showConfigure: true, showLearn: true,
-  showSetupWizard: true, showSettings: true, showPolicies: true, showIntegrations: true,
-  showMemory: true, showClearMemory: false, showSkillsManagement: true, showSessionWizard: true, showWorkspaces: true,
-  showTeamHub: true, showScheduler: false,
-  showComposer: false, showSubAgents: false, showTemplates: true, showKnowledgeBase: false, showVoice: false,
-  showUseContext: true, showAgentSelection: true, showCostTracking: true, showComplianceLogs: false,
-  showDataManagement: true, showBudgetLimits: true, showPlugins: false, showEnvVars: false, showWebhooks: false,
-  enableExperimentalFeatures: false, showPrScores: false, prScoresAiReview: false,
-  showEfficiencyCoach: false, showBackstageExplorer: false,
-  enableClaudeSdk: true, enableCopilotSdk: true,
-}
+// Derive the fixture from FEATURE_FLAG_KEYS so adding a new flag doesn't
+// silently break this test by leaving a missing-key TypeScript error.
+// All flags default to `true` (the "everything on" baseline this fixture
+// is meant to represent); individual specs override what they need.
+const ALL_ON: FeatureFlags = FEATURE_FLAG_KEYS.reduce((acc, key) => {
+  acc[key] = true
+  return acc
+}, {} as FeatureFlags)
 
 const mockPresets = [
   { id: 'all-on', name: 'Everything', description: 'All features enabled' },

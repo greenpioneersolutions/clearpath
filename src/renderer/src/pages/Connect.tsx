@@ -68,6 +68,17 @@ export default function Connect(): JSX.Element {
     }
   }, [searchParams, isTabVisible, setSearchParams])
 
+  // Guard: if the user toggles a flag off at runtime while the
+  // corresponding tab is active (only possible when the chunk is compiled
+  // in but flipped off via the Settings UI), bounce them to integrations
+  // so the page header / tabpanel don't end up referencing a hidden tab.
+  useEffect(() => {
+    if (!isTabVisible(tab)) {
+      setTab('integrations')
+      setSearchParams({ tab: 'integrations' }, { replace: true })
+    }
+  }, [tab, isTabVisible, setSearchParams])
+
   const handlePendingRestartChange = useCallback((pending: boolean) => {
     setExtensionPendingRestart(pending)
   }, [])

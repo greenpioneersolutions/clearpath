@@ -148,10 +148,13 @@ const INSIGHTS_TABS: InsightsTab[] = [
 
 // Connect page sub-tabs (added in PR #47). Each tab button has a stable
 // `id="connect-tab-{key}"` selector hook that matches Connect.tsx.
+//
+// The `extensions` and `mcp` tabs are gated by experimental flags
+// (showExtensions / showMcpServers). They're hidden in default builds —
+// captured instead by screenshot-crawl-experimental.spec.ts under
+// experimental-features/connect--tab-extensions and ...--tab-mcp.
 const CONNECT_TABS: ConnectTab[] = [
   { key: 'integrations', label: 'Integrations', screenshot: 'connect--tab-integrations' },
-  { key: 'extensions',   label: 'Extensions',   screenshot: 'connect--tab-extensions' },
-  { key: 'mcp',          label: 'MCP Servers',  screenshot: 'connect--tab-mcp' },
   { key: 'environment',  label: 'Environment',  screenshot: 'connect--tab-environment' },
   { key: 'plugins',      label: 'Plugins',      screenshot: 'connect--tab-plugins' },
   { key: 'webhooks',     label: 'Webhooks',     screenshot: 'connect--tab-webhooks' },
