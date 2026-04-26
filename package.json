@@ -5,6 +5,10 @@
   "description": "ClearPathAI — Desktop control tower for AI coding agents",
   "main": "out/main/index.js",
   "scripts": {
+    "generate:flags": "node scripts/generate-feature-flags.mjs",
+    "predev": "node scripts/generate-feature-flags.mjs",
+    "prebuild": "node scripts/generate-feature-flags.mjs",
+    "pretest": "node scripts/generate-feature-flags.mjs",
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
@@ -23,6 +27,8 @@
     "e2e:extensions": "npm run pretest:e2e:extensions && npm run build && wdio run wdio.conf.ts --spec e2e/extensions-integration.spec.ts",
     "e2e:screenshots": "npm run build && wdio run wdio.screenshots.conf.ts",
     "e2e:screenshots:update": "npm run build && wdio run wdio.screenshots.conf.ts --update-visual-baseline",
+    "e2e:screenshots:experimental": "CLEARPATH_E2E_EXPERIMENTAL=1 npm run build && CLEARPATH_E2E_EXPERIMENTAL=1 wdio run wdio.screenshots.experimental.conf.ts",
+    "e2e:screenshots:experimental:update": "CLEARPATH_E2E_EXPERIMENTAL=1 npm run build && CLEARPATH_E2E_EXPERIMENTAL=1 wdio run wdio.screenshots.experimental.conf.ts --update-visual-baseline",
     "prepare": "husky"
   },
   "dependencies": {
