@@ -312,6 +312,31 @@ async function tryScrollCapture(baseName: string): Promise<void> {
 }
 
 /**
+ * Expand every collapsed sidenav group on the Configure page (the
+ * "Advanced" group is collapsed by default in PR #47).  Without this,
+ * `#tab-policies`, `#tab-team`, `#tab-scheduler`, `#tab-branding`, and
+ * `#tab-workspaces` are not in the DOM and `waitForExist` times out.
+ *
+ * Idempotent: collapsed groups have aria-expanded="false"; once clicked
+ * they switch to "true" and stay that way.
+ */
+async function expandConfigureCollapsedGroups(): Promise<void> {
+  const xpath =
+    `//div[@role='tablist' and @aria-label='Configure sections']` +
+    `//button[@aria-expanded='false']`
+  const collapsed = await $$(xpath)
+  for (const btn of collapsed) {
+    try {
+      await btn.click()
+      await browser.pause(150)
+    } catch {
+      // Best-effort — never block the test on a failed expander click
+    }
+  }
+  await browser.pause(300)
+}
+
+/**
  * Poll until no "Loading" indicator text is present in the page, or until
  * the timeout elapses. Best-effort: never throws so it cannot mask a real
  * test failure — it just proceeds to the screenshot if loading persists.
@@ -463,6 +488,10 @@ describe('ClearPathAI — Screenshot Crawl', () => {
       // Sidebar label is "Settings" (PR #47); URL is still /configure.
       await navigateSidebarTo('Settings')
       await browser.pause(1000)
+      // Expand the "Advanced" sidenav group (collapsed by default) so that
+      // #tab-policies / #tab-team / #tab-scheduler / #tab-branding /
+      // #tab-workspaces become reachable.
+      await expandConfigureCollapsedGroups()
     })
 
     for (const tab of CONFIGURE_TABS) {
@@ -505,6 +534,9 @@ describe('ClearPathAI — Screenshot Crawl', () => {
     before(async () => {
       await navigateSidebarTo('Settings')
       await browser.pause(1000)
+      // Expand collapsed groups so all tabs (including those in Advanced)
+      // are reachable from this describe block too.
+      await expandConfigureCollapsedGroups()
       currentConfigureTab = ''
     })
 
@@ -565,6 +597,12 @@ describe('ClearPathAI — Screenshot Crawl', () => {
       }) as { id: string }
       tempWorkspaceId = ws.id
       await invokeIPC('workspace:set-active', { id: tempWorkspaceId })
+
+      // Workspaces lives inside the collapsed-by-default "Advanced" group
+      // — expand it before trying to click #tab-workspaces.
+      await navigateSidebarTo('Settings')
+      await browser.pause(800)
+      await expandConfigureCollapsedGroups()
 
       // Re-navigate to the Workspaces tab to pick up the new active workspace
       const tabBtn = await $(`#tab-workspaces`)
