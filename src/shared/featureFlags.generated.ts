@@ -148,7 +148,7 @@ export const BUILD_FLAGS: Readonly<FeatureFlags> = Object.freeze({
  * turn this on (used by the dev:preview / preview:locked scripts to
  * simulate an end-user with the features.json defaults frozen).
  */
-export const BUILD_FLAGS_LOCKED = false as const;
+export const BUILD_FLAGS_LOCKED = true as const;
 
 export const FEATURE_FLAG_META: Readonly<Record<FeatureFlagKey, FeatureFlagMetadata>> = Object.freeze({
   enableClaudeSdk: { experimental: false, enabled: true, addedIn: "1.8.0" },
@@ -162,7 +162,7 @@ export const FEATURE_FLAG_META: Readonly<Record<FeatureFlagKey, FeatureFlagMetad
   showComplianceLogs: { experimental: false, enabled: false, addedIn: "1.0.0" },
   showComposer: { experimental: false, enabled: false, addedIn: "1.0.0" },
   showConfigure: { experimental: false, enabled: true, addedIn: "1.0.0" },
-  showCostTracking: { experimental: false, enabled: false, addedIn: "1.0.0" },
+  showCostTracking: { experimental: true, enabled: false, addedIn: "1.0.0" },
   showDashboard: { experimental: false, enabled: true, addedIn: "1.0.0" },
   showDataManagement: { experimental: false, enabled: false, addedIn: "1.0.0" },
   showEfficiencyCoach: { experimental: true, enabled: false, addedIn: "1.6.0" },
@@ -198,6 +198,7 @@ export const EXPERIMENTAL_FLAG_KEYS: readonly FeatureFlagKey[] = Object.freeze([
   'prScoresAiReview',
   'showBackstageExplorer',
   'showClearMemory',
+  'showCostTracking',
   'showEfficiencyCoach',
   'showExtensions',
   'showMcpServers',
