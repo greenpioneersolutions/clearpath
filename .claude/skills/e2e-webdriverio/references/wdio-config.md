@@ -69,22 +69,26 @@ export const config: Options.Testrunner = {
   onComplete: async () => { /* runs once after all workers finish */ },
   before: async () => { /* runs before each spec file's first test */ },
   after: async () => { /* runs after each spec file's last test */ },
-  beforeEach: async () => { /* runs before each it() */ },
-  afterEach: async (test, ctx, result) => { /* runs after each it() */ },
+  beforeTest: async (test, ctx) => { /* runs before each it() — WDIO runner hook */ },
+  afterTest: async (test, ctx, { passed }) => { /* runs after each it() — WDIO runner hook */ },
 }
 ```
+
+> **Heads up:** WebdriverIO's per-test runner hook is `afterTest` (and
+> `beforeTest`) — **not** `afterEach`/`beforeEach`. The `*Each` names are
+> reserved for the Mocha spec-level hooks; if you put them in the wdio
+> runner config they're silently ignored.
 
 ## Key Hooks in This Project
 
 ```typescript
-afterEach: async function(test, _ctx, result) {
+afterTest: async function (test, _context, { passed }) {
   // Capture failure screenshot for debugging
-  if (result && !result.passed) {
-    try {
-      const { captureFailureScreenshot } = await import('./e2e/helpers/screenshots.js')
-      await captureFailureScreenshot(test.title ?? 'unknown-test')
-    } catch { /* best-effort */ }
-  }
+  if (passed) return
+  try {
+    const { captureFailureScreenshot } = await import('./e2e/helpers/screenshots.js')
+    await captureFailureScreenshot(test.title ?? 'unknown-test')
+  } catch { /* best-effort */ }
 },
 
 after: async function() {

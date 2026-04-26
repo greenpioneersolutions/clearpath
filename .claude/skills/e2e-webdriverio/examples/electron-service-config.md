@@ -131,14 +131,15 @@ export const config: Options.Testrunner = {
    * if the import fails (e.g. wrong path) we log and continue rather than
    * turning the screenshot failure into a test failure.
    */
-  afterEach: async function (test, _ctx, result) {
-    if (result && !result.passed) {
-      try {
-        const { captureFailureScreenshot } = await import('./e2e/helpers/screenshots.js')
-        await captureFailureScreenshot(test.title ?? 'unknown-test')
-      } catch {
-        // Best-effort — never fail a test because the screenshot helper errored
-      }
+  // WebdriverIO's per-test runner hook is `afterTest` — `afterEach` is the
+  // Mocha spec-level hook name and is silently ignored here.
+  afterTest: async function (test, _context, { passed }) {
+    if (passed) return
+    try {
+      const { captureFailureScreenshot } = await import('./e2e/helpers/screenshots.js')
+      await captureFailureScreenshot(test.title ?? 'unknown-test')
+    } catch {
+      // Best-effort — never fail a test because the screenshot helper errored
     }
   },
 
