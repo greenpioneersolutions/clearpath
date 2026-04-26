@@ -71,9 +71,10 @@ const EXPERIMENTAL_PAGES: ExperimentalRoute[] = [
   },
   {
     route: 'connect?tab=extensions',
-    // ExtensionManager renders a "Permissions" section heading per
-    // installed extension. Won't appear from any other Connect tab body.
-    marker: 'Permissions',
+    // ExtensionManager renders an "Install Extension" button at the top of
+    // its body, regardless of how many extensions are installed. The
+    // earlier "Permissions" heading is only present on expanded cards.
+    marker: 'Install Extension',
     screenshot: 'experimental-features/connect--tab-extensions',
   },
 ]
