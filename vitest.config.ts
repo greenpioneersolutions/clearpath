@@ -17,9 +17,6 @@ const features = JSON.parse(readFileSync(featuresPath, 'utf-8')) as FeaturesFile
 const expEnv =
   process.env.CLEARPATH_E2E_EXPERIMENTAL === '1' ||
   process.env.CLEARPATH_E2E_EXPERIMENTAL === 'true'
-const lockedEnv =
-  process.env.CLEARPATH_FLAGS_LOCKED === '1' ||
-  process.env.CLEARPATH_FLAGS_LOCKED === 'true'
 const featureFlags: Record<string, boolean> = {}
 for (const [key, def] of Object.entries(features.flags)) {
   featureFlags[key] = def.experimental && expEnv ? true : def.enabled
@@ -28,7 +25,6 @@ for (const [key, def] of Object.entries(features.flags)) {
 export default defineConfig({
   define: {
     __FEATURES__: JSON.stringify(featureFlags),
-    __FEATURES_LOCKED__: JSON.stringify(lockedEnv),
   },
   resolve: {
     alias: {

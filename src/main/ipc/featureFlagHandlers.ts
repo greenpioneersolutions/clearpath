@@ -234,9 +234,33 @@ function resolveFlags(): FeatureFlags {
   return clampToCompiledIn({ ...DEFAULTS, ...overrides })
 }
 
+/**
+ * One-time scrub at startup: drop persisted overrides for experimental
+ * flags whose code is compiled out of the current build. These have no
+ * runtime effect today (clampToCompiledIn already keeps them at false),
+ * but leaving stale `true` values in the store risks silently re-enabling
+ * the feature if it later becomes compiled-in again — even if the new
+ * build's default is off. Idempotent; safe to call repeatedly.
+ */
+function scrubStaleCompiledOutOverrides(): void {
+  if (BUILD_FLAGS_LOCKED) return // Locked builds never write to the store
+  const persisted = store.get('flags') as Partial<FeatureFlags>
+  let dirty = false
+  const cleaned: Partial<FeatureFlags> = { ...persisted }
+  for (const key of EXPERIMENTAL_FLAG_KEYS) {
+    if (!BUILD_FLAGS[key] && key in cleaned) {
+      delete cleaned[key]
+      dirty = true
+    }
+  }
+  if (dirty) store.set('flags', cleaned)
+}
+
 // ── Registration ─────────────────────────────────────────────────────────────
 
 export function registerFeatureFlagHandlers(ipcMain: IpcMain): void {
+  scrubStaleCompiledOutOverrides()
+
   /** Get resolved flags (all defaults + overrides). */
   ipcMain.handle('feature-flags:get', () => ({
     flags: resolveFlags(),

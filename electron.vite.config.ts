@@ -63,17 +63,11 @@ const featureFlags = loadFeatures()
 // the bundle small and lets Rollup constant-fold property reads.
 const featureFlagsLiteral = JSON.stringify(featureFlags)
 
-// CLEARPATH_FLAGS_LOCKED=1 produces a build that ignores stored runtime
-// overrides — the FeatureFlags settings page is read-only and off-by-default
-// flags are hidden. Used by `dev:preview` / `preview:locked` to simulate an
-// end-user experience frozen to features.json.
-const flagsLocked =
-  process.env.CLEARPATH_FLAGS_LOCKED === '1' ||
-  process.env.CLEARPATH_FLAGS_LOCKED === 'true'
-
+// CLEARPATH_FLAGS_LOCKED=1 lock state is consumed at runtime via
+// BUILD_FLAGS_LOCKED in src/shared/featureFlags.generated.ts (the generator
+// reads the same env var). Locked-mode logic does not need a Vite define.
 const sharedDefine = {
   __FEATURES__: featureFlagsLiteral,
-  __FEATURES_LOCKED__: JSON.stringify(flagsLocked),
 }
 
 export default defineConfig({
