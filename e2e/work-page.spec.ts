@@ -96,15 +96,6 @@ describe('ClearPathAI — Work Page', () => {
       expect(html.length).toBeGreaterThan(200)
     })
 
-    it('can switch to wizard mode via hash', async () => {
-      await navigateToHash('#/work?tab=wizard')
-
-      const root = await $('#root')
-      expect(await root.isExisting()).toBe(true)
-      const html = await root.getHTML()
-      expect(html.length).toBeGreaterThan(200)
-    })
-
     it('can switch to schedule mode via hash', async () => {
       await navigateToHash('#/work?tab=schedule')
 
@@ -250,7 +241,7 @@ describe('ClearPathAI — Work Page', () => {
 
     it('clicking mode buttons changes active styling without crash', async () => {
       // Find and click through mode buttons
-      const modeLabels = ['Wizard', 'Compose', 'Session']
+      const modeLabels = ['Compose', 'Session']
       for (const label of modeLabels) {
         const btn = await $(`//button[contains(., '${label}')]`)
         if (await btn.isExisting()) {

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { useLocation, useSearchParams } from 'react-router-dom'
+import { useLocation, useSearchParams, useNavigate } from 'react-router-dom'
 import type { ParsedOutput, SessionInfo, HistoricalSession } from '../types/ipc'
 import type { PromptTemplate } from '../types/template'
 import type { BackendId } from '../../../shared/backends'
@@ -15,8 +15,7 @@ import SchedulePanel from '../components/SchedulePanel'
 import { useFeatureFlags } from '../contexts/FeatureFlagContext'
 
 import SessionSummary from '../components/shared/SessionSummary'
-import WelcomeBack from '../components/shared/WelcomeBack'
-import SessionWizard from '../components/wizard/SessionWizard'
+import WorkLaunchpad from '../components/work/WorkLaunchpad'
 // Notes picker is now integrated into ChatInputArea via ContextPicker
 import NotesManager from '../components/memory/NotesManager'
 import ExtensionSlot from '../components/extensions/ExtensionSlot'
@@ -51,42 +50,47 @@ interface ActiveSessionState {
 
 export default function Work(): JSX.Element {
   const location = useLocation()
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const navigate = useNavigate()
   const { flags } = useFeatureFlags()
   const [sessions, setSessions] = useState<Map<string, ActiveSessionState>>(new Map())
-  const [selectedId, setSelectedId] = useState<string | null>(null)
   const [showNewSession, setShowNewSession] = useState(false)
   const [showEditSession, setShowEditSession] = useState(false)
-  const [workMode, setWorkMode] = useState<'session' | 'wizard' | 'compose' | 'schedule' | 'memory'>('session')
-  const [wizardChecked, setWizardChecked] = useState(false)
+  const [workMode, setWorkMode] = useState<'session' | 'compose' | 'schedule' | 'memory'>('session')
   const [quickConfig, setQuickConfig] = useState<ChatContextConfig>({})
   const [activeTemplate, setActiveTemplate] = useState<PromptTemplate | null>(null)
   const [showSessionManager, setShowSessionManager] = useState(false)
-  const [viewingStoppedSession, setViewingStoppedSession] = useState(false) // true = show conversation for a stopped session instead of welcome screen
+  const [viewingStoppedSession, setViewingStoppedSession] = useState(false)
   const [selectedNoteIds, setSelectedNoteIds] = useState<Set<string>>(new Set())
   const [selectedContextSources, setSelectedContextSources] = useState<import('../types/contextSources').SelectedContextSource[]>([])
-  const [showSaveNoteModal, setShowSaveNoteModal] = useState<string | null>(null) // content to save
-  const [wizardOptionId, setWizardOptionId] = useState<string | undefined>(undefined)
-  const [wizardStep, setWizardStep] = useState<string | undefined>(undefined)
+  const [showSaveNoteModal, setShowSaveNoteModal] = useState<string | null>(null)
   const sessionsRef = useRef(sessions)
   sessionsRef.current = sessions
   const pendingQuickPrompt = useRef<string | null>(null)
 
+  // selectedId is derived from the URL — `?id=<sessionId>`. When absent, the
+  // launchpad renders. setSelectedId() pushes the id into the URL so deep
+  // links + sidebar nav reset behave consistently.
+  const selectedId = searchParams.get('id')
+  const setSelectedId = useCallback((id: string | null) => {
+    setSearchParams((prev) => {
+      const entries: Record<string, string> = {}
+      prev.forEach((value, key) => { entries[key] = value })
+      if (id) entries.id = id
+      else delete entries.id
+      return entries
+    }, { replace: true })
+  }, [setSearchParams])
+
   // ── Deep-link: parse URL params and location state ──────────────────────
   useEffect(() => {
     const tab = searchParams.get('tab') as typeof workMode | null
-    if (tab && ['session', 'wizard', 'compose', 'schedule', 'memory'].includes(tab)) setWorkMode(tab)
-
-    // Wizard deep-link: ?wizardOption=question or ?wizardStep=context
-    const wo = searchParams.get('wizardOption')
-    if (wo) setWizardOptionId(wo)
-    const ws = searchParams.get('wizardStep')
-    if (ws) setWizardStep(ws)
+    if (tab && ['session', 'compose', 'schedule', 'memory'].includes(tab)) setWorkMode(tab)
 
     const state = location.state as { sessionId?: string; quickPrompt?: string } | null
     if (state?.sessionId) setSelectedId(state.sessionId)
     if (state?.quickPrompt) pendingQuickPrompt.current = state.quickPrompt
-  }, [location, searchParams])
+  }, [location, searchParams, setSelectedId])
 
   // ── Rehydrate sessions from main process on mount ──────────────────────
   // This recovers sessions that are still alive after navigating away and back.
@@ -173,34 +177,12 @@ export default function Work(): JSX.Element {
         return updated
       })
 
-      // Auto-select the first running session, or the most recent persisted one
-      setSelectedId((prev) => {
-        if (prev) return prev
-        const running = activeSessions.find((s) => s.status === 'running')
-        if (running) return running.sessionId
-        if (activeSessions.length > 0) return activeSessions[0].sessionId
-        if (persisted.length > 0) return persisted[0].sessionId
-        return null
-      })
     })()
   }, [])
 
-  // ── Check wizard state — default to wizard tab if never used ─────────────
-
-  useEffect(() => {
-    // Skip auto-wizard if arriving with a quick prompt or explicit tab param
-    if (pendingQuickPrompt.current) { setWizardChecked(true); return }
-    const urlTab = searchParams.get('tab')
-    if (urlTab) { setWizardChecked(true); return }
-
-    void (async () => {
-      const state = await window.electronAPI.invoke('wizard:get-state') as { hasCompletedWizard: boolean }
-      if (!state.hasCompletedWizard) {
-        setWorkMode('wizard')
-      }
-      setWizardChecked(true)
-    })()
-  }, [])
+  // Note: the launchpad replaces the old wizard auto-open behavior — the empty
+  // state of /work IS the launchpad, so no explicit "first run" branching is
+  // needed here.
 
   // ── IPC event listeners ─────────────────────────────────────────────────
 
@@ -285,9 +267,9 @@ export default function Work(): JSX.Element {
 
   // ── Session management ──────────────────────────────────────────────────
 
-  const startSession = useCallback(async (opts: { cli: BackendId; name?: string; workingDirectory?: string; initialPrompt?: string; displayPrompt?: string; agent?: string; model?: string; contextSummary?: { memories: string[]; agent?: string; skill?: string } }) => {
+  const startSession = useCallback(async (opts: { cli: BackendId; name?: string; workingDirectory?: string; initialPrompt?: string; displayPrompt?: string; agent?: string; model?: string; permissionMode?: string; additionalDirs?: string[]; contextSummary?: { memories: string[]; agent?: string; skill?: string } }) => {
     const { sessionId } = (await window.electronAPI.invoke('cli:start-session', {
-      cli: opts.cli, mode: 'interactive', name: opts.name, workingDirectory: opts.workingDirectory, prompt: opts.initialPrompt, displayPrompt: opts.displayPrompt, agent: opts.agent, model: opts.model,
+      cli: opts.cli, mode: 'interactive', name: opts.name, workingDirectory: opts.workingDirectory, prompt: opts.initialPrompt, displayPrompt: opts.displayPrompt, agent: opts.agent, model: opts.model, permissionMode: opts.permissionMode, additionalDirs: opts.additionalDirs,
     })) as { sessionId: string }
     const info: SessionInfo = { sessionId, name: opts.name, cli: opts.cli, status: 'running', startedAt: Date.now() }
 
@@ -672,14 +654,6 @@ export default function Work(): JSX.Element {
                 workMode === 'session' ? 'text-white' : 'text-gray-400 hover:text-gray-200'
               }`}
             >Session</button>
-            {flags.showSessionWizard && (
-            <button
-              onClick={() => setWorkMode('wizard')}
-              className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
-                workMode === 'wizard' ? 'text-white' : 'text-gray-400 hover:text-gray-200'
-              }`}
-            >Wizard</button>
-            )}
             {flags.showComposer && (
             <button
               onClick={() => setWorkMode('compose')}
@@ -852,33 +826,38 @@ export default function Work(): JSX.Element {
               )}
             </div>
           ) : (
-            /* Welcome back / no session screen — shown when no session is selected OR selected session is stopped */
-            <WelcomeBack
-              recentSessions={recentSessions.map((s) => ({ info: s.info, messages: s.messages }))}
-              onStartBlank={() => void handleQuickStart()}
-              onContinueSession={(info) => void startSession({ cli: info.cli, name: info.name ? `${info.name} (cont)` : undefined })}
-              onBrowseAll={() => setShowSessionManager(true)}
+            /* Launchpad: the default empty-state of /work — quick start, workflows, active + recent sessions. */
+            <WorkLaunchpad
+              defaultCli={lastUsedCli}
+              onQuickStart={({ prompt, cli, model, agent, permissionMode, additionalDirs }) =>
+                void startSession({ cli, model, agent, permissionMode, additionalDirs, initialPrompt: prompt, displayPrompt: prompt, name: prompt.slice(0, 30) })
+              }
+              onOpenWorkflow={(id) => {
+                setSearchParams((prev) => {
+                  const entries: Record<string, string> = {}
+                  prev.forEach((value, key) => { entries[key] = value })
+                  entries.tab = 'compose'
+                  entries.workflow = id
+                  delete entries.id
+                  return entries
+                })
+                setWorkMode('compose')
+              }}
+              onOpenActiveSession={(info) => {
+                setSelectedId(info.sessionId)
+                setViewingStoppedSession(false)
+              }}
+              onResumeSession={(sessionId, cli, name) => {
+                if (sessions.has(sessionId)) {
+                  setSelectedId(sessionId)
+                  setViewingStoppedSession(true)
+                } else {
+                  void startSession({ cli, name: name ? `${name} (cont)` : undefined })
+                }
+              }}
+              onSeeMoreSessions={() => setShowSessionManager(true)}
             />
           )
-        )}
-
-        {/* Wizard mode content */}
-        {workMode === 'wizard' && (
-          <SessionWizard
-            defaultCli={lastUsedCli}
-            initialOptionId={wizardOptionId}
-            initialStep={wizardStep as 'choose' | 'fill' | 'context' | 'review' | undefined}
-            onLaunchSession={(opts) => {
-              void (async () => {
-                await startSession({ cli: opts.cli, name: opts.name, initialPrompt: opts.initialPrompt, displayPrompt: opts.displayPrompt, agent: opts.agent, model: opts.model, contextSummary: opts.contextSummary })
-                // If fleet mode was enabled, set it in the context bar
-                if (opts.fleetMode) {
-                  setQuickConfig((prev) => ({ ...prev, fleet: true }))
-                }
-                setWorkMode('session')
-              })()
-            }}
-          />
         )}
 
         {/* Compose mode content */}
@@ -900,6 +879,7 @@ export default function Work(): JSX.Element {
               cli={selectedSession?.info.cli ?? 'copilot-cli'}
               hasActiveSession={!!selectedSession && selectedSession.info.status === 'running'}
               activeSessionName={selectedSession?.info.name ?? selectedSession?.info.sessionId.slice(0, 8)}
+              workflowId={searchParams.get('workflow') ?? undefined}
               sessions={recentSessions.filter((s) => s.info.status === 'running').map((s) => ({
                 id: s.info.sessionId,
                 name: s.info.name ?? s.info.sessionId.slice(0, 8),

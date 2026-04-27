@@ -271,7 +271,19 @@ export default function Sidebar(): JSX.Element {
           return true
         }).map((item, idx) => (
           <div key={item.to}>
-            <NavLink to={item.to} end={item.to === '/'} className={linkClass} style={({ isActive }) => linkStyle(isActive)}>
+            <NavLink
+              to={item.to}
+              end={item.to === '/'}
+              data-testid={item.to === '/work' ? 'sidebar-work-link' : undefined}
+              className={linkClass}
+              style={({ isActive }) => linkStyle(isActive)}
+              onClick={(e) => {
+                if (item.to === '/work' && location.pathname === '/work' && location.search) {
+                  e.preventDefault()
+                  navigate('/work')
+                }
+              }}
+            >
               {item.icon}
               {!collapsed && <span>{item.label}</span>}
             </NavLink>

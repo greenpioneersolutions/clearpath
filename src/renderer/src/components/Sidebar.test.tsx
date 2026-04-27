@@ -184,6 +184,32 @@ describe('Sidebar', () => {
     })
   })
 
+  it('clicking the Work nav link from /work?id=abc clears the id and lands on /work', async () => {
+    function PathnameProbe() {
+      const loc = useLocation()
+      return <div data-testid="path-probe">{loc.pathname}{loc.search}</div>
+    }
+
+    render(
+      <MemoryRouter initialEntries={['/work?id=abc']}>
+        <Sidebar />
+        <Routes>
+          <Route path="*" element={<PathnameProbe />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+
+    await waitFor(() => screen.getByText('Standard'))
+    expect(screen.getByTestId('path-probe').textContent).toBe('/work?id=abc')
+
+    const workLink = screen.getByTestId('sidebar-work-link')
+    fireEvent.click(workLink)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('path-probe').textContent).toBe('/work')
+    })
+  })
+
   it('refreshes status when sidebar:refresh event fires', async () => {
     renderSidebar()
     await waitFor(() => screen.getByText('Standard'))
