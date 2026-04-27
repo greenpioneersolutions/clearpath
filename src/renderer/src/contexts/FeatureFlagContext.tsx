@@ -1,57 +1,11 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react'
 import { getProgressionStage, getStageFlagOverrides, type ProgressionStage } from '../lib/progressiveDisclosure'
+import { BUILD_FLAGS, BUILD_FLAGS_LOCKED, type FeatureFlags } from '../../../shared/featureFlags.generated'
 
-// ── Types ────────────────────────────────────────────────────────────────────
-
-export interface FeatureFlags {
-  showHomeHub: boolean
-
-  showDashboard: boolean
-  showWork: boolean
-  showInsights: boolean
-  showConfigure: boolean
-  showLearn: boolean
-
-  showSetupWizard: boolean
-  showSettings: boolean
-  showPolicies: boolean
-  showIntegrations: boolean
-  showMemory: boolean
-  showClearMemory: boolean
-  showSkillsManagement: boolean
-  showSessionWizard: boolean
-  showWorkspaces: boolean
-  showTeamHub: boolean
-  showScheduler: boolean
-
-  showComposer: boolean
-  showSubAgents: boolean
-  showTemplates: boolean
-  showKnowledgeBase: boolean
-  showVoice: boolean
-
-  showUseContext: boolean
-  showAgentSelection: boolean
-  showCostTracking: boolean
-  showComplianceLogs: boolean
-
-  showDataManagement: boolean
-  showBudgetLimits: boolean
-  showPlugins: boolean
-  showEnvVars: boolean
-  showWebhooks: boolean
-
-  // Experimental features
-  enableExperimentalFeatures: boolean
-  showPrScores: boolean
-  prScoresAiReview: boolean
-  showEfficiencyCoach: boolean
-  showBackstageExplorer: boolean
-
-  // Backend adapters — phased rollout gates for SDK support.
-  enableClaudeSdk: boolean
-  enableCopilotSdk: boolean
-}
+// Re-export so existing call sites that did `import { FeatureFlags } from
+// '../contexts/FeatureFlagContext'` continue to compile. The single source of
+// truth for the type is now src/shared/featureFlags.generated.ts.
+export type { FeatureFlags } from '../../../shared/featureFlags.generated'
 
 interface FlagPreset {
   id: string
@@ -71,37 +25,17 @@ interface FlagContextValue {
   progressionStage: ProgressionStage | null
   /** Number of sessions used to compute the progression stage. */
   sessionCount: number
+  /**
+   * True when the build was produced with CLEARPATH_FLAGS_LOCKED=1.
+   * In that mode the runtime ignores stored overrides and the Settings →
+   * Feature Flags page renders read-only with off-by-default flags hidden.
+   */
+  locked: boolean
 }
 
-// ── Defaults (conservative — plugins off, core nav on) ──────────────────────
-
-const DEFAULTS: FeatureFlags = {
-  showHomeHub: true,
-
-  // Core navigation — always on
-  showDashboard: true, showWork: true, showInsights: true, showConfigure: true, showLearn: true,
-
-  // Configure sub-sections — essential settings on, plugins off
-  showSetupWizard: true, showSettings: true, showPolicies: false, showIntegrations: false,
-  showMemory: false, showClearMemory: false, showSkillsManagement: false, showSessionWizard: false, showWorkspaces: false,
-  showTeamHub: false, showScheduler: false,
-
-  // Work page features — all off by default
-  showComposer: false, showSubAgents: false, showTemplates: false, showKnowledgeBase: false, showVoice: false,
-
-  // Session features — all off by default
-  showUseContext: false, showAgentSelection: false, showCostTracking: false, showComplianceLogs: false,
-
-  // Settings features — all off by default
-  showDataManagement: false, showBudgetLimits: false, showPlugins: false, showEnvVars: false, showWebhooks: false,
-
-  // Experimental features — all off by default
-  enableExperimentalFeatures: false, showPrScores: false, prScoresAiReview: false,
-  showEfficiencyCoach: false, showBackstageExplorer: false,
-
-  // SDK adapters — on by default during phase 2/3 rollout.
-  enableClaudeSdk: true, enableCopilotSdk: true,
-}
+// Defaults come from features.json via the build-time generated module so the
+// renderer and main process can never drift out of sync.
+const DEFAULTS: FeatureFlags = { ...BUILD_FLAGS }
 
 // ── Context ──────────────────────────────────────────────────────────────────
 
@@ -115,6 +49,7 @@ const FlagContext = createContext<FlagContextValue>({
   loading: true,
   progressionStage: null,
   sessionCount: 0,
+  locked: BUILD_FLAGS_LOCKED,
 })
 
 export function useFeatureFlags(): FlagContextValue {
@@ -130,12 +65,15 @@ export function useFlag(key: keyof FeatureFlags): boolean {
 
 export function FeatureFlagProvider({ children }: { children: ReactNode }): JSX.Element {
   const [storedFlags, setStoredFlags] = useState<FeatureFlags>(DEFAULTS)
-  const [activePresetId, setActivePresetId] = useState<string | null>('all-on')
+  const [activePresetId, setActivePresetId] = useState<string | null>(BUILD_FLAGS_LOCKED ? null : 'all-on')
   const [presets, setPresets] = useState<FlagPreset[]>([])
-  const [loading, setLoading] = useState(true)
+  // Locked builds need no async load — BUILD_FLAGS is the single source of
+  // truth and there are no overrides or presets to fetch.
+  const [loading, setLoading] = useState(!BUILD_FLAGS_LOCKED)
   const [sessionCount, setSessionCount] = useState(0)
 
   const load = useCallback(async () => {
+    if (BUILD_FLAGS_LOCKED) return
     try {
       const [result, presetList, sessions] = await Promise.all([
         window.electronAPI.invoke('feature-flags:get') as Promise<{ flags: FeatureFlags; activePresetId: string | null }>,
@@ -155,12 +93,14 @@ export function FeatureFlagProvider({ children }: { children: ReactNode }): JSX.
   useEffect(() => { void load() }, [load])
 
   const setFlag = useCallback((key: keyof FeatureFlags, value: boolean) => {
+    if (BUILD_FLAGS_LOCKED) return // Locked: setter is inert
     setStoredFlags((prev) => ({ ...prev, [key]: value }))
     setActivePresetId(null)
     void window.electronAPI.invoke('feature-flags:set', { [key]: value })
   }, [])
 
   const applyPreset = useCallback((presetId: string) => {
+    if (BUILD_FLAGS_LOCKED) return
     void (async () => {
       const result = await window.electronAPI.invoke('feature-flags:apply-preset', { presetId }) as FeatureFlags
       setStoredFlags(result)
@@ -169,6 +109,7 @@ export function FeatureFlagProvider({ children }: { children: ReactNode }): JSX.
   }, [])
 
   const resetFlags = useCallback(() => {
+    if (BUILD_FLAGS_LOCKED) return
     void (async () => {
       const result = await window.electronAPI.invoke('feature-flags:reset') as FeatureFlags
       setStoredFlags(result)
@@ -177,14 +118,17 @@ export function FeatureFlagProvider({ children }: { children: ReactNode }): JSX.
   }, [])
 
   // Progressive disclosure: when 'progressive' preset is active, derive flags from session count.
-  // Otherwise stored flags are used as-is.
-  const progressionStage = activePresetId === 'progressive' ? getProgressionStage(sessionCount) : null
+  // Otherwise stored flags are used as-is. Locked builds bypass both.
+  const progressionStage =
+    !BUILD_FLAGS_LOCKED && activePresetId === 'progressive'
+      ? getProgressionStage(sessionCount)
+      : null
   const flags = progressionStage
     ? { ...storedFlags, ...getStageFlagOverrides(progressionStage) }
     : storedFlags
 
   return (
-    <FlagContext.Provider value={{ flags, activePresetId, presets, setFlag, applyPreset, resetFlags, loading, progressionStage, sessionCount }}>
+    <FlagContext.Provider value={{ flags, activePresetId, presets, setFlag, applyPreset, resetFlags, loading, progressionStage, sessionCount, locked: BUILD_FLAGS_LOCKED }}>
       {children}
     </FlagContext.Provider>
   )

@@ -23,6 +23,9 @@ export const config: Options.Testrunner = {
     // screenshot-crawl is a dedicated visual crawl spec — not a functional test.
     // Run it separately via: npm run e2e:screenshots
     './e2e/screenshot-crawl.spec.ts',
+    // experimental-feature crawl requires a build with CLEARPATH_E2E_EXPERIMENTAL=1.
+    // Run separately via: npm run e2e:screenshots:experimental
+    './e2e/screenshot-crawl-experimental.spec.ts',
   ],
   maxInstances: 1,
 

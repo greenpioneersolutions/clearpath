@@ -1,0 +1,252 @@
+{
+  "version": 1,
+  "flags": {
+    "showHomeHub": {
+      "description": "Simple home hub (default) vs the legacy widget dashboard.",
+      "experimental": false,
+      "enabled": true,
+      "addedIn": "1.0.0"
+    },
+
+    "showDashboard": {
+      "description": "Top-level Home/Dashboard nav entry.",
+      "experimental": false,
+      "enabled": true,
+      "addedIn": "1.0.0"
+    },
+    "showWork": {
+      "description": "Top-level Work nav entry (sessions, agents, tools, templates).",
+      "experimental": false,
+      "enabled": true,
+      "addedIn": "1.0.0"
+    },
+    "showInsights": {
+      "description": "Top-level Insights nav entry (analytics, cost, compliance).",
+      "experimental": false,
+      "enabled": true,
+      "addedIn": "1.0.0"
+    },
+    "showConfigure": {
+      "description": "Top-level Settings/Configure nav entry.",
+      "experimental": false,
+      "enabled": true,
+      "addedIn": "1.0.0"
+    },
+    "showLearn": {
+      "description": "Top-level Learning Center nav entry.",
+      "experimental": false,
+      "enabled": true,
+      "addedIn": "1.0.0"
+    },
+
+    "showSetupWizard": {
+      "description": "First-run guided setup wizard inside Configure.",
+      "experimental": false,
+      "enabled": true,
+      "addedIn": "1.0.0"
+    },
+    "showSettings": {
+      "description": "Settings sub-section (CLI flags, models, budget).",
+      "experimental": false,
+      "enabled": true,
+      "addedIn": "1.0.0"
+    },
+    "showPolicies": {
+      "description": "Policy editor and presets in Configure.",
+      "experimental": false,
+      "enabled": false,
+      "addedIn": "1.0.0"
+    },
+    "showIntegrations": {
+      "description": "GitHub and external integration panel.",
+      "experimental": false,
+      "enabled": false,
+      "addedIn": "1.0.0"
+    },
+    "showMemory": {
+      "description": "Notes, CLAUDE.md, and context-file editor.",
+      "experimental": false,
+      "enabled": false,
+      "addedIn": "1.0.0"
+    },
+    "showClearMemory": {
+      "description": "Cross-session AI memory engine. Runs locally; requires ~700 MB disk and ~600 MB model download on first enable.",
+      "experimental": true,
+      "enabled": false,
+      "addedIn": "1.7.0"
+    },
+    "showSkillsManagement": {
+      "description": "Skill creation, edit, and management UI.",
+      "experimental": false,
+      "enabled": false,
+      "addedIn": "1.0.0"
+    },
+    "showSessionWizard": {
+      "description": "Per-session wizard configuration.",
+      "experimental": false,
+      "enabled": false,
+      "addedIn": "1.0.0"
+    },
+    "showWorkspaces": {
+      "description": "Multi-repo workspace management.",
+      "experimental": false,
+      "enabled": false,
+      "addedIn": "1.0.0"
+    },
+    "showTeamHub": {
+      "description": "Team Hub — config sharing and marketplace.",
+      "experimental": false,
+      "enabled": false,
+      "addedIn": "1.0.0"
+    },
+    "showScheduler": {
+      "description": "Cron scheduler for recurring tasks.",
+      "experimental": false,
+      "enabled": false,
+      "addedIn": "1.0.0"
+    },
+
+    "showComposer": {
+      "description": "Multi-step workflow composer.",
+      "experimental": false,
+      "enabled": false,
+      "addedIn": "1.0.0"
+    },
+    "showSubAgents": {
+      "description": "Background sub-agent delegation surface.",
+      "experimental": false,
+      "enabled": false,
+      "addedIn": "1.0.0"
+    },
+    "showTemplates": {
+      "description": "Prompt template library on the Work page.",
+      "experimental": false,
+      "enabled": false,
+      "addedIn": "1.0.0"
+    },
+    "showKnowledgeBase": {
+      "description": "Auto-generated project knowledge base.",
+      "experimental": false,
+      "enabled": false,
+      "addedIn": "1.0.0"
+    },
+    "showVoice": {
+      "description": "Voice input and voice command panel.",
+      "experimental": false,
+      "enabled": false,
+      "addedIn": "1.0.0"
+    },
+
+    "showUseContext": {
+      "description": "Memory/agent/skill context picker in the session wizard.",
+      "experimental": false,
+      "enabled": false,
+      "addedIn": "1.0.0"
+    },
+    "showAgentSelection": {
+      "description": "Per-session agent selection UI.",
+      "experimental": false,
+      "enabled": false,
+      "addedIn": "1.0.0"
+    },
+    "showCostTracking": {
+      "description": "Per-turn cost estimates and badges.",
+      "experimental": false,
+      "enabled": false,
+      "addedIn": "1.0.0"
+    },
+    "showComplianceLogs": {
+      "description": "Audit trail and compliance event viewer.",
+      "experimental": false,
+      "enabled": false,
+      "addedIn": "1.0.0"
+    },
+
+    "showDataManagement": {
+      "description": "Data storage, reset, and compaction controls.",
+      "experimental": false,
+      "enabled": false,
+      "addedIn": "1.0.0"
+    },
+    "showBudgetLimits": {
+      "description": "Spending and budget controls.",
+      "experimental": false,
+      "enabled": false,
+      "addedIn": "1.0.0"
+    },
+    "showPlugins": {
+      "description": "CLI plugin management UI.",
+      "experimental": false,
+      "enabled": false,
+      "addedIn": "1.0.0"
+    },
+    "showEnvVars": {
+      "description": "Environment variable editor.",
+      "experimental": false,
+      "enabled": false,
+      "addedIn": "1.0.0"
+    },
+    "showWebhooks": {
+      "description": "External notification webhooks.",
+      "experimental": false,
+      "enabled": false,
+      "addedIn": "1.0.0"
+    },
+
+    "enableExperimentalFeatures": {
+      "description": "Master toggle that surfaces opt-in experimental features in the Settings UI.",
+      "experimental": true,
+      "enabled": false,
+      "addedIn": "1.5.0"
+    },
+    "showPrScores": {
+      "description": "Pull-request scoring page (requires GitHub integration).",
+      "experimental": true,
+      "enabled": false,
+      "addedIn": "1.5.0"
+    },
+    "prScoresAiReview": {
+      "description": "AI-powered PR review for PR Scores via the connected CLI.",
+      "experimental": true,
+      "enabled": false,
+      "addedIn": "1.5.0"
+    },
+    "showEfficiencyCoach": {
+      "description": "Efficiency coach extension surface.",
+      "experimental": true,
+      "enabled": false,
+      "addedIn": "1.6.0"
+    },
+    "showMcpServers": {
+      "description": "MCP Servers tab on the Connect page (catalog, registry, secrets, sync).",
+      "experimental": true,
+      "enabled": false,
+      "addedIn": "1.9.0"
+    },
+    "showExtensions": {
+      "description": "Extensions tab on the Connect page (install / enable / manage extensions). Already-installed extensions continue to run regardless.",
+      "experimental": true,
+      "enabled": false,
+      "addedIn": "1.9.0"
+    },
+    "showBackstageExplorer": {
+      "description": "Backstage entity explorer page.",
+      "experimental": true,
+      "enabled": false,
+      "addedIn": "1.6.0"
+    },
+
+    "enableClaudeSdk": {
+      "description": "Drive Claude sessions through @anthropic-ai/claude-agent-sdk using ANTHROPIC_API_KEY (no claude CLI binary required).",
+      "experimental": false,
+      "enabled": true,
+      "addedIn": "1.8.0"
+    },
+    "enableCopilotSdk": {
+      "description": "Drive Copilot sessions through copilot --acp over stdio. Still requires the copilot CLI installed locally.",
+      "experimental": false,
+      "enabled": true,
+      "addedIn": "1.8.0"
+    }
+  }
+}

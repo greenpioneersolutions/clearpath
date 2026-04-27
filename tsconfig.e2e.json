@@ -18,6 +18,11 @@
     ],
     "skipLibCheck": true
   },
-  "include": ["e2e/**/*.ts", "wdio.conf.ts", "wdio.screenshots.conf.ts"],
+  "include": [
+    "e2e/**/*.ts",
+    "wdio.conf.ts",
+    "wdio.screenshots.conf.ts",
+    "wdio.screenshots.experimental.conf.ts"
+  ],
   "exclude": ["node_modules", "out", "src"]
 }

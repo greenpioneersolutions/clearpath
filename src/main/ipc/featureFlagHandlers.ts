@@ -2,6 +2,13 @@ import type { IpcMain } from 'electron'
 import { EventEmitter } from 'events'
 import Store from 'electron-store'
 import { getStoreEncryptionKey } from '../utils/storeEncryption'
+import {
+  BUILD_FLAGS,
+  BUILD_FLAGS_LOCKED,
+  EXPERIMENTAL_FLAG_KEYS,
+  type FeatureFlags,
+  type FeatureFlagKey,
+} from '../../shared/featureFlags.generated'
 
 // ── Flag-change event bus ────────────────────────────────────────────────────
 // Other subsystems (e.g. ClearMemoryService) subscribe here to react when a
@@ -11,124 +18,16 @@ import { getStoreEncryptionKey } from '../utils/storeEncryption'
 export const featureFlagEvents = new EventEmitter()
 
 export interface FlagChangeEvent {
-  key: string
+  key: FeatureFlagKey
   value: boolean
   flags: FeatureFlags
 }
 
-// ── Feature flag definitions ─────────────────────────────────────────────────
+export type { FeatureFlags, FeatureFlagKey } from '../../shared/featureFlags.generated'
 
-export interface FeatureFlags {
-  // Home page mode
-  showHomeHub: boolean     // true = simple hub (default), false = widget dashboard
-
-  // Navigation / top-level sections
-  showDashboard: boolean
-  showWork: boolean
-  showInsights: boolean
-  showConfigure: boolean
-  showLearn: boolean
-
-  // Configure sub-sections
-  showSetupWizard: boolean
-  showSettings: boolean
-  showPolicies: boolean
-  showIntegrations: boolean
-  showMemory: boolean
-  showClearMemory: boolean
-  showSkillsManagement: boolean
-  showSessionWizard: boolean
-  showWorkspaces: boolean
-  showTeamHub: boolean
-  showScheduler: boolean
-
-  // Work page features
-  showComposer: boolean
-  showSubAgents: boolean
-  showTemplates: boolean
-  showKnowledgeBase: boolean
-  showVoice: boolean
-
-  // Session features
-  showUseContext: boolean
-  showAgentSelection: boolean
-  showCostTracking: boolean
-  showComplianceLogs: boolean
-
-  // Settings features
-  showDataManagement: boolean
-  showBudgetLimits: boolean
-  showPlugins: boolean
-  showEnvVars: boolean
-  showWebhooks: boolean
-
-  // Experimental features
-  enableExperimentalFeatures: boolean
-  showPrScores: boolean
-  prScoresAiReview: boolean
-  showEfficiencyCoach: boolean
-
-  // Backend adapters — phased-rollout gates for SDK support.
-  // Default to `true` now that phase 2/3 adapters are in place; phase 5 cleanup
-  // removes these flags entirely.
-  enableClaudeSdk: boolean
-  enableCopilotSdk: boolean
-}
-
-const DEFAULTS: FeatureFlags = {
-  showHomeHub: true,
-
-  // Core navigation — always on by default
-  showDashboard: true,
-  showWork: true,
-  showInsights: true,
-  showConfigure: true,
-  showLearn: true,
-
-  // Configure sub-sections — essential settings on, plugins off
-  showSetupWizard: true,
-  showSettings: true,
-  showPolicies: false,
-  showIntegrations: false,
-  showMemory: false,
-  showClearMemory: false,
-  showSkillsManagement: false,
-  showSessionWizard: false,
-  showWorkspaces: false,
-  showTeamHub: false,
-  showScheduler: false,
-
-  // Work page features — all off by default
-  showComposer: false,
-  showSubAgents: false,
-  showTemplates: false,
-  showKnowledgeBase: false,
-  showVoice: false,
-
-  // Session features — all off by default
-  showUseContext: false,
-  showAgentSelection: false,
-  showCostTracking: false,
-  showComplianceLogs: false,
-
-  // Settings features — all off by default
-  showDataManagement: false,
-  showBudgetLimits: false,
-  showPlugins: false,
-  showEnvVars: false,
-  showWebhooks: false,
-
-  // Experimental features — all off by default
-  enableExperimentalFeatures: false,
-  showPrScores: false,
-  prScoresAiReview: false,
-  showEfficiencyCoach: false,
-
-  // SDK adapters — on by default during phase 2/3 rollout. Can be flipped off
-  // in settings if the SDK misbehaves for a user's environment.
-  enableClaudeSdk: true,
-  enableCopilotSdk: true,
-}
+// Build-time defaults come from features.json via the generated module.
+// Runtime overrides (set via the Settings UI) layer on top of these.
+const DEFAULTS: FeatureFlags = { ...BUILD_FLAGS }
 
 // ── Presets ──────────────────────────────────────────────────────────────────
 
@@ -312,25 +211,79 @@ const store = new Store<FlagStoreSchema>({
   },
 })
 
+// Experimental flags that were compiled OUT of this build (BUILD_FLAGS[key]
+// === false) cannot be turned on at runtime — their code path no longer
+// exists in the bundle. We clamp stale overrides here so a value left in the
+// store from a prior build doesn't silently leave the UI in an inconsistent
+// state. Non-experimental flags are unaffected.
+function clampToCompiledIn(flags: FeatureFlags): FeatureFlags {
+  const out = { ...flags }
+  for (const key of EXPERIMENTAL_FLAG_KEYS) {
+    if (!BUILD_FLAGS[key] && out[key]) out[key] = false
+  }
+  return out
+}
+
 function resolveFlags(): FeatureFlags {
+  // In locked mode, BUILD_FLAGS is the single source of truth — stored
+  // overrides are ignored entirely. This mirrors the Settings UI, which is
+  // read-only in locked builds, and gives `dev:preview` / `preview:locked`
+  // the same effective flag set an end user would see for that build.
+  if (BUILD_FLAGS_LOCKED) return { ...BUILD_FLAGS }
   const overrides = store.get('flags')
-  return { ...DEFAULTS, ...overrides }
+  return clampToCompiledIn({ ...DEFAULTS, ...overrides })
+}
+
+/**
+ * One-time scrub at startup: drop persisted overrides for experimental
+ * flags whose code is compiled out of the current build. These have no
+ * runtime effect today (clampToCompiledIn already keeps them at false),
+ * but leaving stale `true` values in the store risks silently re-enabling
+ * the feature if it later becomes compiled-in again — even if the new
+ * build's default is off. Idempotent; safe to call repeatedly.
+ */
+function scrubStaleCompiledOutOverrides(): void {
+  if (BUILD_FLAGS_LOCKED) return // Locked builds never write to the store
+  const persisted = store.get('flags') as Partial<FeatureFlags>
+  let dirty = false
+  const cleaned: Partial<FeatureFlags> = { ...persisted }
+  for (const key of EXPERIMENTAL_FLAG_KEYS) {
+    if (!BUILD_FLAGS[key] && key in cleaned) {
+      delete cleaned[key]
+      dirty = true
+    }
+  }
+  if (dirty) store.set('flags', cleaned)
 }
 
 // ── Registration ─────────────────────────────────────────────────────────────
 
 export function registerFeatureFlagHandlers(ipcMain: IpcMain): void {
+  scrubStaleCompiledOutOverrides()
+
   /** Get resolved flags (all defaults + overrides). */
   ipcMain.handle('feature-flags:get', () => ({
     flags: resolveFlags(),
-    activePresetId: store.get('activePresetId'),
+    // Locked builds have no notion of an "active preset" — overrides are ignored.
+    activePresetId: BUILD_FLAGS_LOCKED ? null : store.get('activePresetId'),
+    locked: BUILD_FLAGS_LOCKED,
   }))
 
   /** Set individual flag overrides. */
   ipcMain.handle('feature-flags:set', (_e, args: Partial<FeatureFlags>) => {
+    if (BUILD_FLAGS_LOCKED) return resolveFlags() // Locked: silently ignore
     const previous = resolveFlags()
     const current = store.get('flags')
-    store.set('flags', { ...current, ...args })
+    // Drop overrides for experimental flags whose code is compiled out of this
+    // build. Deleting the key (instead of writing an explicit `false`) avoids
+    // a stale override leaking forward: if the flag later becomes compiled-in
+    // and default-on, a persisted `false` from this session would silently
+    // override the new default.
+    const sanitized: Partial<FeatureFlags> = { ...args }
+    for (const key of EXPERIMENTAL_FLAG_KEYS) {
+      if (!BUILD_FLAGS[key]) delete sanitized[key]
+    }
+    store.set('flags', { ...current, ...sanitized })
     store.set('activePresetId', null) // Custom override = no preset
     const next = resolveFlags()
     emitFlagChanges(previous, next)
@@ -339,6 +292,7 @@ export function registerFeatureFlagHandlers(ipcMain: IpcMain): void {
 
   /** Apply a preset (replaces all overrides). */
   ipcMain.handle('feature-flags:apply-preset', (_e, args: { presetId: string }) => {
+    if (BUILD_FLAGS_LOCKED) return resolveFlags() // Locked: silently ignore
     const preset = PRESETS.find((p) => p.id === args.presetId)
     if (!preset) return { error: 'Unknown preset' }
     const previous = resolveFlags()
@@ -350,10 +304,11 @@ export function registerFeatureFlagHandlers(ipcMain: IpcMain): void {
   })
 
   /** Get available presets. */
-  ipcMain.handle('feature-flags:get-presets', () => PRESETS)
+  ipcMain.handle('feature-flags:get-presets', () => (BUILD_FLAGS_LOCKED ? [] : PRESETS))
 
   /** Reset to all-on defaults. */
   ipcMain.handle('feature-flags:reset', () => {
+    if (BUILD_FLAGS_LOCKED) return resolveFlags() // Locked: silently ignore
     const previous = resolveFlags()
     store.set('flags', {})
     store.set('activePresetId', 'all-on')
