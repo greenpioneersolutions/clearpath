@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import type { PromptTemplate } from '../../types/template'
 import type { WorkflowStep } from './StepCard'
 import TemplateLauncher from './TemplateLauncher'
@@ -32,9 +32,15 @@ interface Props {
   /** Whether there's an active selected session */
   hasActiveSession?: boolean
   activeSessionName?: string
+  /**
+   * Optional saved-workflow id. When provided on mount, Composer fetches the
+   * workflow via `workflow:get` and pre-loads its steps onto the canvas so the
+   * launchpad can deep-link straight into editing.
+   */
+  workflowId?: string
 }
 
-export default function Composer({ onSendToSession, onSendToNewSession, cli, sessions, hasActiveSession, activeSessionName }: Props): JSX.Element {
+export default function Composer({ onSendToSession, onSendToNewSession, cli, sessions, hasActiveSession, activeSessionName, workflowId }: Props): JSX.Element {
   const [steps, setSteps] = useState<WorkflowStep[]>([])
   const [hasStarted, setHasStarted] = useState(false)
   const [showTemplatePicker, setShowTemplatePicker] = useState(false)
@@ -44,6 +50,33 @@ export default function Composer({ onSendToSession, onSendToNewSession, cli, ses
   const [saveName, setSaveName] = useState('')
   const [saveDesc, setSaveDesc] = useState('')
   const [targetMode, setTargetMode] = useState<'new' | 'existing'>('new')
+
+  // Deep-link: when a workflowId is supplied, fetch and load its steps so the
+  // user lands directly on the canvas with the saved workflow ready to edit.
+  useEffect(() => {
+    if (!workflowId) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const wf = await window.electronAPI.invoke('workflow:get', { id: workflowId }) as
+          | { id: string; name: string; description: string; steps: WorkflowStep[] }
+          | null
+        if (cancelled) return
+        if (wf && wf.steps.length > 0) {
+          setSteps(wf.steps)
+          setHasStarted(true)
+          try {
+            await window.electronAPI.invoke('workflow:record-usage', { id: workflowId })
+          } catch (err) {
+            console.warn('Composer: workflow:record-usage failed', err)
+          }
+        }
+      } catch (err) {
+        console.warn('Composer: workflow:get failed', err)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [workflowId])
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 

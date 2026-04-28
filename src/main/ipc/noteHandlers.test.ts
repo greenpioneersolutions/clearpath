@@ -134,6 +134,7 @@ describe('noteHandlers', () => {
         'notes:list', 'notes:get', 'notes:create', 'notes:update', 'notes:delete',
         'notes:tags', 'notes:stats', 'notes:pick-files',
         'notes:read-attachment', 'notes:get-full-content',
+        'notes:get-bundle-for-prompt',
       ]
       for (const ch of expected) {
         expect(handlers[ch]).toBeDefined()
@@ -480,6 +481,143 @@ describe('noteHandlers', () => {
 
       expect(result.content).toBe('Just text')
       expect(result.attachmentCount).toBe(0)
+    })
+  })
+
+  // ── notes:get-bundle-for-prompt ──────────────────────────────────────
+
+  describe('notes:get-bundle-for-prompt', () => {
+    it('returns empty framedPrompt when no ids match a note', async () => {
+      storeData.notes = []
+      const result = await handlers['notes:get-bundle-for-prompt'](
+        {}, { ids: ['nope'] },
+      ) as Record<string, unknown>
+      expect(result.framedPrompt).toBe('')
+      expect(result.noteCount).toBe(0)
+      expect(result.attachmentCount).toBe(0)
+    })
+
+    it('returns empty framedPrompt for empty ids array', async () => {
+      storeData.notes = [makeNote({ id: 'a' })]
+      const result = await handlers['notes:get-bundle-for-prompt'](
+        {}, { ids: [] },
+      ) as Record<string, unknown>
+      expect(result.framedPrompt).toBe('')
+      expect(result.noteCount).toBe(0)
+    })
+
+    it('wraps a single note in <notes count="1"> with attribute metadata', async () => {
+      storeData.notes = [makeNote({
+        id: 'a',
+        title: 'Q2 goals',
+        content: 'Body content here',
+        category: 'meeting',
+        tags: ['roadmap', 'planning'],
+        source: 'manual',
+      })]
+      const result = await handlers['notes:get-bundle-for-prompt'](
+        {}, { ids: ['a'] },
+      ) as Record<string, unknown>
+
+      const framed = result.framedPrompt as string
+      expect(result.noteCount).toBe(1)
+      expect(framed).toContain('<notes count="1">')
+      expect(framed).toContain('</notes>')
+      expect(framed).toContain('title="Q2 goals"')
+      expect(framed).toContain('category="meeting"')
+      expect(framed).toContain('tags="roadmap,planning"')
+      expect(framed).toContain('source="manual"')
+      expect(framed).toContain('Body content here')
+      // Preamble must precede the bundle so the model knows how to treat it.
+      expect(framed.indexOf('reference context')).toBeLessThan(framed.indexOf('<notes'))
+    })
+
+    it('renders both notes when given two ids and counts them in the wrapper', async () => {
+      storeData.notes = [
+        makeNote({ id: 'a', title: 'First', content: 'one' }),
+        makeNote({ id: 'b', title: 'Second', content: 'two' }),
+      ]
+      const result = await handlers['notes:get-bundle-for-prompt'](
+        {}, { ids: ['a', 'b'] },
+      ) as Record<string, unknown>
+
+      const framed = result.framedPrompt as string
+      expect(result.noteCount).toBe(2)
+      expect(framed).toContain('<notes count="2">')
+      expect(framed).toContain('title="First"')
+      expect(framed).toContain('title="Second"')
+      expect(framed).toContain('one')
+      expect(framed).toContain('two')
+    })
+
+    it('labels attachment text inside the note block', async () => {
+      storeData.notes = [makeNote({
+        id: 'a',
+        title: 'With attachment',
+        content: 'Body',
+        attachments: [{
+          id: 'att-1', path: '/home/user/spec.md', name: 'spec.md',
+          sizeBytes: 100, addedAt: 1000,
+        }],
+      })]
+      vi.mocked(existsSync).mockReturnValue(true)
+      vi.mocked(readFileSync).mockReturnValue('attachment payload')
+
+      const result = await handlers['notes:get-bundle-for-prompt'](
+        {}, { ids: ['a'] },
+      ) as Record<string, unknown>
+
+      const framed = result.framedPrompt as string
+      expect(result.attachmentCount).toBe(1)
+      expect(framed).toContain('[attachment: spec.md]')
+      expect(framed).toContain('attachment payload')
+    })
+
+    it('escapes special characters in attributes so they do not break the framing', async () => {
+      storeData.notes = [makeNote({
+        id: 'a',
+        title: 'Name with "quotes" & <brackets>',
+        content: 'body',
+        category: 'reference',
+        tags: ['weird"tag', '<x>'],
+      })]
+      const result = await handlers['notes:get-bundle-for-prompt'](
+        {}, { ids: ['a'] },
+      ) as Record<string, unknown>
+
+      const framed = result.framedPrompt as string
+      // No raw "<" or unescaped quotes inside attribute values.
+      expect(framed).toContain('title="Name with &quot;quotes&quot; &amp; &lt;brackets&gt;"')
+      expect(framed).toContain('tags="weird&quot;tag,&lt;x&gt;"')
+    })
+
+    it('uses "session:{name}" as source label when sessionName is set', async () => {
+      storeData.notes = [makeNote({
+        id: 'a',
+        title: 'From session',
+        source: 'session:abc123',
+        sessionName: 'release-prep',
+      })]
+      const result = await handlers['notes:get-bundle-for-prompt'](
+        {}, { ids: ['a'] },
+      ) as Record<string, unknown>
+
+      const framed = result.framedPrompt as string
+      expect(framed).toContain('source="session:release-prep"')
+    })
+
+    it('does NOT leak the note UUID into the framed prompt', async () => {
+      storeData.notes = [makeNote({
+        id: 'super-secret-uuid-xyz',
+        title: 'My note',
+        content: 'body',
+      })]
+      const result = await handlers['notes:get-bundle-for-prompt'](
+        {}, { ids: ['super-secret-uuid-xyz'] },
+      ) as Record<string, unknown>
+
+      const framed = result.framedPrompt as string
+      expect(framed).not.toContain('super-secret-uuid-xyz')
     })
   })
 

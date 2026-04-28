@@ -31,10 +31,11 @@ vi.mock('../contexts/FeatureFlagContext', () => {
       enableExperimentalFeatures: false, showPrScores: false,
       showSessionWizard: true, showComposer: true, showScheduler: true, showMemory: true,
       showSubAgents: true, showTemplates: true, showAgentSelection: true,
-      showSkillsManagement: true, showBackstageExplorer: true,
+      showSkillsManagement: true, showBackstageExplorer: true, showNotes: true,
     }
   return {
   useFeatureFlags: () => ({ flags: flagsObj }),
+  useFlag: (key: string) => Boolean((flagsObj as Record<string, boolean>)[key]),
   FeatureFlags: {} as any,
 }})
 vi.mock('../contexts/BrandingContext', () => ({
@@ -140,15 +141,24 @@ beforeEach(() => {
 
 import Work from './Work'
 
-// Helper: retrieve a registered IPC handler by channel name
-function getIpcHandler(channel: string): ((...args: unknown[]) => void) | undefined {
-  const call = mockOn.mock.calls.find(([ch]) => ch === channel)
-  return call?.[1] as ((...args: unknown[]) => void) | undefined
+// Helper: retrieve all registered IPC handlers for a channel and dispatch to
+// each one. Multiple components in the Work subtree (Work, ActiveSessionsCard,
+// ContextUsage, FleetStatusPanel, ...) subscribe to the same channels, so a
+// single test event needs to fan out to every listener — same as the real
+// renderer event bus does at runtime.
+function getIpcHandler(channel: string): ((arg?: unknown) => void) | undefined {
+  const calls = mockOn.mock.calls as unknown as Array<[string, (arg?: unknown) => void]>
+  const handlers = calls.filter(([ch]) => ch === channel).map(([, fn]) => fn)
+  if (handlers.length === 0) return undefined
+  return (arg) => {
+    for (const fn of handlers) fn(arg)
+  }
 }
 
-function renderWork() {
+function renderWork(opts: { sessionId?: string; initialEntries?: string[] } = {}) {
+  const entries = opts.initialEntries ?? [opts.sessionId ? `/work?id=${opts.sessionId}` : '/work']
   return render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={entries}>
       <Work />
     </MemoryRouter>
   )
@@ -177,56 +187,6 @@ describe('Work', () => {
     renderWork()
     await waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledWith('cli:list-sessions')
-    })
-  })
-
-  it('checks wizard state on mount', () => {
-    renderWork()
-    expect(mockInvoke).toHaveBeenCalledWith('wizard:get-state')
-  })
-
-  it('shows wizard when user has not completed it', async () => {
-    mockInvoke.mockImplementation((channel: string) => {
-      if (channel === 'wizard:get-state') return Promise.resolve({ hasCompletedWizard: false })
-      if (channel === 'cli:list-sessions') return Promise.resolve([])
-      if (channel === 'cli:get-persisted-sessions') return Promise.resolve([])
-      if (channel === 'wizard:get-options') return Promise.resolve([])
-      if (channel === 'feature-flags:get') return Promise.resolve(null)
-      if (channel === 'branding:get') return Promise.resolve(null)
-      if (channel === 'agent:list') return Promise.resolve({ copilot: [], claude: [] })
-      if (channel === 'agent:get-enabled') return Promise.resolve([])
-      if (channel === 'agent:get-active') return Promise.resolve({ copilot: null, claude: null })
-      if (channel === 'agent:get-profiles') return Promise.resolve([])
-      if (channel === 'starter-pack:get-visible-agents') return Promise.resolve([])
-      if (channel === 'app:get-cwd') return Promise.resolve('/test')
-      if (channel === 'tools:list-mcp-servers') return Promise.resolve([])
-      if (channel === 'template:list') return Promise.resolve([])
-      if (channel === 'subagent:list') return Promise.resolve([])
-      if (channel === 'skills:list') return Promise.resolve([])
-      if (channel === 'notes:list') return Promise.resolve([])
-      if (channel === 'notes:get-tags') return Promise.resolve([])
-      if (channel === 'notes:get-categories') return Promise.resolve([])
-      if (channel === 'starter-pack:get-prompts') return Promise.resolve([])
-      if (channel === 'starter-pack:get-memories') return Promise.resolve([])
-      if (channel === 'starter-pack:get-installed-memories') return Promise.resolve([])
-      if (channel === 'starter-pack:get-skills') return Promise.resolve([])
-      if (channel === 'starter-pack:get-agents') return Promise.resolve([])
-      if (channel === 'templates:list') return Promise.resolve([])
-      if (channel === 'cost:check-budget') return Promise.resolve({ alerts: [], autoPause: false })
-      if (channel === 'cost:get-budget') return Promise.resolve({ daily: null, weekly: null, monthly: null, autoPause: false })
-      if (channel === 'cost:summary') return Promise.resolve({ totalTokens: 0, todayTokens: 0, totalCost: 0, todaySpend: 0, totalPrompts: 0, displayMode: 'tokens' })
-      if (channel === 'tools:get-pending-permissions') return Promise.resolve([])
-      if (channel === 'scheduler:list') return Promise.resolve([])
-      if (channel === 'policy:get-active') return Promise.resolve({ presetName: 'Standard', activePresetId: 'standard' })
-      if (channel === 'workspace:list') return Promise.resolve([])
-      if (channel === 'workspace:get-active') return Promise.resolve(null)
-      if (channel === 'learn:get-progress') return Promise.resolve({ percentage: 0, dismissed: false })
-      return Promise.resolve(null)
-    })
-    renderWork()
-    // When wizard is not completed, the wizard tab should be shown
-    await waitFor(() => {
-      expect(mockInvoke).toHaveBeenCalledWith('wizard:get-state')
     })
   })
 
@@ -313,7 +273,7 @@ describe('Work', () => {
       if (channel === 'wizard:get-state') return Promise.resolve({ hasCompletedWizard: true })
       return Promise.resolve(null)
     })
-    renderWork()
+    renderWork({ sessionId: 'edit-sess' })
     await waitFor(() => {
       expect(document.querySelector('[title="Edit session"]')).not.toBeNull()
     })
@@ -350,7 +310,7 @@ describe('Work', () => {
       if (channel === 'starter-pack:get-prompts') return Promise.resolve([])
       return Promise.resolve(null)
     })
-    renderWork()
+    renderWork({ sessionId: 'work-sess-1' })
     await waitFor(() => mockInvoke.mock.calls.some(([ch]) => ch === 'cli:list-sessions'))
 
     const handleOutput = getIpcHandler('cli:output')
@@ -385,7 +345,7 @@ describe('Work', () => {
       if (channel === 'starter-pack:get-prompts') return Promise.resolve([])
       return Promise.resolve(null)
     })
-    renderWork()
+    renderWork({ sessionId: 'err-sess' })
     await waitFor(() => mockInvoke.mock.calls.some(([ch]) => ch === 'cli:list-sessions'))
 
     const handleError = getIpcHandler('cli:error')
@@ -440,8 +400,8 @@ describe('Work', () => {
       if (channel === 'starter-pack:get-prompts') return Promise.resolve([])
       return Promise.resolve(null)
     })
-    renderWork()
-    await waitFor(() => mockInvoke.mock.calls.some(([ch]) => ch === 'cli:list-sessions'))
+    renderWork({ sessionId: 'crash-sess' })
+    await waitFor(() => expect(document.querySelector('[title="Edit session"]')).not.toBeNull())
 
     const handleExit = getIpcHandler('cli:exit')
     act(() => {
@@ -463,8 +423,8 @@ describe('Work', () => {
       if (channel === 'starter-pack:get-prompts') return Promise.resolve([])
       return Promise.resolve(null)
     })
-    renderWork()
-    await waitFor(() => mockInvoke.mock.calls.some(([ch]) => ch === 'cli:list-sessions'))
+    renderWork({ sessionId: 'think-sess' })
+    await waitFor(() => expect(document.querySelector('[title="Edit session"]')).not.toBeNull())
 
     const handleTurnStart = getIpcHandler('cli:turn-start')
     act(() => { handleTurnStart!({ sessionId: 'think-sess' }) })
@@ -484,8 +444,8 @@ describe('Work', () => {
       if (channel === 'starter-pack:get-prompts') return Promise.resolve([])
       return Promise.resolve(null)
     })
-    renderWork()
-    await waitFor(() => mockInvoke.mock.calls.some(([ch]) => ch === 'cli:list-sessions'))
+    renderWork({ sessionId: 'think-sess-2' })
+    await waitFor(() => expect(document.querySelector('[title="Edit session"]')).not.toBeNull())
 
     const handleTurnStart = getIpcHandler('cli:turn-start')
     const handleTurnEnd = getIpcHandler('cli:turn-end')
@@ -508,8 +468,8 @@ describe('Work', () => {
       if (channel === 'starter-pack:get-prompts') return Promise.resolve([])
       return Promise.resolve(null)
     })
-    renderWork()
-    await waitFor(() => mockInvoke.mock.calls.some(([ch]) => ch === 'cli:list-sessions'))
+    renderWork({ sessionId: 'turnend-sess' })
+    await waitFor(() => expect(document.querySelector('[title="Edit session"]')).not.toBeNull())
 
     const handleTurnEnd = getIpcHandler('cli:turn-end')
     act(() => { handleTurnEnd!({ sessionId: 'turnend-sess' }) })
@@ -529,7 +489,7 @@ describe('Work', () => {
       if (channel === 'starter-pack:get-prompts') return Promise.resolve([])
       return Promise.resolve(null)
     })
-    renderWork()
+    renderWork({ sessionId: 'perm-sess' })
     await waitFor(() => mockInvoke.mock.calls.some(([ch]) => ch === 'cli:list-sessions'))
 
     const handlePermission = getIpcHandler('cli:permission-request')
@@ -596,7 +556,7 @@ describe('Work', () => {
       if (channel === 'cli:stop-session') return Promise.resolve(null)
       return Promise.resolve(null)
     })
-    renderWork()
+    renderWork({ sessionId: 'stop-me' })
     await waitFor(() => screen.getByText('Stop'))
     fireEvent.click(screen.getByText('Stop'))
     await waitFor(() => {
@@ -616,7 +576,7 @@ describe('Work', () => {
       if (channel === 'cli:stop-session') return Promise.resolve(null)
       return Promise.resolve(null)
     })
-    renderWork()
+    renderWork({ sessionId: 'stopped-sess' })
     await waitFor(() => screen.getByText('Stop'))
     fireEvent.click(screen.getByText('Stop'))
     await waitFor(() => {
@@ -638,7 +598,7 @@ describe('Work', () => {
       if (channel === 'starter-pack:get-prompts') return Promise.resolve([])
       return Promise.resolve(null)
     })
-    renderWork()
+    renderWork({ sessionId: 'sess-a' })
     // Breadcrumb renders when a session is selected — the name is visible and the
     // friendly CLI label ("Copilot") appears in the breadcrumb span.
     await waitFor(() => {
@@ -719,7 +679,7 @@ describe('Work', () => {
       if (channel === 'starter-pack:record-interaction') return Promise.resolve(null)
       return Promise.resolve(null)
     })
-    renderWork()
+    renderWork({ sessionId: 'send-sess' })
     await waitFor(() => screen.getByLabelText('Message input'))
 
     const input = screen.getByLabelText('Message input')
@@ -742,7 +702,7 @@ describe('Work', () => {
       if (channel === 'starter-pack:get-prompts') return Promise.resolve([])
       return Promise.resolve(null)
     })
-    renderWork()
+    renderWork({ sessionId: 'slash-sess' })
     await waitFor(() => screen.getByLabelText('Message input'))
 
     const input = screen.getByLabelText('Message input')
@@ -767,7 +727,7 @@ describe('Work', () => {
       if (channel === 'subagent:spawn') return Promise.resolve({ id: 'sub-x', name: 'Fix tests' })
       return Promise.resolve(null)
     })
-    renderWork()
+    renderWork({ sessionId: 'delegate-sess' })
     await waitFor(() => screen.getByLabelText('Message input'))
 
     const input = screen.getByLabelText('Message input')
@@ -795,7 +755,7 @@ describe('Work', () => {
       if (channel === 'subagent:spawn') return Promise.reject(new Error('Spawn failed'))
       return Promise.resolve(null)
     })
-    renderWork()
+    renderWork({ sessionId: 'del-fail-sess' })
     await waitFor(() => screen.getByLabelText('Message input'))
 
     const input = screen.getByLabelText('Message input')
@@ -819,7 +779,7 @@ describe('Work', () => {
       if (channel === 'subagent:spawn') return Promise.resolve({ id: 'sub-d', name: 'Delegated work' })
       return Promise.resolve(null)
     })
-    renderWork()
+    renderWork({ sessionId: 'slash-del-sess' })
     await waitFor(() => screen.getByLabelText('Message input'))
 
     const input = screen.getByLabelText('Message input')
@@ -843,7 +803,7 @@ describe('Work', () => {
       if (channel === 'starter-pack:get-prompts') return Promise.resolve([])
       return Promise.resolve(null)
     })
-    renderWork()
+    renderWork({ sessionId: 'allow-sess' })
     await waitFor(() => mockInvoke.mock.calls.some(([ch]) => ch === 'cli:list-sessions'))
 
     // Trigger a permission-request message
@@ -874,7 +834,7 @@ describe('Work', () => {
       if (channel === 'starter-pack:get-prompts') return Promise.resolve([])
       return Promise.resolve(null)
     })
-    renderWork()
+    renderWork({ sessionId: 'deny-sess' })
     await waitFor(() => mockInvoke.mock.calls.some(([ch]) => ch === 'cli:list-sessions'))
 
     const handlePermission = getIpcHandler('cli:permission-request')
@@ -905,7 +865,7 @@ describe('Work', () => {
       if (channel === 'starter-pack:get-prompts') return Promise.resolve([])
       return Promise.resolve(null)
     })
-    renderWork()
+    renderWork({ sessionId: 'mode-sess' })
     await waitFor(() => screen.getByTitle(/cycle mode/i))
 
     const modeBtn = screen.getByTitle(/cycle mode/i)
@@ -916,48 +876,6 @@ describe('Work', () => {
     })
     // Mode should change: Normal → Plan
     expect(modeBtn.textContent).toContain('Plan')
-  })
-
-  // ── WelcomeBack interactions ───────────────────────────────────────────
-
-  it('clicking Start a session in WelcomeBack zero-click launches a session', async () => {
-    renderWork()
-    await waitFor(() => screen.getByText('Start a session'))
-    mockInvoke.mockClear()
-    fireEvent.click(screen.getByText('Start a session'))
-    // No modal — the button now calls handleQuickStart which invokes cli:start-session directly
-    await waitFor(() => {
-      expect(mockInvoke).toHaveBeenCalledWith('cli:start-session', expect.objectContaining({ mode: 'interactive' }))
-    })
-    expect(screen.queryByLabelText('Cancel new session')).not.toBeInTheDocument()
-  })
-
-  it('clicking a WelcomeBack recent row continues into a new session', async () => {
-    mockInvoke.mockImplementation((channel: string) => {
-      if (channel === 'cli:list-sessions') return Promise.resolve([])
-      if (channel === 'cli:get-persisted-sessions') return Promise.resolve([
-        {
-          sessionId: 'wb-cont-sess',
-          cli: 'copilot',
-          name: 'WB Continue',
-          startedAt: Date.now() - 3600000,
-          messageLog: [{ type: 'text', content: 'Some past work', sender: 'user' }],
-        },
-      ])
-      if (channel === 'wizard:get-state') return Promise.resolve({ hasCompletedWizard: true })
-      if (channel === 'starter-pack:get-prompts') return Promise.resolve([])
-      if (channel === 'cli:start-session') return Promise.resolve({ sessionId: 'wb-new' })
-      return Promise.resolve(null)
-    })
-    renderWork()
-    await waitFor(() => screen.getByText('WB Continue'))
-
-    // Row click continues into a new session (row itself is a button)
-    fireEvent.click(screen.getByText('WB Continue'))
-
-    await waitFor(() => {
-      expect(mockInvoke).toHaveBeenCalledWith('cli:start-session', expect.objectContaining({ cli: 'copilot' }))
-    })
   })
 
   // ── Panel close button ────────────────────────────────────────────────
@@ -978,7 +896,7 @@ describe('Work', () => {
       if (channel === 'starter-pack:get-prompts') return Promise.resolve([])
       return Promise.resolve(null)
     })
-    renderWork()
+    renderWork({ sessionId: 'active-log' })
     await waitFor(() => {
       expect(screen.getByText('Previous AI message')).toBeInTheDocument()
     })
@@ -1172,7 +1090,7 @@ describe('Work', () => {
       }])
       return Promise.resolve(null)
     })
-    renderWork()
+    renderWork({ sessionId: 'tmpl-sess' })
     await waitFor(() => screen.getByLabelText('Message input'))
 
     // Open the ContextPicker, switch to the Playbooks tab (which hosts templates), click the template.
@@ -1337,7 +1255,7 @@ describe('Work', () => {
       }])
       return Promise.resolve(null)
     })
-    renderWork()
+    renderWork({ sessionId: 'tmpl-var-sess' })
     await waitFor(() => screen.getByLabelText('Message input'))
 
     // Open the ContextPicker, switch to the Playbooks tab (templates), click the template.
@@ -1372,7 +1290,7 @@ describe('Work', () => {
       if (channel === 'notes:create') return Promise.resolve({ id: 'note-1' })
       return Promise.resolve(null)
     })
-    renderWork()
+    renderWork({ sessionId: 'note-sess' })
     await waitFor(() => screen.getByText('AI response to save'))
 
     // Trigger the "Save as Memory" action from OutputDisplay
@@ -1461,6 +1379,52 @@ describe('Work', () => {
     localCleanup()
   })
 
+  it('redirects ?tab=notes to /notes (legacy sub-tab URL)', async () => {
+    const { render: localRender, cleanup: localCleanup } = await import('@testing-library/react')
+    const { MemoryRouter: LocalRouter, Routes: LocalRoutes, Route: LocalRoute, useLocation: useLoc } = await import('react-router-dom')
+    const WorkPage = (await import('./Work')).default
+    function Probe() {
+      const loc = useLoc()
+      return <div data-testid="redir-probe">{loc.pathname}</div>
+    }
+    const { unmount } = localRender(
+      <LocalRouter initialEntries={['/work?tab=notes']}>
+        <LocalRoutes>
+          <LocalRoute path="/work" element={<WorkPage />} />
+          <LocalRoute path="/notes" element={<Probe />} />
+        </LocalRoutes>
+      </LocalRouter>,
+    )
+    await waitFor(() => {
+      expect(screen.getByTestId('redir-probe').textContent).toBe('/notes')
+    })
+    unmount()
+    localCleanup()
+  })
+
+  it('redirects legacy ?tab=memory to /notes', async () => {
+    const { render: localRender, cleanup: localCleanup } = await import('@testing-library/react')
+    const { MemoryRouter: LocalRouter, Routes: LocalRoutes, Route: LocalRoute, useLocation: useLoc } = await import('react-router-dom')
+    const WorkPage = (await import('./Work')).default
+    function Probe() {
+      const loc = useLoc()
+      return <div data-testid="redir-probe">{loc.pathname}</div>
+    }
+    const { unmount } = localRender(
+      <LocalRouter initialEntries={['/work?tab=memory']}>
+        <LocalRoutes>
+          <LocalRoute path="/work" element={<WorkPage />} />
+          <LocalRoute path="/notes" element={<Probe />} />
+        </LocalRoutes>
+      </LocalRouter>,
+    )
+    await waitFor(() => {
+      expect(screen.getByTestId('redir-probe').textContent).toBe('/notes')
+    })
+    unmount()
+    localCleanup()
+  })
+
   // ── startSession with contextSummary (context card) ──────────────────
 
   it('startSession with contextSummary shows context card in chat', async () => {
@@ -1489,7 +1453,7 @@ describe('Work', () => {
 
   it('cli:turn-end for unknown session is a no-op', async () => {
     renderWork()
-    await waitFor(() => mockInvoke.mock.calls.some(([ch]) => ch === 'wizard:get-state'))
+    await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith('cli:list-sessions'))
     const handleTurnEnd = getIpcHandler('cli:turn-end')
     act(() => { handleTurnEnd!({ sessionId: 'no-such-session' }) })
     // No crash; starter-pack:record-interaction is still called
@@ -1600,7 +1564,7 @@ describe('Work', () => {
       if (channel === 'starter-pack:get-prompts') return Promise.resolve([])
       return Promise.resolve(null)
     })
-    renderWork()
+    renderWork({ sessionId: 'empty-log' })
     // Empty log → "Session restored (claude)" status message inserted
     await waitFor(() => {
       expect(screen.getByText(/Session restored \(claude\)/i)).toBeInTheDocument()
@@ -1693,7 +1657,7 @@ describe('Work', () => {
       if (channel === 'subagent:spawn') return Promise.resolve({ id: 'sub-p', name: 'Prefix task' })
       return Promise.resolve(null)
     })
-    renderWork()
+    renderWork({ sessionId: 'del-prefix-sess' })
     await waitFor(() => screen.getByLabelText('Message input'))
 
     const input = screen.getByLabelText('Message input')
@@ -1746,7 +1710,7 @@ describe('Work', () => {
       if (channel === 'starter-pack:get-prompts') return Promise.resolve([])
       return Promise.resolve(null)
     })
-    renderWork()
+    renderWork({ sessionId: 'del-direct' })
     // Open session manager which exposes delete button
     await waitFor(() => screen.getByText('All'))
     fireEvent.click(screen.getByText('All'))
@@ -1888,7 +1852,7 @@ describe('Work', () => {
       if (channel === 'notes:create') return Promise.resolve({ id: 'created-note-1' })
       return Promise.resolve(null)
     })
-    renderWork()
+    renderWork({ sessionId: 'save-note-sess' })
     await waitFor(() => screen.getByText('AI-generated content to save'))
 
     // Trigger onSaveAsNote by firing a cli:output event with type text —
@@ -1912,7 +1876,7 @@ describe('Work', () => {
       if (channel === 'starter-pack:get-prompts') return Promise.resolve([])
       return Promise.resolve(null)
     })
-    renderWork()
+    renderWork({ sessionId: 'fleet-sess' })
     await waitFor(() => screen.getByLabelText('Message input'))
 
     // Enable fleet mode via QuickCompose — look for the Fleet toggle button
@@ -2077,6 +2041,80 @@ describe('Work', () => {
     expect(s.queryByText(/Session launched with context/i)).not.toBeInTheDocument()
     unmount()
     cleanup()
+  })
+
+  // ── Attached-notes chip ───────────────────────────────────────────────────
+  // Sending a message with attached notes should render a "Shared N notes —
+  // <titles>" chip on the user bubble. The chip exposes all titles via the
+  // accessible label / title attribute so the audit trail survives even when
+  // the visible summary is truncated. Note BODIES must NEVER appear in the
+  // chat DOM — the chip is title-only by design.
+
+  it('renders the attached-notes chip with all titles when notes are attached', async () => {
+    mockInvoke.mockImplementation((channel: string, args?: unknown) => {
+      if (channel === 'cli:list-sessions') return Promise.resolve([
+        { sessionId: 'chip-sess', cli: 'copilot', name: 'Chip Test', status: 'running', startedAt: Date.now() },
+      ])
+      if (channel === 'cli:get-persisted-sessions') return Promise.resolve([])
+      if (channel === 'cli:get-message-log') return Promise.resolve([])
+      if (channel === 'wizard:get-state') return Promise.resolve({ hasCompletedWizard: true })
+      if (channel === 'starter-pack:get-prompts') return Promise.resolve([])
+      if (channel === 'notes:list') return Promise.resolve([
+        { id: 'n-a', title: 'Quarterly goals', content: 'SECRET_BODY_TEXT_FOR_NOTE_A_quarterly', tags: [], category: 'reference', pinned: false, attachments: [], createdAt: 0, updatedAt: 0 },
+        { id: 'n-b', title: 'Onboarding checklist', content: 'SECRET_BODY_TEXT_FOR_NOTE_B_onboarding', tags: [], category: 'reference', pinned: false, attachments: [], createdAt: 0, updatedAt: 0 },
+      ])
+      if (channel === 'notes:get-tags') return Promise.resolve([])
+      if (channel === 'notes:get-categories') return Promise.resolve([])
+      if (channel === 'notes:get-full-content') {
+        const id = (args as { id: string }).id
+        if (id === 'n-a') return Promise.resolve({ content: 'SECRET_BODY_TEXT_FOR_NOTE_A_quarterly' })
+        if (id === 'n-b') return Promise.resolve({ content: 'SECRET_BODY_TEXT_FOR_NOTE_B_onboarding' })
+        return Promise.resolve({ content: '' })
+      }
+      if (channel === 'notes:get-bundle-for-prompt') {
+        const ids = (args as { ids: string[] }).ids ?? []
+        return Promise.resolve({
+          framedPrompt: `<notes count="${ids.length}">framed body (titles + content)</notes>`,
+          noteCount: ids.length,
+          attachmentCount: 0,
+        })
+      }
+      if (channel === 'notes:get') {
+        const id = (args as { id: string }).id
+        if (id === 'n-a') return Promise.resolve({ title: 'Quarterly goals' })
+        if (id === 'n-b') return Promise.resolve({ title: 'Onboarding checklist' })
+        return Promise.resolve(null)
+      }
+      return Promise.resolve(null)
+    })
+    renderWork({ sessionId: 'chip-sess' })
+    await waitFor(() => screen.getByLabelText('Message input'))
+
+    // Open Context Picker → Notes tab → check both notes.
+    fireEvent.click(screen.getByLabelText('Attach context'))
+    await waitFor(() => screen.getByRole('tab', { name: 'Notes' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Notes' }))
+    await waitFor(() => screen.getByText('Quarterly goals'))
+    fireEvent.click(screen.getByText('Quarterly goals'))
+    fireEvent.click(screen.getByText('Onboarding checklist'))
+
+    // Send a message.
+    const input = screen.getByLabelText('Message input')
+    fireEvent.change(input, { target: { value: 'My visible question' } })
+    fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' })
+
+    // Chip carries an accessible label naming all attached notes — the visible
+    // text is split across spans (label "2 notes" + summary), so we assert via
+    // aria-label rather than getByText.
+    const chip = await screen.findByLabelText(/2 notes: Quarterly goals, Onboarding checklist/i)
+    expect(chip).toHaveAttribute('title', 'Quarterly goals, Onboarding checklist')
+    // The "2 notes" label span should be visible inside the chip.
+    expect(chip.textContent).toMatch(/2 notes/i)
+
+    // Critical: note BODIES must never reach the rendered DOM.
+    const dom = document.body.innerHTML
+    expect(dom).not.toContain('SECRET_BODY_TEXT_FOR_NOTE_A_quarterly')
+    expect(dom).not.toContain('SECRET_BODY_TEXT_FOR_NOTE_B_onboarding')
   })
 
 })

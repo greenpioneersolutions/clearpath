@@ -3,6 +3,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeSanitize from 'rehype-sanitize'
 import type { ParsedOutput } from '../types/ipc'
+import { useFlag } from '../contexts/FeatureFlagContext'
 
 export interface OutputMessage {
   id: string
@@ -15,6 +16,18 @@ export interface OutputMessage {
    * context visible to the user.
    */
   contextAnnotation?: string
+  /**
+   * Notes attached when this user message was sent. Title is captured at
+   * attach time and frozen here — the in-chat "shared N notes" chip reads
+   * straight from this metadata, never the notes store, so the chip survives
+   * note deletion AND showNotes-flag toggling. Body text is intentionally
+   * NEVER persisted on the message — the chip only ever knows the title.
+   */
+  attachedNotes?: Array<{ id: string; title: string }>
+  /** Agent persona attached at session start. Names only — no body content. */
+  attachedAgent?: { id: string; name: string }
+  /** Skills the user tagged this chat with. Names only — no body content. */
+  attachedSkills?: Array<{ id: string; name: string }>
   /**
    * Id of the CLI turn this message belongs to. Propagated from
    * `ParsedOutput.turnId` when a `cli:output` event is ingested. Used by
@@ -170,8 +183,8 @@ export default function OutputDisplay({ messages, onPermissionResponse, onSaveAs
                   : null
                 usageIdx++
                 return badge
-                  ? <div key={`turn-${first.id}`}>{badge}<UserBubble content={first.output.content} timestamp={first.timestamp} contextAnnotation={first.contextAnnotation} /></div>
-                  : <UserBubble key={first.id} content={first.output.content} timestamp={first.timestamp} contextAnnotation={first.contextAnnotation} />
+                  ? <div key={`turn-${first.id}`}>{badge}<UserBubble content={first.output.content} timestamp={first.timestamp} contextAnnotation={first.contextAnnotation} attachedNotes={first.attachedNotes} attachedAgent={first.attachedAgent} attachedSkills={first.attachedSkills} /></div>
+                  : <UserBubble key={first.id} content={first.output.content} timestamp={first.timestamp} contextAnnotation={first.contextAnnotation} attachedNotes={first.attachedNotes} attachedAgent={first.attachedAgent} attachedSkills={first.attachedSkills} />
               }
 
               // Grouped AI text messages (only groups streaming fragments from same response)
@@ -216,7 +229,22 @@ function formatTime(ts?: number): string {
   return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
 }
 
-function UserBubble({ content, timestamp, contextAnnotation }: { content: string; timestamp?: number; contextAnnotation?: string }): JSX.Element {
+function UserBubble({ content, timestamp, contextAnnotation, attachedNotes, attachedAgent, attachedSkills }: {
+  content: string
+  timestamp?: number
+  contextAnnotation?: string
+  attachedNotes?: Array<{ id: string; title: string }>
+  attachedAgent?: { id: string; name: string }
+  attachedSkills?: Array<{ id: string; name: string }>
+}): JSX.Element {
+  // Notes flag gates RENDERING only — the message metadata is always
+  // preserved. Toggling showNotes off then on restores chips on existing
+  // transcripts.
+  const showNotes = useFlag('showNotes')
+  const notesToShow = showNotes && attachedNotes && attachedNotes.length > 0 ? attachedNotes : null
+  const skillsToShow = attachedSkills && attachedSkills.length > 0 ? attachedSkills : null
+  const hasAnyChip = !!(attachedAgent || skillsToShow || notesToShow)
+
   return (
     <div className="flex flex-col items-end animate-fadeIn">
       <div className="flex justify-end w-full">
@@ -232,6 +260,21 @@ function UserBubble({ content, timestamp, contextAnnotation }: { content: string
           </div>
         </div>
       </div>
+      {hasAnyChip && (
+        <div className="mt-1 mr-12 max-w-[80%] flex flex-wrap gap-1.5 justify-end">
+          {attachedAgent && (
+            <span
+              className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-violet-900/30 border border-violet-700/50 text-violet-200"
+              title={`Agent: ${attachedAgent.name}`}
+            >
+              <span className="text-[9px] uppercase tracking-wider text-violet-400">Agent</span>
+              {attachedAgent.name}
+            </span>
+          )}
+          {skillsToShow && <AttachedListChip kind="skill" items={skillsToShow.map((s) => s.name)} />}
+          {notesToShow && <AttachedListChip kind="note" items={notesToShow.map((n) => n.title)} />}
+        </div>
+      )}
       {contextAnnotation && (
         <p
           className="text-[10px] text-gray-500 italic mt-1 mr-12 max-w-[80%] text-right"
@@ -242,6 +285,32 @@ function UserBubble({ content, timestamp, contextAnnotation }: { content: string
         </p>
       )}
     </div>
+  )
+}
+
+function AttachedListChip({ kind, items }: { kind: 'note' | 'skill'; items: string[] }): JSX.Element {
+  // No "expand" affordance — body text was never persisted; this chip is the
+  // entire audit-trail surface for attached context. Title/name only.
+  const MAX = 2
+  const shown = items.slice(0, MAX)
+  const overflow = items.length - shown.length
+  const all = items.join(', ')
+  const summary = overflow > 0 ? `${shown.join(' · ')} · +${overflow}` : shown.join(' · ')
+  const styles = kind === 'note'
+    ? { bg: 'bg-teal-900/30', border: 'border-teal-700/50', text: 'text-teal-200', label: 'text-teal-400' }
+    : { bg: 'bg-indigo-900/30', border: 'border-indigo-700/50', text: 'text-indigo-200', label: 'text-indigo-400' }
+  const labelText = kind === 'note'
+    ? `${items.length} note${items.length === 1 ? '' : 's'}`
+    : `${items.length} skill${items.length === 1 ? '' : 's'}`
+  return (
+    <span
+      className={`inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full ${styles.bg} border ${styles.border} ${styles.text}`}
+      aria-label={`${labelText}: ${all}`}
+      title={all}
+    >
+      <span className={`text-[9px] uppercase tracking-wider ${styles.label}`}>{labelText}</span>
+      {summary}
+    </span>
   )
 }
 

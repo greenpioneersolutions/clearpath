@@ -118,9 +118,9 @@ describe('Layout', () => {
     expect(screen.getByText('Navigated to Home')).toBeInTheDocument()
   })
 
-  it('announces navigation to Work on /work route', () => {
+  it('announces navigation to Sessions on /work route', () => {
     renderLayout('/work')
-    expect(screen.getByText('Navigated to Work')).toBeInTheDocument()
+    expect(screen.getByText('Navigated to Sessions')).toBeInTheDocument()
   })
 
   it('announces navigation to Page for unknown routes', () => {

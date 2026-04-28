@@ -229,9 +229,11 @@ export class AuthManager {
       if (existsSync(configPath)) {
         try {
           const raw = readFileSync(configPath, 'utf8')
-          // ── FIX: check logged_in_users[], not access_token ──
           const parsed = JSON.parse(raw) as Record<string, unknown>
-          const users = parsed['logged_in_users']
+          // Copilot CLI stores logged-in accounts under `loggedInUsers`
+          // (camelCase). Older builds wrote `logged_in_users` — accept both
+          // so users on either version are detected as authenticated.
+          const users = parsed['loggedInUsers'] ?? parsed['logged_in_users']
           if (Array.isArray(users) && users.length > 0) {
             authenticated = true
             tokenSource = 'config-file'

@@ -273,4 +273,83 @@ export function registerNoteHandlers(ipcMain: IpcMain): void {
 
     return { content: parts.join('\n\n'), attachmentCount: attachments.length }
   })
+
+  // Build the framed reference-context block sent to the AI when one or more
+  // notes are attached to a prompt. The XML-ish format makes it unambiguous to
+  // the model that this block is curated reference material — not part of the
+  // user's instruction — and where each note begins/ends. We deliberately
+  // *omit* the note's UUID; the model cites by title to avoid leaking
+  // internal identifiers into AI output that might be saved or echoed back.
+  ipcMain.handle('notes:get-bundle-for-prompt', (_e, args: { ids: string[] }) => {
+    const allNotes = store.get('notes')
+    const bundle = (args.ids ?? [])
+      .map((id) => allNotes.find((n) => n.id === id))
+      .filter((n): n is Note => Boolean(n))
+
+    if (bundle.length === 0) {
+      return { framedPrompt: '', noteCount: 0, attachmentCount: 0 }
+    }
+
+    let totalAttachments = 0
+    const noteBlocks: string[] = []
+
+    for (const note of bundle) {
+      const attachments = note.attachments ?? []
+      totalAttachments += attachments.length
+
+      const sourceAttr = note.source && note.source !== 'manual'
+        ? note.source                                 // e.g. "session:abc123"
+        : 'manual'
+      const sourceLabel = note.sessionName && note.source && note.source !== 'manual'
+        ? `session:${note.sessionName}`
+        : sourceAttr
+
+      const openTag = `<note title="${escapeAttr(note.title)}" category="${escapeAttr(note.category)}" tags="${escapeAttr(note.tags.join(','))}" source="${escapeAttr(sourceLabel)}">`
+
+      const innerParts: string[] = []
+      if (note.content.trim()) innerParts.push(note.content)
+
+      for (const att of attachments) {
+        try {
+          if (existsSync(att.path)) {
+            const text = readFileSync(att.path, 'utf8')
+            innerParts.push(`[attachment: ${att.name}]\n${text}`)
+          } else {
+            innerParts.push(`[attachment: ${att.name}] (file not found at ${att.path})`)
+          }
+        } catch {
+          innerParts.push(`[attachment: ${att.name}] (could not read)`)
+        }
+      }
+
+      noteBlocks.push(`${openTag}\n${innerParts.join('\n\n')}\n</note>`)
+    }
+
+    const preamble =
+      'The user has attached the following notes as reference context. ' +
+      'Treat them as authoritative information curated by the user. ' +
+      'Use them when relevant to their request; cite by title if you reference one.'
+
+    const framedPrompt =
+      `${preamble}\n\n<notes count="${bundle.length}">\n${noteBlocks.join('\n')}\n</notes>`
+
+    return {
+      framedPrompt,
+      noteCount: bundle.length,
+      attachmentCount: totalAttachments,
+    }
+  })
+}
+
+/**
+ * Escape a string for safe inclusion in a double-quoted XML attribute. We
+ * escape the four characters that could break the XML-ish framing the model
+ * relies on; everything else (including emoji + non-ASCII) passes through.
+ */
+function escapeAttr(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
 }

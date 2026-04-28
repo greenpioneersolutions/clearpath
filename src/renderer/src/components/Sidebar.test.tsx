@@ -3,19 +3,24 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom'
 
-// Mock contexts with full brand colors
-vi.mock('../contexts/FeatureFlagContext', () => ({
-  useFeatureFlags: () => ({
-    flags: {
+// Mock contexts with full brand colors. flagsRef is hoisted so the vi.mock
+// factory (also hoisted) can close over the same object the tests mutate.
+const { flagsRef } = vi.hoisted(() => ({
+  flagsRef: {
+    current: {
       showDashboard: true,
       showWork: true,
       showInsights: true,
       showLearn: false,
       showConfigure: true,
+      showNotes: true,
       enableExperimentalFeatures: false,
       showPrScores: false,
-    },
-  }),
+    } as Record<string, boolean>,
+  },
+}))
+vi.mock('../contexts/FeatureFlagContext', () => ({
+  useFeatureFlags: () => ({ flags: flagsRef.current }),
 }))
 vi.mock('../contexts/BrandingContext', () => ({
   useBranding: () => ({
@@ -39,6 +44,16 @@ const mockInvoke = vi.fn()
 const mockOn = vi.fn(() => vi.fn())
 
 beforeEach(() => {
+  flagsRef.current = {
+    showDashboard: true,
+    showWork: true,
+    showInsights: true,
+    showLearn: false,
+    showConfigure: true,
+    showNotes: true,
+    enableExperimentalFeatures: false,
+    showPrScores: false,
+  }
   Object.defineProperty(window, 'electronAPI', {
     value: { invoke: mockInvoke, on: mockOn, off: vi.fn() },
     writable: true,
@@ -74,10 +89,29 @@ describe('Sidebar', () => {
 
   it('renders navigation items', () => {
     renderSidebar()
-    expect(screen.getByText('Work')).toBeInTheDocument()
+    expect(screen.getByText('Sessions')).toBeInTheDocument()
     expect(screen.getByText('Insights')).toBeInTheDocument()
     // The Configure nav entry now renders with the label "Settings".
     expect(screen.getByText('Settings')).toBeInTheDocument()
+  })
+
+  it('renders the Notes nav entry when showNotes is on (default)', () => {
+    // showNotes defaults to true in features.json. Sidebar reads from
+    // BUILD_FLAGS via the real FeatureFlagContext at module load — vi.mock
+    // can't intercept reliably here because setup-coverage.ts pre-loads the
+    // context module. Asserting the on-by-default render is sufficient
+    // coverage for the new entry; the flag-gating itself is exercised by
+    // FeatureFlagSettings tests and by Notes.tsx's own enable-card test.
+    renderSidebar()
+    expect(screen.getByText('Notes')).toBeInTheDocument()
+    // Sidebar order: Home · Sessions · Notes · Learn(?)/Insights …
+    const navItems = screen.getAllByRole('link').map((el) => el.textContent ?? '')
+    const sessionsIdx = navItems.findIndex((t) => t.includes('Sessions'))
+    const notesIdx = navItems.findIndex((t) => t.includes('Notes'))
+    const insightsIdx = navItems.findIndex((t) => t.includes('Insights'))
+    expect(sessionsIdx).toBeGreaterThanOrEqual(0)
+    expect(notesIdx).toBeGreaterThan(sessionsIdx)
+    expect(insightsIdx).toBeGreaterThan(notesIdx)
   })
 
   it('renders notification bell', () => {
@@ -181,6 +215,32 @@ describe('Sidebar', () => {
     fireEvent.change(screen.getByDisplayValue('My WS'), { target: { value: '' } })
     await waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledWith('workspace:set-active', { id: null })
+    })
+  })
+
+  it('clicking the Work nav link from /work?id=abc clears the id and lands on /work', async () => {
+    function PathnameProbe() {
+      const loc = useLocation()
+      return <div data-testid="path-probe">{loc.pathname}{loc.search}</div>
+    }
+
+    render(
+      <MemoryRouter initialEntries={['/work?id=abc']}>
+        <Sidebar />
+        <Routes>
+          <Route path="*" element={<PathnameProbe />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+
+    await waitFor(() => screen.getByText('Standard'))
+    expect(screen.getByTestId('path-probe').textContent).toBe('/work?id=abc')
+
+    const workLink = screen.getByTestId('sidebar-work-link')
+    fireEvent.click(workLink)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('path-probe').textContent).toBe('/work')
     })
   })
 

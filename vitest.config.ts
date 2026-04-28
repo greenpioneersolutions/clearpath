@@ -65,6 +65,16 @@ export default defineConfig({
     environmentMatchGlobs: [
       ['src/renderer/**/*.{test,spec}.{ts,tsx}', 'jsdom'],
     ],
+    // jsdom defaults to an opaque origin (about:blank) which disables
+    // localStorage / sessionStorage. Providing a real URL gives us a
+    // working Storage instance with .clear() / .setItem() / etc., so tests
+    // that exercise persistence (QuickStartCard, ActiveSessionsBanner, etc.)
+    // don't trip on `localStorage.clear is not a function`.
+    environmentOptions: {
+      jsdom: {
+        url: 'http://localhost/',
+      },
+    },
     globals: true,
   },
 })

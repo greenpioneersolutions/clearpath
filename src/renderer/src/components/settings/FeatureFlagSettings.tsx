@@ -1,3 +1,4 @@
+import { useNavigate } from 'react-router-dom'
 import { useFeatureFlags, type FeatureFlags } from '../../contexts/FeatureFlagContext'
 import { getStageInfo } from '../../lib/progressiveDisclosure'
 import { BUILD_FLAGS, EXPERIMENTAL_FLAG_KEYS } from '../../../../shared/featureFlags.generated'
@@ -10,7 +11,13 @@ const COMPILED_OUT: ReadonlySet<keyof FeatureFlags> = new Set(
 
 interface FlagGroup {
   label: string
-  flags: Array<{ key: keyof FeatureFlags; label: string; description: string }>
+  flags: Array<{
+    key: keyof FeatureFlags
+    label: string
+    description: string
+    /** Optional CTA — renders a "Learn how →" link that routes to a learning path. */
+    learnPathId?: string
+  }>
 }
 
 const FLAG_GROUPS: FlagGroup[] = [
@@ -59,6 +66,7 @@ const FLAG_GROUPS: FlagGroup[] = [
   {
     label: 'Session Features',
     flags: [
+      { key: 'showNotes', label: 'Notes', description: 'Save reference material — meeting takeaways, recurring prompts, decisions — and attach them to new sessions for context.', learnPathId: 'notes' },
       { key: 'showUseContext', label: 'Use Context', description: 'Memory/agent/skill context in wizard' },
       { key: 'showAgentSelection', label: 'Agent Selection', description: 'Pick agents per session' },
       { key: 'showCostTracking', label: 'Cost Tracking', description: 'Per-turn cost estimates' },
@@ -99,7 +107,8 @@ const FLAG_GROUPS: FlagGroup[] = [
 // ── Component ────────────────────────────────────────────────────────────────
 
 export default function FeatureFlagSettings(): JSX.Element {
-  const { flags, activePresetId, presets, setFlag, applyPreset, resetFlags, progressionStage, sessionCount, locked } = useFeatureFlags()
+  const { flags, activePresetId, presets, setFlag, applyPreset, progressionStage, sessionCount, locked } = useFeatureFlags()
+  const navigate = useNavigate()
 
   const enabledCount = Object.values(flags).filter(Boolean).length
   const totalCount = Object.keys(flags).length
@@ -184,7 +193,7 @@ export default function FeatureFlagSettings(): JSX.Element {
       <div className="flex items-center justify-between bg-gray-50 rounded-lg px-4 py-2.5">
         <span className="text-xs text-gray-600">{enabledCount} of {totalCount} features enabled</span>
         {!locked && (
-          <button onClick={resetFlags}
+          <button onClick={() => applyPreset('all-on')}
             className="text-xs text-indigo-600 hover:text-indigo-500 font-medium">
             Enable All
           </button>
@@ -204,7 +213,7 @@ export default function FeatureFlagSettings(): JSX.Element {
           <div key={group.label}>
             <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">{group.label}</h3>
             <div className="bg-white border border-gray-200 rounded-xl divide-y divide-gray-100">
-              {visibleFlags.map(({ key, label, description }) => {
+              {visibleFlags.map(({ key, label, description, learnPathId }) => {
                 const compiledOut = COMPILED_OUT.has(key)
                 const readOnly = locked || compiledOut
                 return (
@@ -218,6 +227,15 @@ export default function FeatureFlagSettings(): JSX.Element {
                       )}
                       {locked && !compiledOut && (
                         <span className="ml-1 italic">— locked to features.json</span>
+                      )}
+                      {learnPathId && !compiledOut && (
+                        <button
+                          type="button"
+                          onClick={() => navigate(`/learn?path=${learnPathId}`)}
+                          className="ml-2 text-indigo-600 hover:text-indigo-500 font-medium"
+                        >
+                          Learn how →
+                        </button>
                       )}
                     </p>
                   </div>

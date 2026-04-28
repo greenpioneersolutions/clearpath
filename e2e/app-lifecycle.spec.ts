@@ -88,8 +88,8 @@ describe('ClearPathAI — App Lifecycle', () => {
       expect(html.length).toBeGreaterThan(300)
     })
 
-    it('Step 2: Navigate to Work page', async () => {
-      await navigateSidebarTo('Work')
+    it('Step 2: Navigate to Sessions page', async () => {
+      await navigateSidebarTo('Sessions')
       await browser.pause(500)
 
       const html = await getRootHTML()
@@ -238,7 +238,7 @@ describe('ClearPathAI — App Lifecycle', () => {
 
     it('page does not show blank content after navigation', async () => {
       // PR #47: sidebar label for /configure is now "Settings".
-      const routes = ['Work', 'Insights', 'Settings', 'Home']
+      const routes = ['Sessions', 'Insights', 'Settings', 'Home']
       for (const route of routes) {
         await navigateSidebarTo(route)
         await browser.pause(500)

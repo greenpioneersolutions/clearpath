@@ -24,12 +24,13 @@ export class CopilotAdapter implements ICLIAdapter {
 
   async isAuthenticated(): Promise<boolean> {
     if (process.env['GH_TOKEN'] || process.env['GITHUB_TOKEN']) return true
-    // ── FIX: correct filename + field ──
     const configPath = join(homedir(), '.copilot', 'config.json')
     if (existsSync(configPath)) {
       try {
         const parsed = JSON.parse(require('fs').readFileSync(configPath, 'utf8')) as Record<string, unknown>
-        const users = parsed['logged_in_users']
+        // Copilot CLI stores logged-in accounts under `loggedInUsers`
+        // (camelCase). Older builds wrote `logged_in_users` — accept both.
+        const users = parsed['loggedInUsers'] ?? parsed['logged_in_users']
         return Array.isArray(users) && users.length > 0
       } catch { /* malformed */ }
     }

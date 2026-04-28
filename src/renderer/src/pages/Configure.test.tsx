@@ -165,8 +165,9 @@ describe('Configure', () => {
   it('renders Notes & Context tab content when clicked', async () => {
     renderConfigure()
     fireEvent.click(screen.getByRole('tab', { name: 'Notes & Context' }))
-    // Memory & Context heading is rendered in Memory.tsx
-    await waitFor(() => expect(screen.getByText('Memory & Context')).toBeInTheDocument())
+    // Memory.tsx was renamed "Memory & Context" → "Project Memory" when the
+    // Notes tab moved out to the Sessions sub-nav.
+    await waitFor(() => expect(screen.getByText('Project Memory')).toBeInTheDocument())
   })
 
   it('renders Prompts tab content when clicked', async () => {

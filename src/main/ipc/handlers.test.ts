@@ -443,7 +443,8 @@ describe('handlers (registerIpcHandlers)', () => {
   describe('cli:send-input', () => {
     it('delegates to cliManager.sendInput', () => {
       handlers.get('cli:send-input')!(mockEvent, { sessionId: 's1', input: 'hello' })
-      expect(cliManager.sendInput).toHaveBeenCalledWith('s1', 'hello')
+      // Third arg is `attachedNotes` — undefined when the renderer doesn't pass one.
+      expect(cliManager.sendInput).toHaveBeenCalledWith('s1', 'hello', undefined)
     })
   })
 

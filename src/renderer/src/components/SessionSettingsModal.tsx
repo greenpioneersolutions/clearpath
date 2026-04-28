@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useFocusTrap } from '../hooks/useFocusTrap'
 import type { BackendId } from '../../../shared/backends'
 import { providerOf, BACKEND_SHORT_LABELS } from '../../../shared/backends'
+import { MODEL_TIERS } from '../data/modelTiers'
 import type { SessionInfo } from '../types/ipc'
 
 // ── Types ─────────────────────────────────────────────────────────────────
@@ -18,18 +19,6 @@ export interface SessionSettingsOptions {
 export interface SessionSettingsEditChanges {
   model?: string
   name?: string
-}
-
-const MODEL_TIERS: Record<string, { group: string; models: string[] }[]> = {
-  copilot: [
-    { group: 'Free', models: ['gpt-5-mini', 'gpt-4.1', 'gpt-4o'] },
-    { group: '0.33x', models: ['claude-haiku-4.5', 'gemini-3-flash'] },
-    { group: '1x', models: ['claude-sonnet-4.5', 'claude-sonnet-4.6', 'gpt-5', 'gemini-3-pro'] },
-    { group: '3x', models: ['claude-opus-4.5', 'claude-opus-4.6'] },
-  ],
-  claude: [
-    { group: 'Claude', models: ['sonnet', 'haiku', 'opus'] },
-  ],
 }
 
 interface Props {

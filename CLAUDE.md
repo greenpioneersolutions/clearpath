@@ -478,13 +478,15 @@ Knowledge base files are stored in the project directory at `.clear-path/knowled
 - Thinking indicator with animated dots and elapsed timer
 - Tool use, permission requests, errors, and status messages with distinct visual styles
 
-### Slice 6: Memory & Context Manager
+### Slice 6: Project Memory (CLI config files)
+- Page renamed in 1.13.0 from "Memory & Context" → "Project Memory" (`src/renderer/src/pages/Memory.tsx`); user-curated notes were extracted to their own top-level surface in Slice 28
 - CLAUDE.md / AGENTS.md file editor with CodeMirror (`src/renderer/src/components/memory/`)
 - .github/copilot/settings.json editor
 - Context usage visualization (token usage bar)
 - Memory entries viewer (cross-session memory)
 - Custom instructions editor
 - New file creation wizard
+- "Starter Memories" tab renamed to "Templates" (the content is starter CLAUDE.md/AGENTS.md templates, not user notes)
 
 ### Slice 7: Tool & Permission Controls
 - Visual toggles for tool permissions (`src/renderer/src/components/tools/`)
@@ -663,6 +665,40 @@ Knowledge base files are stored in the project directory at `.clear-path/knowled
 - **Shared types** at [src/shared/clearmemory/types.ts](src/shared/clearmemory/types.ts) — reachable from both main and renderer via `rootDirs` in `tsconfig.main.json` / `tsconfig.renderer.json`. Client helpers live at [src/renderer/src/lib/clearmemoryClient.ts](src/renderer/src/lib/clearmemoryClient.ts)
 - **Tests**: [ClearMemoryService.test.ts](src/main/clearmemory/ClearMemoryService.test.ts), [configFile.test.ts](src/main/clearmemory/configFile.test.ts), [mcpIntegration.test.ts](src/main/clearmemory/mcpIntegration.test.ts), [clearMemoryHandlers.test.ts](src/main/ipc/clearMemoryHandlers.test.ts) — 69 tests covering parsers, TOML round-trip, MCP merge-don't-clobber, service-not-ready envelopes, ID/path/format/stream validation, tilde expansion
 - **Binary bundling (Slice F)** — BLOCKED: upstream repo has 0 GitHub Releases. PATH fallback + `missing-binary` status banner + install CTA (`cargo install clearmemory`) cover today. When upstream publishes releases, drop in `scripts/fetch-clearmemory-binary.ts` (postinstall) and add `extraResources` to `package.json`'s `build` block
+
+### Slice 28: Notes (top-level surface) — added 1.13.0
+- **Sidebar peer of Sessions**, not a sub-tab under it. Order: Home · Sessions · **Notes** · Learn · Insights, gated on `showNotes` (default ON, non-experimental). Sidebar entry in [src/renderer/src/components/Sidebar.tsx](src/renderer/src/components/Sidebar.tsx); route in [src/renderer/src/App.tsx](src/renderer/src/App.tsx)
+- **Page**: [src/renderer/src/pages/Notes.tsx](src/renderer/src/pages/Notes.tsx) — three-pane layout (filters · note cards · editor drawer). Filters: All / Pinned, categories with counts, tag cloud, search. Drawer: title, category, pin, tags chip-input, markdown body, attachments, "Use in next session →" hands off `preSelectedNoteIds` to `/work` via location state. Empty state links into the Notes learning path
+- **Flag-off behavior**: page renders an EnableGate-style card ("Notes are off — Open Feature Flags") instead of 404. `clear-path-notes.json` is never touched when the flag flips. The chip metadata on existing transcripts stays — toggling off then on restores chips on old user bubbles
+- **Sessions Advanced redesign** ([src/renderer/src/components/work/QuickStartCard.tsx](src/renderer/src/components/work/QuickStartCard.tsx)): stacked sections each with a search box — Agent (single-select), Skills (per-session multi-select), Notes (per-session multi-select), then Permission mode + Additional directories. **Skills bug fix**: the picker no longer calls `skills:toggle` (which mutated the global skill registry and caused the "everything selected, can't deselect" twitch). Templates dropdown, Attach files button, and the legacy "Memories" config-files picker were removed from this surface — they'll return as dedicated features
+- **In-chat audit-trail chips** ([src/renderer/src/components/OutputDisplay.tsx](src/renderer/src/components/OutputDisplay.tsx)): user bubble shows compact pill chips for `attachedAgent` (violet), `attachedSkills` (indigo, "N skills"), `attachedNotes` (teal, "N notes"). **Names/titles only — note body never reaches the rendered DOM**. Chips read from message metadata (`Work.tsx` user `OutputMessage`), frozen at attach time, so they survive note deletion AND `showNotes`-flag toggling
+- **AI context framing** — [src/main/ipc/noteHandlers.ts](src/main/ipc/noteHandlers.ts) `notes:get-bundle-for-prompt` returns `{ framedPrompt, noteCount, attachmentCount }`. Format:
+  ```
+  The user has attached the following notes as reference context. Treat them as
+  authoritative information curated by the user. Use them when relevant to their
+  request; cite by title if you reference one.
+
+  <notes count="N">
+    <note title="..." category="..." tags="comma,separated" source="manual|session:{name}">
+  {body}
+
+  [attachment: filename.md]
+  {attachment text}
+    </note>
+    ...
+  </notes>
+
+  User request:
+  {actual prompt}
+  ```
+  Title/tags/categories are XML-escaped; UUIDs never leak (model cites by title, not id). When `noteCount === 0`, `framedPrompt` is `""` and the call site skips prepending
+- **Persistence schema** — `MessageLogEntry` in [src/main/cli/CLIManager.ts](src/main/cli/CLIManager.ts) and the persisted `messageLog` shape in [src/main/cli/types.ts](src/main/cli/types.ts) extended with `attachedAgent?: { id, name }` and `attachedSkills?: { id, name }[]` alongside the existing `attachedNotes`. Renderer-side mirror in [src/renderer/src/types/ipc.ts](src/renderer/src/types/ipc.ts) `SessionOptions` and the `OutputMessage` type
+- **Feature discovery** — [src/main/ipc/learnHandlers.ts](src/main/ipc/learnHandlers.ts) registers a 5-lesson "Capture context with Notes" path: walkthrough · guided-task (save a takeaway, completion = `notes:create` fires) · guided-task (attach to next session, completion = session starts with `attachedNotes.length >= 1`) · walkthrough (organize: pin/tag/search) · knowledge-check (when NOT to use notes — distinguishes notes from CLAUDE.md and ClearMemory). The "Learn how →" link in [FeatureFlagSettings.tsx](src/renderer/src/components/settings/FeatureFlagSettings.tsx) for the `showNotes` row routes to `/learn?path=notes`
+- **Progressive disclosure** — `showNotes: true` added to the `exploring` stage in [src/renderer/src/lib/progressiveDisclosure.ts](src/renderer/src/lib/progressiveDisclosure.ts), so users on the `progressive` preset auto-unlock Notes after 1 completed session
+- **Discovery card on Sessions launchpad** — [NotesDiscoveryCard.tsx](src/renderer/src/components/work/NotesDiscoveryCard.tsx) renders when `showNotes` is on AND user has 0 notes AND ≥1 completed session, persisting dismissal in `localStorage` under `clearpath:notes-discovery-dismissed`. CTA navigates to `/notes`
+- **Shared util** — [src/renderer/src/lib/noteCategoryColors.ts](src/renderer/src/lib/noteCategoryColors.ts) extracted so Notes.tsx and ContextPicker share badge colors (meeting/conversation/reference/outcome/idea/custom)
+- **Tests**: [Notes.test.tsx](src/renderer/src/pages/Notes.test.tsx), [NotesDiscoveryCard.tsx (smoke via WorkLaunchpad.test.tsx)](src/renderer/src/components/work/WorkLaunchpad.test.tsx), [noteHandlers.test.ts](src/main/ipc/noteHandlers.test.ts) for framing, [Work.test.tsx](src/renderer/src/pages/Work.test.tsx) for the chip's "no body in DOM" guarantee. Flag-off render is covered manually — the `setup-coverage.ts` eager-load means `vi.mock` can't intercept `useFlag` for that one Notes test (skipped with inline note explaining the harness limitation; ContextPicker has the same caveat)
+- **Test infrastructure** added in 1.13.0: jsdom URL configured to `http://localhost/` in `vitest.config.ts` and an in-memory `localStorage` / `sessionStorage` polyfill installed in [src/test/setup-coverage.ts](src/test/setup-coverage.ts) when the host environment provides a non-functional shim (Node 25's `--localstorage-file` warning + jsdom opaque-origin combo)
 
 ---
 

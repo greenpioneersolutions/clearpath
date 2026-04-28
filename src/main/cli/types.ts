@@ -50,7 +50,7 @@ export interface ActiveSession {
   /** The prompt text sent for the current turn. */
   lastPrompt: string
   /** Full message history for this session (for rehydration when UI remounts). */
-  messageLog: Array<{ type: string; content: string; metadata?: unknown; sender?: 'user' | 'ai' | 'system'; timestamp?: number }>
+  messageLog: Array<{ type: string; content: string; metadata?: unknown; sender?: 'user' | 'ai' | 'system'; timestamp?: number; attachedNotes?: Array<{ id: string; title: string }>; attachedAgent?: { id: string; name: string }; attachedSkills?: Array<{ id: string; name: string }> }>
   /**
    * Id for the turn currently streaming. Set on `cli:turn-start`, cleared on
    * `cli:turn-end`. Threaded onto every `cli:output` event so the renderer

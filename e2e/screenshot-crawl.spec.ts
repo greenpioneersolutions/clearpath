@@ -107,7 +107,11 @@ interface ConfigureSubTab extends VisualOptions {
 // regular crawl has nothing useful to capture for it.
 const SIDEBAR_PAGES: SidebarPage[] = [
   { nav: 'Home',             screenshot: 'home--initial' },
-  { nav: 'Work',             screenshot: 'work--initial' },
+  // Work page renamed to "Sessions" in 1.13.0; route is still /work, baseline
+  // filenames stay `work--*` so existing screenshot baselines keep matching.
+  { nav: 'Sessions',         screenshot: 'work--initial' },
+  // Notes promoted to a top-level surface in 1.13.0 — sidebar peer of Sessions.
+  { nav: 'Notes',            screenshot: 'notes--initial',        optional: true },
   { nav: 'Insights',         screenshot: 'insights--initial' },
   { nav: 'Clear Memory',     screenshot: 'clear-memory--initial', optional: true },
   { nav: 'Learn',            screenshot: 'learn--initial',        optional: true },
@@ -118,19 +122,17 @@ const SIDEBAR_PAGES: SidebarPage[] = [
   { nav: 'Efficiency Coach', screenshot: 'ext--efficiency-coach', optional: true },
 ]
 
-// Work page mode tabs (driven by ?tab= URL param, confirmed in work-page.spec.ts).
-// All five modes are flag-gated; ?tab= will switch into them when the flag is on.
-// work--initial already captures the default landing view.
+// Sessions page mode tabs (driven by ?tab= URL param). 1.13.0 dropped the
+// `wizard` and `memory` sub-tabs: notes moved to /notes, the wizard surface
+// was retired. work--initial already captures the default landing view.
 //
 // Note: PR #47 removed the right-rail context panels (agents, tools, templates,
 // skills, subagents) from Work. The corresponding `?panel=` URL params are no
 // longer rendered, so WORK_PANELS was deleted entirely from this spec.
 const WORK_TABS: WorkTab[] = [
   { key: 'session',  screenshot: 'work--tab-session' },
-  { key: 'wizard',   screenshot: 'work--tab-wizard' },
   { key: 'compose',  screenshot: 'work--tab-compose' },
   { key: 'schedule', screenshot: 'work--tab-schedule' },
-  { key: 'memory',   screenshot: 'work--tab-memory' },
 ]
 
 // Insights tabs — built-in tabs (Activity, Compliance) plus extension-contributed
@@ -385,16 +387,16 @@ describe('ClearPathAI — Screenshot Crawl', () => {
     }
   })
 
-  // ── Work Page — Mode Tabs ─────────────────────────────────────────────────
+  // ── Sessions Page — Mode Tabs ─────────────────────────────────────────────
 
-  describe('Work Page — Mode Tabs', () => {
+  describe('Sessions Page — Mode Tabs', () => {
     before(async () => {
-      await navigateSidebarTo('Work')
+      await navigateSidebarTo('Sessions')
       await browser.pause(800)
     })
 
     for (const tab of WORK_TABS) {
-      it(`captures Work tab: ${tab.key}`, async () => {
+      it(`captures Sessions tab: ${tab.key}`, async () => {
         // Hash navigation confirmed in work-page.spec.ts
         await browser.execute((key) => {
           window.location.hash = `#/work?tab=${key}`

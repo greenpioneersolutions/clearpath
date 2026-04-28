@@ -14,6 +14,10 @@ import Learn from './pages/Learn'
 import SubAgentPopout from './pages/SubAgentPopout'
 import ExtensionPage from './components/extensions/ExtensionPage'
 
+// Notes is lazy-loaded — it pulls in the full three-pane editor + drawer that
+// most users won't open in a typical session.
+const Notes = lazy(() => import('./pages/Notes'))
+
 // `__FEATURES__` is a Vite `define` literal (see electron.vite.config.ts) so
 // the conditions below are statically replaced at build time. When an
 // experimental flag is compiled out (features.json: experimental:true +
@@ -72,6 +76,7 @@ export default function App(): JSX.Element {
           <Route path="ext/:extensionId/*" element={<ExtensionPage />} />
           <Route path="connect" element={<Connect />} />
           <Route path="clear-memory" element={<ClearMemory />} />
+          <Route path="notes" element={<Suspense fallback={null}><Notes /></Suspense>} />
           <Route path="configure" element={<Configure />} />
         </Route>
         <Route path="/subagent-popout/:id" element={<SubAgentPopout />} />

@@ -48,7 +48,8 @@ describe('ClearPathAI — Full Navigation', () => {
       // PR #47: sidebar link to /configure is now labeled "Settings",
       // and a new "Connect" entry was added (pinned to the bottom).
       expect(allText).toContain('Home')
-      expect(allText).toContain('Work')
+      // Work renamed to Sessions in 1.13.0.
+      expect(allText).toContain('Sessions')
       expect(allText).toContain('Insights')
       expect(allText).toContain('Settings')
       expect(allText).toContain('Connect')
@@ -106,7 +107,7 @@ describe('ClearPathAI — Full Navigation', () => {
 
   describe('Work Page', () => {
     before(async () => {
-      await navigateSidebarTo('Work')
+      await navigateSidebarTo('Sessions')
       await browser.pause(1000)
     })
 
@@ -165,7 +166,7 @@ describe('ClearPathAI — Full Navigation', () => {
   describe('Sequential Route Navigation', () => {
     // PR #47: sidebar label for /configure changed from "Configure" to
     // "Settings"; "Connect" was added as a new pinned route.
-    const routes = ['Home', 'Work', 'Insights', 'Connect', 'Settings', 'Home']
+    const routes = ['Home', 'Sessions', 'Insights', 'Connect', 'Settings', 'Home']
 
     for (const route of routes) {
       it(`navigates to ${route} without crash`, async () => {
@@ -182,7 +183,7 @@ describe('ClearPathAI — Full Navigation', () => {
 
   describe('Rapid Navigation', () => {
     it('handles fast sequential clicks without crashing', async () => {
-      const routes = ['Work', 'Insights', 'Settings', 'Home', 'Work', 'Home']
+      const routes = ['Sessions', 'Insights', 'Settings', 'Home', 'Sessions', 'Home']
 
       for (const route of routes) {
         await navigateSidebarTo(route)

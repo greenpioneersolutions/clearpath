@@ -31,7 +31,7 @@ async function navigateToHash(hash: string): Promise<void> {
 describe('ClearPathAI — Work Page', () => {
   before(async () => {
     await waitForAppReady()
-    await navigateSidebarTo('Work')
+    await navigateSidebarTo('Sessions')
     await browser.pause(1000)
   })
 
@@ -96,15 +96,6 @@ describe('ClearPathAI — Work Page', () => {
       expect(html.length).toBeGreaterThan(200)
     })
 
-    it('can switch to wizard mode via hash', async () => {
-      await navigateToHash('#/work?tab=wizard')
-
-      const root = await $('#root')
-      expect(await root.isExisting()).toBe(true)
-      const html = await root.getHTML()
-      expect(html.length).toBeGreaterThan(200)
-    })
-
     it('can switch to schedule mode via hash', async () => {
       await navigateToHash('#/work?tab=schedule')
 
@@ -144,7 +135,7 @@ describe('ClearPathAI — Work Page', () => {
     let inputAvailable = false
 
     before(async () => {
-      await navigateSidebarTo('Work')
+      await navigateSidebarTo('Sessions')
       await browser.pause(1000)
       const textarea = await $('[aria-label="Message input"]')
       inputAvailable = await textarea.isExisting()
@@ -239,7 +230,7 @@ describe('ClearPathAI — Work Page', () => {
 
   describe('Mode Switching', () => {
     before(async () => {
-      await navigateSidebarTo('Work')
+      await navigateSidebarTo('Sessions')
       await browser.pause(1000)
     })
 
@@ -250,7 +241,7 @@ describe('ClearPathAI — Work Page', () => {
 
     it('clicking mode buttons changes active styling without crash', async () => {
       // Find and click through mode buttons
-      const modeLabels = ['Wizard', 'Compose', 'Session']
+      const modeLabels = ['Compose', 'Session']
       for (const label of modeLabels) {
         const btn = await $(`//button[contains(., '${label}')]`)
         if (await btn.isExisting()) {
@@ -277,13 +268,13 @@ describe('ClearPathAI — Work Page', () => {
 
   describe('Work Page Stability', () => {
     it('handles leaving and returning to Work page', async () => {
-      await navigateSidebarTo('Work')
+      await navigateSidebarTo('Sessions')
       await browser.pause(300)
 
       await navigateSidebarTo('Home')
       await browser.pause(300)
 
-      await navigateSidebarTo('Work')
+      await navigateSidebarTo('Sessions')
       await browser.pause(500)
 
       const root = await $('#root')

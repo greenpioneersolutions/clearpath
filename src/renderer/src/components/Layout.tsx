@@ -2,13 +2,14 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import KeyboardShortcutModal from './KeyboardShortcutModal'
+import ActiveSessionsBanner from './layout/ActiveSessionsBanner'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
 
 // ── Route Announcer (screen reader page-change notifications) ────────────
 
 const ROUTE_NAMES: Record<string, string> = {
   '/': 'Home',
-  '/work': 'Work',
+  '/work': 'Sessions',
   '/insights': 'Insights',
   '/pr-scores': 'PR Scores',
   '/configure': 'Configure',
@@ -92,6 +93,7 @@ export default function Layout(): JSX.Element {
     <div className="flex flex-col h-screen" style={{ backgroundColor: 'var(--brand-page-bg)' }}>
       <a href="#main-content" className="skip-link">Skip to main content</a>
       <UpdateBanner />
+      <ActiveSessionsBanner />
       <div className="flex flex-1 min-h-0">
         <Sidebar />
         <main

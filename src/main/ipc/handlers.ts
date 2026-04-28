@@ -18,7 +18,7 @@ export function registerIpcHandlers(
 
   ipcMain.handle('cli:check-auth', () => cliManager.checkAuth())
 
-  ipcMain.handle('cli:start-session', (_event, options: SessionOptions) => {
+  ipcMain.handle('cli:start-session', async (_event, options: SessionOptions) => {
     const rl = checkRateLimit('cli:start-session')
     if (!rl.allowed) return { error: `Rate limited — try again in ${Math.ceil((rl.retryAfterMs ?? 0) / 1000)}s` }
 
@@ -40,11 +40,12 @@ export function registerIpcHandlers(
 
     // Resolve the agent — either from explicit option or from stored active agent
     let agentId = resolved.agent ?? null
-    let agentWasExplicit = !!resolved.agent
     if (!agentId && agentManager) {
       const active = agentManager.getActiveAgents()
       agentId = active[providerOf(options.cli)] ?? null
     }
+
+    let agentDisplayName: string | null = null
 
     if (agentId) {
       let agentResolved = false
@@ -59,6 +60,7 @@ export function registerIpcHandlers(
             const content = readFileSync(match.filePath, 'utf8')
             const bodyMatch = /^---[\s\S]*?---\s*\n([\s\S]*)$/.exec(content)
             agentSystemPrompt = bodyMatch?.[1]?.trim() || null
+            if (agentSystemPrompt && match.name) agentDisplayName = match.name
           } catch { /* file unreadable */ }
         }
 
@@ -68,7 +70,10 @@ export function registerIpcHandlers(
           const starterMatch = STARTER_AGENTS.find(
             (a) => a.id === slug || a.name.toLowerCase().replace(/[^a-z0-9]+/g, '-') === slug
           )
-          if (starterMatch) agentSystemPrompt = starterMatch.systemPrompt
+          if (starterMatch) {
+            agentSystemPrompt = starterMatch.systemPrompt
+            agentDisplayName = starterMatch.name
+          }
         }
 
         if (agentSystemPrompt) agentResolved = true
@@ -81,6 +86,7 @@ export function registerIpcHandlers(
         )
         if (starterAgent) {
           agentSystemPrompt = starterAgent.systemPrompt
+          agentDisplayName = starterAgent.name
           agentResolved = true
         }
       }
@@ -90,7 +96,16 @@ export function registerIpcHandlers(
       if (agentResolved && agentSystemPrompt) {
         resolved = { ...resolved, agent: undefined }
         if (resolved.prompt?.trim()) {
-          resolved = { ...resolved, prompt: `${agentSystemPrompt}\n\n${resolved.prompt}` }
+          // Preserve the user's original prompt as displayPrompt so the chat
+          // log + UI show the typed message, not the prepended agent system
+          // prompt. Without this the messageLog gets the combined text and
+          // the chat shows the entire agent definition on rehydrate.
+          const userPrompt = resolved.prompt
+          resolved = {
+            ...resolved,
+            displayPrompt: resolved.displayPrompt ?? userPrompt,
+            prompt: `${agentSystemPrompt}\n\n${userPrompt}`,
+          }
         } else {
           // No user prompt — store as agentContext so it gets prepended on the first real input
           resolved = { ...resolved, prompt: undefined, agentContext: agentSystemPrompt }
@@ -101,13 +116,25 @@ export function registerIpcHandlers(
       }
     }
 
-    return cliManager.startSession(resolved)
+    const result = await cliManager.startSession(resolved)
+    // Surface the auto-applied agent so the renderer can show it in the chat
+    // status and pre-select it in the input bar's quick config.
+    return agentDisplayName
+      ? { ...result, agentApplied: { id: agentId, name: agentDisplayName } }
+      : result
   })
 
   ipcMain.handle(
     'cli:send-input',
-    (_event, { sessionId, input }: { sessionId: string; input: string }) => {
-      cliManager.sendInput(sessionId, input)
+    (
+      _event,
+      { sessionId, input, attachedNotes }: {
+        sessionId: string
+        input: string
+        attachedNotes?: Array<{ id: string; title: string }>
+      },
+    ) => {
+      cliManager.sendInput(sessionId, input, attachedNotes)
     }
   )
 
