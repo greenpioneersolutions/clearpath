@@ -270,6 +270,70 @@ async function authenticatedFetch(
   return { response, error: null }
 }
 
+// Atlassian removed /rest/api/3/search in 2025; the replacement is
+// /rest/api/3/search/jql. The new endpoint uses cursor pagination
+// (nextPageToken) instead of startAt/total. We don't expose pagination to
+// callers — every consumer was asking for "page 0 of 25/50", which fits in
+// one request.
+//
+// Reference: https://developer.atlassian.com/changelog/#CHANGE-2046
+async function searchJiraIssuesViaJql(
+  jql: string,
+  fields: string[],
+  maxResults: number = 50,
+): Promise<{ issues: JiraIssue[]; error: string | null }> {
+  const meta = getMetadata()
+  if (!meta) {
+    return { issues: [], error: 'Atlassian is not connected. Please connect via Configure > Integrations.' }
+  }
+
+  const params = new URLSearchParams({
+    jql,
+    maxResults: String(maxResults),
+    fields: fields.join(','),
+  })
+  const url = `${meta.siteUrl}/rest/api/3/search/jql?${params.toString()}`
+
+  const { response, error } = await authenticatedFetch(url)
+  if (error) return { issues: [], error }
+  if (!response || !response.ok) {
+    const status = response?.status ?? 0
+    let body = ''
+    try { body = (await response?.text()) ?? '' } catch { /* ignore */ }
+    return { issues: [], error: `search/jql HTTP ${status}: ${body.slice(0, 200)}` }
+  }
+
+  const data = (await response.json()) as {
+    issues?: Array<{
+      id?: string
+      key?: string
+      fields?: Record<string, unknown>
+    }>
+  }
+
+  const issues: JiraIssue[] = (data.issues ?? []).map((issue) => {
+    const f = (issue.fields ?? {}) as Record<string, unknown>
+    return {
+      id: issue.id ?? '',
+      key: issue.key ?? '',
+      summary: (f['summary'] as string) ?? '',
+      status: ((f['status'] as Record<string, unknown>)?.['name'] as string) ?? '',
+      statusCategory:
+        (((f['status'] as Record<string, unknown>)?.['statusCategory'] as Record<string, unknown>)?.['name'] as string) ?? '',
+      priority: ((f['priority'] as Record<string, unknown>)?.['name'] as string) ?? 'None',
+      assignee: ((f['assignee'] as Record<string, unknown>)?.['displayName'] as string) ?? null,
+      reporter: ((f['reporter'] as Record<string, unknown>)?.['displayName'] as string) ?? null,
+      issueType: ((f['issuetype'] as Record<string, unknown>)?.['name'] as string) ?? '',
+      created: (f['created'] as string) ?? '',
+      updated: (f['updated'] as string) ?? '',
+      description: f['description'] ? JSON.stringify(f['description']).slice(0, 2000) : null,
+      labels: (f['labels'] as string[]) ?? [],
+    }
+  })
+
+  return { issues, error: null }
+}
+
 // ── Registration ────────────────────────────────────────────────────────────
 
 export function registerAtlassianHandlers(ipcMain: IpcMain): void {
@@ -438,58 +502,32 @@ export function registerAtlassianHandlers(ipcMain: IpcMain): void {
       args: { jql: string; startAt?: number; maxResults?: number; fields?: string[] },
     ) => {
       log.info(
-        '[atlassian] jira-search: JQL="%s" (startAt=%d, maxResults=%d)',
-        args.jql.slice(0, 200), args.startAt ?? 0, args.maxResults ?? 25,
+        '[atlassian] jira-search: JQL="%s" (maxResults=%d)',
+        args.jql.slice(0, 200), args.maxResults ?? 25,
       )
 
-      const { client, error } = getJiraClient()
-      if (!client) {
+      const defaultFields = [
+        'summary', 'status', 'priority', 'assignee', 'reporter',
+        'issuetype', 'created', 'updated', 'description', 'labels',
+      ]
+
+      const { issues, error } = await searchJiraIssuesViaJql(
+        args.jql,
+        args.fields ?? defaultFields,
+        args.maxResults ?? 25,
+      )
+
+      if (error) {
         log.error('[atlassian] jira-search: %s', error)
         return { success: false, error }
       }
 
-      try {
-        const defaultFields = [
-          'summary', 'status', 'priority', 'assignee', 'reporter',
-          'issuetype', 'created', 'updated', 'description', 'labels',
-        ]
-
-        const result = await client.issueSearch.searchForIssuesUsingJql({
-          jql: args.jql,
-          startAt: args.startAt ?? 0,
-          maxResults: args.maxResults ?? 25,
-          fields: args.fields ?? defaultFields,
-        })
-
-        const issues: JiraIssue[] = (result.issues ?? []).map((issue) => {
-          const fields = issue.fields as Record<string, unknown> | undefined
-          return {
-            id: issue.id ?? '',
-            key: issue.key ?? '',
-            summary: (fields?.['summary'] as string) ?? '',
-            status: ((fields?.['status'] as Record<string, unknown>)?.['name'] as string) ?? '',
-            statusCategory:
-              (((fields?.['status'] as Record<string, unknown>)?.['statusCategory'] as Record<string, unknown>)?.['name'] as string) ?? '',
-            priority: ((fields?.['priority'] as Record<string, unknown>)?.['name'] as string) ?? 'None',
-            assignee: ((fields?.['assignee'] as Record<string, unknown>)?.['displayName'] as string) ?? null,
-            reporter: ((fields?.['reporter'] as Record<string, unknown>)?.['displayName'] as string) ?? null,
-            issueType: ((fields?.['issuetype'] as Record<string, unknown>)?.['name'] as string) ?? '',
-            created: (fields?.['created'] as string) ?? '',
-            updated: (fields?.['updated'] as string) ?? '',
-            description: fields?.['description'] ? JSON.stringify(fields['description']).slice(0, 2000) : null,
-            labels: (fields?.['labels'] as string[]) ?? [],
-          }
-        })
-
-        log.info(
-          '[atlassian] jira-search: Returned %d issues (total=%d)',
-          issues.length, result.total ?? 0,
-        )
-        return { success: true, issues, total: result.total ?? 0 }
-      } catch (err) {
-        log.error('[atlassian] jira-search: Failed —', err)
-        return { success: false, error: String(err) }
-      }
+      // The new search/jql endpoint no longer returns total. Callers that
+      // displayed a count should use `issues.length`; for any caller still
+      // reading `total`, we surface it as the page size, which is the most
+      // truthful number we can produce without an extra approximate-count call.
+      log.info('[atlassian] jira-search: Returned %d issues', issues.length)
+      return { success: true, issues, total: issues.length }
     },
   )
 
@@ -1066,4 +1104,179 @@ export function registerAtlassianHandlers(ipcMain: IpcMain): void {
       }
     },
   )
+
+  // ── Jira: My Work (aggregated) ──────────────────────────────────────────
+  //
+  // Single call that aggregates everything the My Work page needs from Jira:
+  //   - Issues assigned to currentUser() that are not Done
+  //   - The first active sprint across the user's accessible boards (if any)
+  //   - The issues in that active sprint
+  //
+  // Why a dedicated aggregation handler vs. composing on the renderer:
+  //   1. Avoids a chatty IPC pattern (3-5 round-trips become 1)
+  //   2. Keeps the JQL strings + Agile-API quirks (state filter, board scan)
+  //      out of the renderer
+  //   3. Tolerates partial failure — the page can still render assigned
+  //      issues even when no agile board is reachable, and vice versa
+  //
+  // Reference: https://developer.atlassian.com/cloud/jira/platform/rest/v3/intro/
+  // Reference: https://developer.atlassian.com/cloud/jira/software/rest/intro/
+
+  ipcMain.handle('integration:jira-my-work', async () => {
+    log.info('[atlassian] jira-my-work: Aggregating issues + active sprint')
+
+    const meta = getMetadata()
+    if (!meta) {
+      const error = 'Atlassian is not connected. Please connect via Configure > Integrations.'
+      log.error('[atlassian] jira-my-work: %s', error)
+      return { success: false, error }
+    }
+
+    const result: {
+      success: boolean
+      assignedIssues: JiraIssue[]
+      activeSprint: (JiraSprint & { boardId: number; boardName: string }) | null
+      sprintIssues: JiraIssue[]
+      sprintError: string | null
+      assignedError: string | null
+    } = {
+      success: true,
+      assignedIssues: [],
+      activeSprint: null,
+      sprintIssues: [],
+      sprintError: null,
+      assignedError: null,
+    }
+
+    // ── 1. Issues assigned to the current user (not Done), most recent first ──
+    {
+      const jql = 'assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC'
+      const { issues, error } = await searchJiraIssuesViaJql(
+        jql,
+        [
+          'summary', 'status', 'priority', 'assignee', 'reporter',
+          'issuetype', 'created', 'updated', 'labels',
+        ],
+        50,
+      )
+      if (error) {
+        result.assignedError = error
+        log.error('[atlassian] jira-my-work: assigned-issues failed — %s', error)
+      } else {
+        result.assignedIssues = issues
+        log.info('[atlassian] jira-my-work: Got %d assigned issues', issues.length)
+      }
+    }
+
+    // ── 2. Find the first active sprint across every board the user can see ──
+    // We used to filter to type=scrum, which excluded team-managed projects
+    // (those expose boards as type=simple even when sprints are enabled).
+    // Sprint listings work the same on both — the agile API is the source of
+    // truth, and boards that don't support sprints just return an empty list,
+    // so unfiltered iteration is correct and lets team-managed projects work.
+    try {
+      const boardsUrl = `${meta.siteUrl}/rest/agile/1.0/board?maxResults=50`
+      const { response: boardsResp } = await authenticatedFetch(boardsUrl)
+      if (!boardsResp || !boardsResp.ok) {
+        // Agile API may be unavailable (Jira Software disabled) — non-fatal
+        result.sprintError = boardsResp ? `Boards API HTTP ${boardsResp.status}` : 'Boards API unreachable'
+        log.warn('[atlassian] jira-my-work: %s', result.sprintError)
+      } else {
+        const boardsData = (await boardsResp.json()) as {
+          values?: Array<{ id?: number; name?: string; type?: string }>
+        }
+        const candidateBoards = (boardsData.values ?? []).filter((b) => typeof b.id === 'number')
+
+        for (const board of candidateBoards) {
+          if (!board.id) continue
+          const sprintUrl = `${meta.siteUrl}/rest/agile/1.0/board/${board.id}/sprint?state=active`
+          const { response: sprintResp } = await authenticatedFetch(sprintUrl)
+          // Boards that don't support sprints (kanban without backlog) return
+          // 400; we just skip them and keep scanning.
+          if (!sprintResp || !sprintResp.ok) continue
+
+          const sprintData = (await sprintResp.json()) as {
+            values?: Array<{
+              id?: number
+              name?: string
+              state?: string
+              startDate?: string
+              endDate?: string
+              completeDate?: string
+              goal?: string
+            }>
+          }
+
+          const active = (sprintData.values ?? [])[0]
+          if (!active || typeof active.id !== 'number') continue
+
+          result.activeSprint = {
+            id: active.id,
+            name: active.name ?? '',
+            state: active.state ?? 'active',
+            startDate: active.startDate ?? null,
+            endDate: active.endDate ?? null,
+            completeDate: active.completeDate ?? null,
+            goal: active.goal ?? null,
+            boardId: board.id,
+            boardName: board.name ?? '',
+          }
+
+          // Pull this sprint's issues (capped to 50; the sprint shouldn't be huge)
+          const issuesUrl = `${meta.siteUrl}/rest/agile/1.0/sprint/${active.id}/issue?maxResults=50`
+          const { response: issuesResp } = await authenticatedFetch(issuesUrl)
+          if (!issuesResp || !issuesResp.ok) break
+
+          const issuesData = (await issuesResp.json()) as {
+            issues?: Array<{
+              id?: string
+              key?: string
+              fields?: {
+                summary?: string
+                status?: { name?: string; statusCategory?: { name?: string } }
+                priority?: { name?: string }
+                assignee?: { displayName?: string }
+                reporter?: { displayName?: string }
+                issuetype?: { name?: string }
+                created?: string
+                updated?: string
+                labels?: string[]
+              }
+            }>
+          }
+
+          result.sprintIssues = (issuesData.issues ?? []).map((issue) => ({
+            id: issue.id ?? '',
+            key: issue.key ?? '',
+            summary: issue.fields?.summary ?? '',
+            status: issue.fields?.status?.name ?? '',
+            statusCategory: issue.fields?.status?.statusCategory?.name ?? '',
+            priority: issue.fields?.priority?.name ?? 'None',
+            assignee: issue.fields?.assignee?.displayName ?? null,
+            reporter: issue.fields?.reporter?.displayName ?? null,
+            issueType: issue.fields?.issuetype?.name ?? '',
+            created: issue.fields?.created ?? '',
+            updated: issue.fields?.updated ?? '',
+            description: null,
+            labels: issue.fields?.labels ?? [],
+          }))
+
+          log.info(
+            '[atlassian] jira-my-work: Active sprint "%s" on board "%s" — %d issues',
+            result.activeSprint.name, result.activeSprint.boardName, result.sprintIssues.length,
+          )
+          break // first active sprint wins
+        }
+
+        if (!result.activeSprint && candidateBoards.length > 0) {
+          log.info('[atlassian] jira-my-work: No active sprint found across %d boards', candidateBoards.length)
+        }
+      }
+    } catch (err) {
+      result.sprintError = String(err)
+      log.error('[atlassian] jira-my-work: sprint scan failed —', err)
+    }
+
+    return result
+  })
 }

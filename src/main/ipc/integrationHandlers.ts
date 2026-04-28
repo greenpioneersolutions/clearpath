@@ -416,4 +416,125 @@ export function registerIntegrationHandlers(ipcMain: IpcMain): void {
       return { success: false, error: String(err) }
     }
   })
+
+  // ── GitHub: My Work (aggregated) ─────────────────────────────────────────
+  //
+  // Fans three search.issuesAndPullRequests queries out from a single IPC
+  // round-trip:
+  //   - authored        — `is:open is:pr author:@me`
+  //   - reviewRequested — `is:open is:pr review-requested:@me`
+  //   - mentions        — `is:open mentions:@me` (issues + PRs)
+  //
+  // Why a dedicated handler instead of `integration:github-search`: that one
+  // hardcodes `author:${user}` into the query so review-requested / mentioned
+  // searches can't be expressed through it. Adding a more permissive search
+  // helper would also work, but exposing the unified "my work" shape keeps
+  // the renderer free of GitHub query syntax.
+  //
+  // Each branch is wrapped in its own try so a quota / 422 on one doesn't
+  // wipe out the rest of the response.
+
+  ipcMain.handle('integration:github-my-work', async () => {
+    log.info('[integration] github-my-work: Aggregating PRs + reviews + mentions')
+
+    const kit = getOctokit()
+    if (!kit) {
+      const reason = getLastOctokitError() ?? 'GitHub not connected'
+      log.error('[integration] github-my-work: %s', reason)
+      return { success: false, error: reason }
+    }
+
+    interface MyWorkItem {
+      type: 'pull' | 'issue'
+      number: number
+      title: string
+      state: string
+      repo: string
+      author: string
+      url: string
+      updatedAt: string | null
+      draft: boolean
+      labels: string[]
+    }
+
+    function mapItems(items: Array<{
+      number: number
+      title: string
+      state: string
+      repository_url: string
+      pull_request?: unknown
+      html_url: string
+      updated_at: string | null
+      draft?: boolean
+      user?: { login?: string } | null
+      labels: Array<string | { name?: string }>
+    }>): MyWorkItem[] {
+      return items.map((i) => ({
+        type: i.pull_request ? 'pull' : 'issue',
+        number: i.number,
+        title: i.title,
+        state: i.state,
+        repo: i.repository_url.split('/').slice(-2).join('/'),
+        author: i.user?.login ?? 'unknown',
+        url: i.html_url,
+        updatedAt: i.updated_at,
+        draft: Boolean(i.draft),
+        labels: i.labels.map((l) => (typeof l === 'string' ? l : l.name ?? '')),
+      }))
+    }
+
+    const out = {
+      success: true,
+      authored: [] as MyWorkItem[],
+      reviewRequested: [] as MyWorkItem[],
+      mentions: [] as MyWorkItem[],
+      authoredError: null as string | null,
+      reviewRequestedError: null as string | null,
+      mentionsError: null as string | null,
+    }
+
+    // Authored open PRs
+    try {
+      const { data } = await kit.rest.search.issuesAndPullRequests({
+        q: 'is:open is:pr author:@me',
+        sort: 'updated',
+        per_page: 25,
+      })
+      out.authored = mapItems(data.items as Parameters<typeof mapItems>[0])
+      log.info('[integration] github-my-work: authored=%d', out.authored.length)
+    } catch (err) {
+      out.authoredError = String(err)
+      log.error('[integration] github-my-work: authored failed —', err)
+    }
+
+    // PRs awaiting my review
+    try {
+      const { data } = await kit.rest.search.issuesAndPullRequests({
+        q: 'is:open is:pr review-requested:@me',
+        sort: 'updated',
+        per_page: 25,
+      })
+      out.reviewRequested = mapItems(data.items as Parameters<typeof mapItems>[0])
+      log.info('[integration] github-my-work: review-requested=%d', out.reviewRequested.length)
+    } catch (err) {
+      out.reviewRequestedError = String(err)
+      log.error('[integration] github-my-work: review-requested failed —', err)
+    }
+
+    // Mentions across issues + PRs
+    try {
+      const { data } = await kit.rest.search.issuesAndPullRequests({
+        q: 'is:open mentions:@me',
+        sort: 'updated',
+        per_page: 25,
+      })
+      out.mentions = mapItems(data.items as Parameters<typeof mapItems>[0])
+      log.info('[integration] github-my-work: mentions=%d', out.mentions.length)
+    } catch (err) {
+      out.mentionsError = String(err)
+      log.error('[integration] github-my-work: mentions failed —', err)
+    }
+
+    return out
+  })
 }

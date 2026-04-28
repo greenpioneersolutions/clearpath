@@ -151,11 +151,13 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   'integration:get-status', 'integration:github-connect', 'integration:github-disconnect',
   'integration:github-repos', 'integration:github-pulls', 'integration:github-pull-detail',
   'integration:github-issues', 'integration:github-search',
+  'integration:github-my-work',
 
   // Atlassian (Jira + Confluence)
   'integration:atlassian-connect', 'integration:atlassian-disconnect',
   'integration:jira-projects', 'integration:jira-search', 'integration:jira-issue',
   'integration:jira-boards', 'integration:jira-sprints', 'integration:jira-sprint-issues',
+  'integration:jira-my-work',
   'integration:confluence-spaces', 'integration:confluence-search',
   'integration:confluence-page', 'integration:confluence-page-children',
 

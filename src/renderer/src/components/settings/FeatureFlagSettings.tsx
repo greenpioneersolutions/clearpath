@@ -32,6 +32,7 @@ const FLAG_GROUPS: FlagGroup[] = [
     flags: [
       { key: 'showDashboard', label: 'Dashboard', description: 'Home page with widgets' },
       { key: 'showWork', label: 'Work', description: 'Sessions, agents, tools, templates' },
+      { key: 'showMyWork', label: 'My Work', description: 'Aggregated dashboard of your assigned Jira issues, current sprint, and GitHub PRs / review requests / mentions.' },
       { key: 'showInsights', label: 'Insights', description: 'Analytics, cost, compliance' },
       { key: 'showConfigure', label: 'Configure', description: 'Settings, policies, integrations' },
       { key: 'showLearn', label: 'Learning Center', description: 'Guided learning tracks' },

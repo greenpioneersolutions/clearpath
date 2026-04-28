@@ -6,6 +6,7 @@ import { AccessibilityProvider } from './contexts/AccessibilityContext'
 import Layout from './components/Layout'
 import Home from './pages/Home'
 import Work from './pages/Work'
+import MyWork from './pages/MyWork'
 import Insights from './pages/Insights'
 import Configure from './pages/Configure'
 import Connect from './pages/Connect'
@@ -43,6 +44,7 @@ export default function App(): JSX.Element {
         <Route path="/" element={<Layout />}>
           <Route index element={<Home />} />
           <Route path="work" element={<Work />} />
+          <Route path="my-work" element={<MyWork />} />
           <Route path="learn" element={<Learn />} />
           <Route path="insights" element={<Insights />} />
           {/* Experimental routes stay registered even when compiled out so

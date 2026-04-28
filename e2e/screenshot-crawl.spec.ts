@@ -110,6 +110,10 @@ const SIDEBAR_PAGES: SidebarPage[] = [
   // Work page renamed to "Sessions" in 1.13.0; route is still /work, baseline
   // filenames stay `work--*` so existing screenshot baselines keep matching.
   { nav: 'Sessions',         screenshot: 'work--initial' },
+  // My Work added in 1.14.0 — aggregated dashboard of Jira + GitHub work
+  // assigned to the user. In the screenshot test profile neither integration
+  // is connected, so the disconnected empty state is what gets captured.
+  { nav: 'My Work',          screenshot: 'my-work--initial',       optional: true },
   // Notes promoted to a top-level surface in 1.13.0 — sidebar peer of Sessions.
   { nav: 'Notes',            screenshot: 'notes--initial',        optional: true },
   { nav: 'Insights',         screenshot: 'insights--initial' },
