@@ -122,7 +122,7 @@ export default function Work(): JSX.Element {
 
       // 2. Load persisted sessions from disk (survive app restart)
       const persisted = await window.electronAPI.invoke('cli:get-persisted-sessions') as
-        Array<{ sessionId: string; cli: BackendId; name?: string; firstPrompt?: string; startedAt: number; endedAt?: number; messageLog: Array<{ type: string; content: string; metadata?: unknown; sender?: string }> }>
+        Array<{ sessionId: string; cli: BackendId; name?: string; firstPrompt?: string; startedAt: number; endedAt?: number; messageLog: Array<{ type: string; content: string; metadata?: unknown; sender?: string; timestamp?: number; attachedNotes?: Array<{ id: string; title: string }>; attachedAgent?: { id: string; name: string }; attachedSkills?: Array<{ id: string; name: string }> }> }>
 
       // Build a set of active session IDs so we don't duplicate
       const activeIds = new Set(activeSessions.map((s) => s.sessionId))
@@ -131,7 +131,7 @@ export default function Work(): JSX.Element {
       const logs = await Promise.all(
         activeSessions.map(async (info) => {
           const log = await window.electronAPI.invoke('cli:get-message-log', { sessionId: info.sessionId }) as
-            Array<{ type: string; content: string; metadata?: unknown }>
+            Array<{ type: string; content: string; metadata?: unknown; sender?: string; timestamp?: number; attachedNotes?: Array<{ id: string; title: string }>; attachedAgent?: { id: string; name: string }; attachedSkills?: Array<{ id: string; name: string }> }>
           return { sessionId: info.sessionId, log }
         })
       )
@@ -151,6 +151,12 @@ export default function Work(): JSX.Element {
                 output: { type: entry.type as OutputMessage['output']['type'], content: entry.content, metadata: entry.metadata as Record<string, unknown> | undefined },
                 sender: (e.sender as OutputMessage['sender']) ?? undefined,
                 timestamp: (e.timestamp as number) ?? undefined,
+                // Restore the in-chat chip metadata (agent / skills / notes)
+                // so the user bubble looks the same after navigating away
+                // and coming back. Frozen at attach time on disk.
+                attachedAgent: entry.attachedAgent,
+                attachedSkills: entry.attachedSkills,
+                attachedNotes: entry.attachedNotes,
               }
             })
             if (messages.length === 0) {
@@ -175,6 +181,9 @@ export default function Work(): JSX.Element {
             output: { type: entry.type as OutputMessage['output']['type'], content: entry.content, metadata: entry.metadata as Record<string, unknown> | undefined },
             sender: (entry.sender as OutputMessage['sender']) ?? undefined,
             timestamp: (entry as Record<string, unknown>).timestamp as number | undefined,
+            attachedAgent: entry.attachedAgent,
+            attachedSkills: entry.attachedSkills,
+            attachedNotes: entry.attachedNotes,
           }))
           if (messages.length === 0) continue // Skip empty sessions
           const info: SessionInfo = {
