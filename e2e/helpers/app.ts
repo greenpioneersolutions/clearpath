@@ -132,8 +132,9 @@ export async function getCriticalConsoleErrors(): Promise<string[]> {
  * and wait briefly for the route transition to settle.
  *
  * The sidebar renders NavLink elements with text content matching the
- * route labels defined in Sidebar.tsx: Home, Work, Insights, Clear Memory,
- * Learn, plus Connect and Settings (pinned to the bottom).
+ * route labels defined in Sidebar.tsx: Home, Sessions, Notes, Insights,
+ * Clear Memory, Learn, plus Connect and Settings (pinned to the bottom).
+ * (Work was renamed to Sessions in 1.13.0; the route is still /work.)
  *
  * Note: "Connect" and "Settings" are pinned to the bottom of the sidebar
  * in a <div> outside the main <nav> element, so we search the entire

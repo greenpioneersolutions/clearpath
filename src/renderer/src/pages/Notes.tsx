@@ -96,7 +96,11 @@ function NotesContent({
 
   const [notes, setNotes] = useState<Note[]>([])
   const [allTags, setAllTags] = useState<string[]>([])
-  const [loading, setLoading] = useState(true)
+  // `initialized` flips to true after the FIRST notes:list resolves and stays
+  // true. We deliberately don't toggle a `loading` flag on subsequent
+  // refreshes — otherwise the "Loading notes…" message flashes over the list
+  // every time the editor's debounced save calls `onChange()` to re-sync.
+  const [initialized, setInitialized] = useState(false)
 
   // Filter state
   const [pinnedOnly, setPinnedOnly] = useState(false)
@@ -125,7 +129,6 @@ function NotesContent({
   const [bulkIds, setBulkIds] = useState<Set<string>>(new Set())
 
   const refresh = useCallback(async () => {
-    setLoading(true)
     const [list, tags] = await Promise.all([
       window.electronAPI.invoke('notes:list') as Promise<Note[]>,
       window.electronAPI.invoke('notes:tags') as Promise<string[]>,
@@ -139,7 +142,7 @@ function NotesContent({
     }))
     setNotes(normalized)
     setAllTags(tags ?? [])
-    setLoading(false)
+    setInitialized(true)
   }, [])
 
   useEffect(() => {
@@ -201,8 +204,20 @@ function NotesContent({
       tags: [],
       source: 'manual',
     })) as Note
-    await refresh()
+    // Optimistic insert — render the new note IMMEDIATELY so the editor
+    // drawer opens against a populated list. A blocking `refresh()` here
+    // would let the "Loading notes…" message flash over the user's typing.
+    const normalizedCreated: Note = {
+      ...created,
+      tags: created.tags ?? [],
+      attachments: created.attachments ?? [],
+    }
+    setNotes((prev) => [normalizedCreated, ...prev])
     setSelectedId(created.id)
+    // Background sync to pick up any server-side normalization (sort order,
+    // tag autocomplete cache). No loading flicker because `refresh()` no
+    // longer toggles a global flag.
+    void refresh()
   }, [refresh, setSelectedId])
 
   const handleUseInNextSession = useCallback(
@@ -259,7 +274,7 @@ function NotesContent({
   }, [bulkIds, notes, refresh])
 
   // ── Empty state ───────────────────────────────────────────────────────
-  const hasNoNotes = !loading && notes.length === 0
+  const hasNoNotes = initialized && notes.length === 0
 
   return (
     <div className="flex h-full overflow-hidden" style={{ backgroundColor: 'var(--brand-dark-page)' }}>
@@ -393,7 +408,7 @@ function NotesContent({
 
         {/* List */}
         <div className="flex-1 overflow-y-auto px-6 py-4">
-          {loading ? (
+          {!initialized ? (
             <p className="text-sm text-gray-500 text-center py-8">Loading notes…</p>
           ) : hasNoNotes ? (
             <EmptyState onNew={() => void handleNew()} onSeeExamples={() => navigate('/learn?path=notes')} />

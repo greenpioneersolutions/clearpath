@@ -103,8 +103,8 @@ describe('ClearPathAI — Smoke Tests', () => {
 
   // ── 5. Navigation — Click Through Main Routes ───────────────────────────
 
-  it('navigates to Work without crashing', async () => {
-    await navigateSidebarTo('Work')
+  it('navigates to Sessions without crashing', async () => {
+    await navigateSidebarTo('Sessions')
     const root = await $('#root')
     // After navigation the root should still exist and have content
     expect(await root.isExisting()).toBe(true)

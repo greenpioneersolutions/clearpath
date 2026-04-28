@@ -31,7 +31,7 @@ async function navigateToHash(hash: string): Promise<void> {
 describe('ClearPathAI — Work Page', () => {
   before(async () => {
     await waitForAppReady()
-    await navigateSidebarTo('Work')
+    await navigateSidebarTo('Sessions')
     await browser.pause(1000)
   })
 
@@ -135,7 +135,7 @@ describe('ClearPathAI — Work Page', () => {
     let inputAvailable = false
 
     before(async () => {
-      await navigateSidebarTo('Work')
+      await navigateSidebarTo('Sessions')
       await browser.pause(1000)
       const textarea = await $('[aria-label="Message input"]')
       inputAvailable = await textarea.isExisting()
@@ -230,7 +230,7 @@ describe('ClearPathAI — Work Page', () => {
 
   describe('Mode Switching', () => {
     before(async () => {
-      await navigateSidebarTo('Work')
+      await navigateSidebarTo('Sessions')
       await browser.pause(1000)
     })
 
@@ -268,13 +268,13 @@ describe('ClearPathAI — Work Page', () => {
 
   describe('Work Page Stability', () => {
     it('handles leaving and returning to Work page', async () => {
-      await navigateSidebarTo('Work')
+      await navigateSidebarTo('Sessions')
       await browser.pause(300)
 
       await navigateSidebarTo('Home')
       await browser.pause(300)
 
-      await navigateSidebarTo('Work')
+      await navigateSidebarTo('Sessions')
       await browser.pause(500)
 
       const root = await $('#root')
