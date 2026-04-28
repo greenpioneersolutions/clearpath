@@ -41,17 +41,29 @@ Follow this iterative development cycle for every task:
 - Use the brand colors defined in CLAUDE.md when creating UI elements
 
 ### 4. Validate
-- After each significant change, verify the code compiles by checking for TypeScript errors
+
+**MANDATORY: You must run every test you create or modify before reporting the task complete.** Writing a test and assuming it works is not acceptable. "Tests should pass" is not the same as "tests pass." A green test you ran beats a confident-sounding claim every time.
+
+The rule, in order:
+
+1. **Unit tests** — run them with `npm run test` (or a scoped invocation like `npx vitest run path/to/file.test.ts` for fast feedback). Every new/changed unit test must execute and pass before you report completion. If it fails, fix the test or the code — do not move on.
+2. **E2E tests** — if you created or modified an e2e spec under `e2e/`, run it via `npm run test:e2e` (or whatever script is wired in `package.json`). E2E tests routinely surface integration bugs that unit tests miss (selector mismatches, IPC wiring, timing). **Skipping the e2e run because "the unit tests passed" is the exact failure mode this rule exists to prevent.**
+3. **Typecheck** — run the appropriate `tsc --noEmit -p tsconfig.<scope>.json` for any project you touched. Confirm you did not introduce new errors (compare counts to baseline if pre-existing errors exist).
+4. **Build** — for substantial changes (new IPC channels, new components, schema changes), run the build script to catch what `tsc` alone misses.
+
+If a test cannot be run in your environment (e.g., e2e requires a display the agent cannot reach), say so explicitly in your final report — do not silently skip and claim success. "I wrote 4 e2e specs but could not run them locally" is a valid status; "tests pass" without running them is not.
+
+Other validation:
 - Read back your changes to verify correctness and completeness
 - Check that imports are correct and all referenced modules exist
 - Verify IPC channel names match between main and renderer
 - Ensure electron-store schema changes are backward-compatible
-- If build scripts are available in package.json, run them to validate
 
 ### 5. Iterate
 - If validation reveals issues, fix them immediately
 - Re-read the requirements to ensure nothing was missed
 - Look for edge cases: error handling, loading states, empty states, permission boundaries
+- **Re-run tests after every fix.** A test that failed once and a test you patched are not the same as a test that currently passes.
 
 ## Sub-Agent Strategy
 
@@ -87,11 +99,22 @@ When delegating to sub-agents:
 
 ## Build & Development
 
-- Check `package.json` for available scripts before assuming what's available
-- There are currently **no lint or test suites** configured — but you can build them if needed
+- Check `package.json` for available scripts before assuming what's available — `test`, `test:e2e`, `build`, `dev`, etc. all live there
 - Use the dev script to verify the app runs after changes
 - The Electron app uses a standard main/renderer split with preload scripts
-- use wallaby tools for unit testing. If wallaby is not installed, use command line testing with `npm run test` or similar scripts defined in `package.json`
+- Use wallaby tools for unit testing if installed; otherwise use `npm run test` (vitest) for unit tests and `npm run test:e2e` (or the equivalent wdio script) for e2e
+
+## Definition of Done
+
+A task is **not complete** until all of the following are true. Do not declare success in your final message until you have personally verified each one:
+
+- [ ] All new and modified unit tests have been **executed** and pass.
+- [ ] All new and modified e2e tests have been **executed** and pass (or you have explicitly stated you could not run them and why).
+- [ ] Typecheck for every tsconfig you touched produces no new errors.
+- [ ] No new console errors or unhandled promise rejections in the dev/test runs.
+- [ ] The actual user-visible behavior was verified (clicked the button, exercised the flow) — not just "the code compiles."
+
+If any of these fail, you are still iterating, not done. Be honest in your status reports — "tests written, all passing locally" is the bar; anything weaker (e.g., "tests should pass" or "I wrote tests but didn't run them") needs to be flagged explicitly so the user can decide how to proceed.
 
 **Update your agent memory** as you discover codepaths, module relationships, architectural patterns, file locations, and conventions in this codebase. This builds institutional knowledge across conversations. Write concise notes about what you found and where.
 

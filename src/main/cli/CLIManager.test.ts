@@ -363,6 +363,68 @@ describe('CLIManager', () => {
     })
   })
 
+  describe('archivePersistedSessions', () => {
+    it('archives multiple sessions at once', () => {
+      const store = setupStore([
+        { sessionId: 's1', cli: 'copilot', startedAt: recentTs(1), messageLog: [] },
+        { sessionId: 's2', cli: 'claude', startedAt: recentTs(2), messageLog: [] },
+        { sessionId: 's3', cli: 'copilot', startedAt: recentTs(3), messageLog: [] },
+      ])
+      const mgr = makeManager()
+      mgr.archivePersistedSessions(['s1', 's3'], true)
+      const remaining = store.getSessions()
+      expect(remaining.find((s) => s.sessionId === 's1')?.archived).toBe(true)
+      expect(remaining.find((s) => s.sessionId === 's2')?.archived).toBeUndefined()
+      expect(remaining.find((s) => s.sessionId === 's3')?.archived).toBe(true)
+    })
+
+    it('unarchives multiple sessions at once', () => {
+      const store = setupStore([
+        { sessionId: 's1', cli: 'copilot', startedAt: recentTs(1), archived: true, messageLog: [] },
+        { sessionId: 's2', cli: 'claude', startedAt: recentTs(2), archived: true, messageLog: [] },
+      ])
+      const mgr = makeManager()
+      mgr.archivePersistedSessions(['s1', 's2'], false)
+      const all = store.getSessions()
+      expect(all.every((s) => s.archived === false)).toBe(true)
+    })
+
+    it('only updates the requested sessions', () => {
+      const store = setupStore([
+        { sessionId: 's1', cli: 'copilot', startedAt: recentTs(1), messageLog: [] },
+        { sessionId: 's2', cli: 'claude', startedAt: recentTs(2), messageLog: [] },
+      ])
+      const mgr = makeManager()
+      mgr.archivePersistedSessions(['s1'], true)
+      const all = store.getSessions()
+      expect(all.find((s) => s.sessionId === 's1')?.archived).toBe(true)
+      expect(all.find((s) => s.sessionId === 's2')?.archived).toBeUndefined()
+    })
+
+    it('is a no-op when given an empty id list', () => {
+      const store = setupStore([
+        { sessionId: 's1', cli: 'copilot', startedAt: recentTs(1), messageLog: [] },
+      ])
+      const mgr = makeManager()
+      // Capture write count *after* manager construction so any startup
+      // bookkeeping (e.g. expired-session pruning) doesn't skew the diff.
+      const writesBefore = mockSet.mock.calls.filter((c) => c[0] === 'sessions').length
+      mgr.archivePersistedSessions([], true)
+      const writesAfter = mockSet.mock.calls.filter((c) => c[0] === 'sessions').length
+      expect(writesAfter).toBe(writesBefore)
+      expect(store.getSessions()[0].archived).toBeUndefined()
+    })
+
+    it('ignores ids that do not match any persisted session', () => {
+      const store = setupStore([
+        { sessionId: 's1', cli: 'copilot', startedAt: recentTs(1), messageLog: [] },
+      ])
+      const mgr = makeManager()
+      mgr.archivePersistedSessions(['ghost-1', 'ghost-2'], true)
+      expect(store.getSessions()[0].archived).toBeUndefined()
+    })
+  })
+
   describe('renamePersistedSession', () => {
     it('renames a persisted session', () => {
       const store = setupStore([{ sessionId: 's1', cli: 'copilot', name: 'Old Name', startedAt: recentTs(1), messageLog: [] }])

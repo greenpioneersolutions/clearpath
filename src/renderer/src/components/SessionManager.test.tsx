@@ -407,6 +407,97 @@ describe('SessionManager', () => {
     })
   })
 
+  it('shows bulk Archive button when sessions are selected on Active tab', async () => {
+    mockInvoke.mockResolvedValue(makeSessions([{ sessionId: 'b1', name: 'Bulk One' }]))
+    render(<SessionManager {...baseProps} />)
+    await waitFor(() => screen.getByText('Bulk One'))
+    fireEvent.click(screen.getByRole('checkbox'))
+    await waitFor(() => {
+      expect(screen.getByText('Archive')).toBeInTheDocument()
+    })
+  })
+
+  it('bulk archives selected sessions when Archive is clicked on Active tab', async () => {
+    mockInvoke.mockImplementation((channel: string) => {
+      if (channel === 'cli:get-persisted-sessions') return Promise.resolve(
+        makeSessions([
+          { sessionId: 'a1', name: 'Active A', archived: false },
+          { sessionId: 'a2', name: 'Active B', archived: false },
+        ])
+      )
+      if (channel === 'cli:archive-sessions') return Promise.resolve(null)
+      return Promise.resolve(null)
+    })
+    render(<SessionManager {...baseProps} />)
+    await waitFor(() => screen.getByText('Active A'))
+    const checkboxes = screen.getAllByRole('checkbox')
+    fireEvent.click(checkboxes[0])
+    fireEvent.click(checkboxes[1])
+    await waitFor(() => screen.getByText('2 selected'))
+    fireEvent.click(screen.getByText('Archive'))
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith('cli:archive-sessions', { sessionIds: ['a1', 'a2'], archived: true })
+    })
+  })
+
+  it('shows Unarchive (not Archive) when bulk-selecting on Archived tab', async () => {
+    mockInvoke.mockResolvedValue(makeSessions([
+      { sessionId: 'arch-1', name: 'Archived One', archived: true },
+    ]))
+    render(<SessionManager {...baseProps} />)
+    await waitFor(() => screen.getByText(/Archived/))
+    fireEvent.click(screen.getByText(/Archived/))
+    await waitFor(() => screen.getByText('Archived One'))
+    fireEvent.click(screen.getByRole('checkbox'))
+    await waitFor(() => {
+      expect(screen.getByText('Unarchive')).toBeInTheDocument()
+      expect(screen.queryByText('Archive')).not.toBeInTheDocument()
+    })
+  })
+
+  it('bulk unarchives selected sessions when Unarchive is clicked on Archived tab', async () => {
+    mockInvoke.mockImplementation((channel: string) => {
+      if (channel === 'cli:get-persisted-sessions') return Promise.resolve(
+        makeSessions([
+          { sessionId: 'u1', name: 'Arch One', archived: true },
+          { sessionId: 'u2', name: 'Arch Two', archived: true },
+        ])
+      )
+      if (channel === 'cli:archive-sessions') return Promise.resolve(null)
+      return Promise.resolve(null)
+    })
+    render(<SessionManager {...baseProps} />)
+    await waitFor(() => screen.getByText(/^Archived \(2\)$/))
+    fireEvent.click(screen.getByText(/^Archived \(2\)$/))
+    await waitFor(() => screen.getByText('Arch One'))
+    const checkboxes = screen.getAllByRole('checkbox')
+    fireEvent.click(checkboxes[0])
+    fireEvent.click(checkboxes[1])
+    await waitFor(() => screen.getByText('2 selected'))
+    fireEvent.click(screen.getByText('Unarchive'))
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith('cli:archive-sessions', { sessionIds: ['u1', 'u2'], archived: false })
+    })
+  })
+
+  it('clears selection after a successful bulk archive', async () => {
+    mockInvoke.mockImplementation((channel: string) => {
+      if (channel === 'cli:get-persisted-sessions') return Promise.resolve(
+        makeSessions([{ sessionId: 'c1', name: 'Clear Me', archived: false }])
+      )
+      if (channel === 'cli:archive-sessions') return Promise.resolve(null)
+      return Promise.resolve(null)
+    })
+    render(<SessionManager {...baseProps} />)
+    await waitFor(() => screen.getByText('Clear Me'))
+    fireEvent.click(screen.getByRole('checkbox'))
+    await waitFor(() => screen.getByText('1 selected'))
+    fireEvent.click(screen.getByText('Archive'))
+    await waitFor(() => {
+      expect(screen.queryByText('1 selected')).not.toBeInTheDocument()
+    })
+  })
+
   it('filters sessions by Copilot CLI', async () => {
     mockInvoke.mockResolvedValue(makeSessions([
       { name: 'Copilot Session', cli: 'copilot' },

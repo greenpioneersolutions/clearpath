@@ -82,6 +82,7 @@ function makeMockCLIManager() {
     deletePersistedSession: vi.fn(),
     deletePersistedSessions: vi.fn(),
     archivePersistedSession: vi.fn(),
+    archivePersistedSessions: vi.fn(),
     renamePersistedSession: vi.fn(),
     searchSessions: vi.fn().mockReturnValue([]),
   }
@@ -136,6 +137,7 @@ describe('handlers (registerIpcHandlers)', () => {
       'cli:delete-session',
       'cli:delete-sessions',
       'cli:archive-session',
+      'cli:archive-sessions',
       'cli:rename-session',
       'cli:search-sessions',
       'app:get-cwd',
@@ -559,6 +561,25 @@ describe('handlers (registerIpcHandlers)', () => {
     it('unarchives a session', () => {
       handlers.get('cli:archive-session')!(mockEvent, { sessionId: 's1', archived: false })
       expect(cliManager.archivePersistedSession).toHaveBeenCalledWith('s1', false)
+    })
+  })
+
+  // ── cli:archive-sessions ──────────────────────────────────────────────────
+
+  describe('cli:archive-sessions', () => {
+    it('archives multiple sessions in bulk', () => {
+      handlers.get('cli:archive-sessions')!(mockEvent, { sessionIds: ['s1', 's2', 's3'], archived: true })
+      expect(cliManager.archivePersistedSessions).toHaveBeenCalledWith(['s1', 's2', 's3'], true)
+    })
+
+    it('unarchives multiple sessions in bulk', () => {
+      handlers.get('cli:archive-sessions')!(mockEvent, { sessionIds: ['s1', 's2'], archived: false })
+      expect(cliManager.archivePersistedSessions).toHaveBeenCalledWith(['s1', 's2'], false)
+    })
+
+    it('forwards an empty list verbatim', () => {
+      handlers.get('cli:archive-sessions')!(mockEvent, { sessionIds: [], archived: true })
+      expect(cliManager.archivePersistedSessions).toHaveBeenCalledWith([], true)
     })
   })
 
