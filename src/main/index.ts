@@ -379,9 +379,16 @@ extensionMainLoader.registerHostHandler('context:estimate-tokens', async (args: 
 // ── Extension Host Handlers: Notifications ───────────────────────────────────
 const notifyHandler = async (args: unknown) => {
   const { title, message, severity } = args as { title: string; message: string; severity?: string }
+  // Map extension-provided severities (which may include legacy 'error' /
+  // 'success' values) into the canonical NotificationSeverity set the inbox
+  // can render. Anything unknown becomes 'info'.
+  const normalizedSeverity =
+    severity === 'warning' ? 'warning' :
+    severity === 'critical' || severity === 'error' ? 'critical' :
+    'info'
   notificationManager.emit({
-    type: 'info',
-    severity: (severity as 'info' | 'warning' | 'error') ?? 'info',
+    type: 'agent-status',
+    severity: normalizedSeverity,
     title,
     message,
     source: 'extension',

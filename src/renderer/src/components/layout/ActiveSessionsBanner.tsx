@@ -13,10 +13,20 @@ const STATUS_DOT_CLASS: Record<SessionStatus, string> = {
   error: 'bg-red-500',
 }
 
-const CLI_BADGE_STYLE: Record<'copilot' | 'claude' | 'local', { bg: string; color: string; label: string }> = {
-  copilot: { bg: 'rgba(91,79,196,0.18)', color: '#5B4FC4', label: 'Copilot' },
-  claude: { bg: 'rgba(29,158,117,0.18)', color: '#1D9E75', label: 'Claude' },
-  local: { bg: 'rgba(133,183,235,0.18)', color: '#85B7EB', label: 'Local' },
+const STATUS_LABEL: Record<SessionStatus, string> = {
+  idle: 'Idle',
+  processing: 'Working',
+  'awaiting-permission': 'Awaiting permission',
+  error: 'Error',
+}
+
+// Saturated, AA-contrast (≥4.5:1 with white text) backgrounds for the CLI tag
+// pill. The teal/blue brand colors are too light on white text on their own,
+// so the badges use darker shades that still read as the same hue family.
+const CLI_BADGE_STYLE: Record<'copilot' | 'claude' | 'local', { bg: string; label: string }> = {
+  copilot: { bg: '#5B4FC4', label: 'Copilot' },
+  claude: { bg: '#047857', label: 'Claude' },
+  local: { bg: '#1D4ED8', label: 'Local' },
 }
 
 function chipLabel(name: string | undefined, sessionId: string): string {
@@ -52,13 +62,16 @@ export default function ActiveSessionsBanner(): JSX.Element | null {
       data-testid="active-sessions-banner"
       role="status"
       aria-label="Active CLI sessions"
-      className="h-9 w-full flex items-center gap-3 px-3 text-xs flex-shrink-0"
+      className="h-9 w-full flex items-center gap-3 px-3 text-xs flex-shrink-0 border-b"
       style={{
-        backgroundColor: 'rgba(29,158,117,0.10)',
-        borderBottom: '1px solid rgba(29,158,117,0.30)',
+        backgroundColor: 'color-mix(in srgb, var(--brand-accent) 12%, var(--brand-card-bg))',
+        borderBottomColor: 'var(--brand-accent)',
       }}
     >
-      <span className="text-[#5DCAA5] font-medium whitespace-nowrap">{countLabel}</span>
+      <span className="flex items-center gap-1.5 whitespace-nowrap font-semibold text-gray-900">
+        <span aria-hidden="true" className="inline-block w-2 h-2 rounded-full bg-[#047857] animate-pulse" />
+        {countLabel}
+      </span>
 
       {!collapsed && (
         <>
@@ -76,8 +89,10 @@ export default function ActiveSessionsBanner(): JSX.Element | null {
                   data-chip-id={`active-session-chip-${s.sessionId}`}
                   type="button"
                   onClick={() => navigate(`/work?id=${encodeURIComponent(s.sessionId)}`)}
-                  title={label}
-                  className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md border border-[#1D9E75]/30 hover:border-[#5DCAA5]/60 hover:bg-[#1D9E75]/15 transition-colors whitespace-nowrap text-gray-200"
+                  title={`${label} · ${STATUS_LABEL[status]}`}
+                  aria-label={`Open session ${label}, ${STATUS_LABEL[status]}`}
+                  className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md border bg-white text-gray-900 hover:shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-[#047857] transition-shadow whitespace-nowrap font-medium"
+                  style={{ borderColor: 'var(--brand-accent)' }}
                 >
                   <span
                     aria-hidden="true"
@@ -86,8 +101,8 @@ export default function ActiveSessionsBanner(): JSX.Element | null {
                   />
                   <span className="truncate max-w-[160px]">{label}</span>
                   <span
-                    className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide"
-                    style={{ backgroundColor: badge.bg, color: badge.color }}
+                    className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide text-white"
+                    style={{ backgroundColor: badge.bg }}
                   >
                     {badge.label}
                   </span>
@@ -101,7 +116,7 @@ export default function ActiveSessionsBanner(): JSX.Element | null {
             type="button"
             onClick={() => setCollapsed(true)}
             aria-label="Collapse active sessions banner"
-            className="text-[#5DCAA5] hover:text-white transition-colors px-1"
+            className="text-emerald-800 hover:text-emerald-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#047857] rounded transition-colors px-1 font-bold"
           >
             ▾
           </button>
@@ -114,7 +129,7 @@ export default function ActiveSessionsBanner(): JSX.Element | null {
           type="button"
           onClick={() => setCollapsed(false)}
           aria-label="Expand active sessions banner"
-          className="text-[#5DCAA5] hover:text-white transition-colors ml-auto px-1"
+          className="text-emerald-800 hover:text-emerald-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#047857] rounded transition-colors ml-auto px-1 font-bold"
         >
           ▸
         </button>

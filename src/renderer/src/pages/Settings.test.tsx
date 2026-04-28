@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom'
+import { MemoryRouter } from 'react-router-dom'
 
 const mockInvoke = vi.fn()
 const mockOn = vi.fn(() => vi.fn())
@@ -187,7 +188,13 @@ describe('Settings', () => {
   })
 
   it('switches to Feature Flags tab and renders flag groups', async () => {
-    render(<Settings />)
+    // FeatureFlagSettings now uses useNavigate (for the per-flag "Learn how →"
+    // CTA), so this test must render inside a Router context.
+    render(
+      <MemoryRouter>
+        <Settings />
+      </MemoryRouter>,
+    )
     await waitFor(() => screen.getByText('Feature Flags'))
     fireEvent.click(screen.getByText('Feature Flags'))
     await waitFor(() => {

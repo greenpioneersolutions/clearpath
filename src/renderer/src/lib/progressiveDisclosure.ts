@@ -80,6 +80,7 @@ export function getStageFlagOverrides(stage: ProgressionStage): Partial<FeatureF
     showSkillsManagement: true,
     showTemplates: true,
     showCostTracking: true,
+    showNotes: true,
   }
 
   if (stage === 'exploring') return exploring

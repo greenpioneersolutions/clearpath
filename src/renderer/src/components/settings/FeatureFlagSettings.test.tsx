@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom'
+import { MemoryRouter } from 'react-router-dom'
 import { FeatureFlagProvider, type FeatureFlags } from '../../contexts/FeatureFlagContext'
 import { FEATURE_FLAG_KEYS } from '../../../../shared/featureFlags.generated'
 import FeatureFlagSettings from './FeatureFlagSettings'
@@ -40,9 +41,11 @@ beforeEach(() => {
 
 function renderWithProvider() {
   return render(
-    <FeatureFlagProvider>
-      <FeatureFlagSettings />
-    </FeatureFlagProvider>
+    <MemoryRouter>
+      <FeatureFlagProvider>
+        <FeatureFlagSettings />
+      </FeatureFlagProvider>
+    </MemoryRouter>
   )
 }
 
@@ -68,12 +71,12 @@ describe('FeatureFlagSettings', () => {
     await waitFor(() => expect(screen.getByText('Enable All')).toBeInTheDocument())
   })
 
-  it('calls feature-flags:reset when Enable All is clicked', async () => {
+  it('applies the all-on preset when Enable All is clicked', async () => {
     renderWithProvider()
     await waitFor(() => expect(screen.getByText('Enable All')).toBeInTheDocument())
     fireEvent.click(screen.getByText('Enable All'))
     await waitFor(() => {
-      expect(mockInvoke).toHaveBeenCalledWith('feature-flags:reset')
+      expect(mockInvoke).toHaveBeenCalledWith('feature-flags:apply-preset', { presetId: 'all-on' })
     })
   })
 

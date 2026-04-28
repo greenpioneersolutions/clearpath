@@ -24,11 +24,23 @@ const NAV_ITEMS: Array<{ to: string; label: string; flagKey?: keyof FeatureFlags
   },
   {
     to: '/work',
-    label: 'Work',
+    label: 'Sessions',
     flagKey: 'showWork',
     icon: (
       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+      </svg>
+    ),
+  },
+  {
+    to: '/notes',
+    label: 'Notes',
+    flagKey: 'showNotes',
+    icon: (
+      // Open notebook glyph — distinct from the lightning bolt (Sessions) and
+      // bar chart (Insights) so the sidebar reads at a glance.
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
       </svg>
     ),
   },
@@ -137,7 +149,7 @@ export default function Sidebar(): JSX.Element {
 
   return (
     <aside role="navigation" aria-label="Main navigation"
-      className={`${collapsed ? 'w-16' : 'w-52'} flex flex-col h-screen transition-all duration-200 flex-shrink-0`}
+      className={`${collapsed ? 'w-16' : 'w-52'} flex flex-col h-full transition-all duration-200 flex-shrink-0 min-h-0`}
       style={{ backgroundColor: brand.colorSidebarBg }}>
 
       {/* ── Header: Logo + Bell ──────────────────────────────────────────── */}
@@ -265,11 +277,19 @@ export default function Sidebar(): JSX.Element {
 
       {/* ── Nav items ────────────────────────────────────────────────────── */}
       <nav className="flex-1 px-2 py-3 space-y-1" aria-label="Primary">
-        {NAV_ITEMS.filter((item) => {
-          if (item.requiredFlags) return item.requiredFlags.every((f) => flags[f])
-          if (item.flagKey) return flags[item.flagKey]
-          return true
-        }).map((item, idx) => (
+        {(() => {
+          const visible = NAV_ITEMS.filter((item) => {
+            if (item.requiredFlags) return item.requiredFlags.every((f) => flags[f])
+            if (item.flagKey) return flags[item.flagKey]
+            return true
+          })
+          // Anchor the conditional Learn link to a specific neighbor so the
+          // index math is robust to other items being flag-hidden. Learn
+          // appears *after* Notes when Notes is on; otherwise after Sessions.
+          const learnAnchor = visible.findIndex((it) =>
+            flags.showNotes ? it.to === '/notes' : it.to === '/work',
+          )
+          return visible.map((item, idx) => (
           <div key={item.to}>
             <NavLink
               to={item.to}
@@ -288,8 +308,11 @@ export default function Sidebar(): JSX.Element {
               {!collapsed && <span>{item.label}</span>}
             </NavLink>
 
-            {/* Conditional Learn nav — between Work (idx 1) and Insights (idx 2) */}
-            {idx === 1 && flags.showLearn && !learnDismissed && learnPct < 100 && (
+            {/* Conditional Learn nav — placed after Notes when Notes is on,
+                otherwise after Sessions. learnAnchor is computed against the
+                already-filtered visible list so flag-hidden items don't shift
+                the wrong neighbor. */}
+            {idx === learnAnchor && flags.showLearn && !learnDismissed && learnPct < 100 && (
               <NavLink to="/learn" className={linkClass} style={({ isActive }) => linkStyle(isActive)}>
                 {/* Graduation cap with progress ring */}
                 <div className="relative w-5 h-5 flex-shrink-0">
@@ -311,7 +334,8 @@ export default function Sidebar(): JSX.Element {
               </NavLink>
             )}
           </div>
-        ))}
+        ))
+        })()}
 
         {/* ── Extension-contributed nav items ────────────────────────────── */}
         {enabledExtensions

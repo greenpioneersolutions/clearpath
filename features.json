@@ -69,6 +69,12 @@
       "enabled": false,
       "addedIn": "1.0.0"
     },
+    "showNotes": {
+      "description": "Saved reference notes — capture takeaways, attach to new sessions for context.",
+      "experimental": false,
+      "enabled": true,
+      "addedIn": "1.13.0"
+    },
     "showClearMemory": {
       "description": "Cross-session AI memory engine. Runs locally; requires ~700 MB disk and ~600 MB model download on first enable.",
       "experimental": true,

@@ -106,6 +106,11 @@ const PRESETS: FlagPreset[] = [
       showPrScores: true,
       prScoresAiReview: true,
       showEfficiencyCoach: true,
+      showBackstageExplorer: true,
+      showMcpServers: true,
+      showExtensions: true,
+      enableClaudeSdk: true,
+      enableCopilotSdk: true,
     },
   },
   {

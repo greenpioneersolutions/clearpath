@@ -11,6 +11,31 @@
  * are silently swallowed so a broken file never fails the whole test suite.
  */
 
+// Polyfill window.localStorage / sessionStorage when running under jsdom.
+// jsdom's opaque-origin default leaves them as bare `{}`, so any test that
+// calls `localStorage.clear()` blows up before its first assertion. We install
+// a minimal in-memory Storage shim once, only when the host environment hasn't
+// already provided a working one.
+if (typeof window !== 'undefined') {
+  const installStorage = (key: 'localStorage' | 'sessionStorage') => {
+    const existing = (window as unknown as Record<string, unknown>)[key]
+    const hasWorking = existing && typeof (existing as { clear?: unknown }).clear === 'function'
+    if (hasWorking) return
+    const store = new Map<string, string>()
+    const shim: Storage = {
+      get length() { return store.size },
+      clear: () => { store.clear() },
+      getItem: (k) => (store.has(k) ? store.get(k)! : null),
+      setItem: (k, v) => { store.set(k, String(v)) },
+      removeItem: (k) => { store.delete(k) },
+      key: (i) => Array.from(store.keys())[i] ?? null,
+    }
+    Object.defineProperty(window, key, { value: shim, writable: true, configurable: true })
+  }
+  installStorage('localStorage')
+  installStorage('sessionStorage')
+}
+
 const modules = import.meta.glob<Record<string, unknown>>(
   [
     '../main/**/*.ts',

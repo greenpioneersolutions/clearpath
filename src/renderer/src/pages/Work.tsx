@@ -16,8 +16,9 @@ import { useFeatureFlags } from '../contexts/FeatureFlagContext'
 
 import SessionSummary from '../components/shared/SessionSummary'
 import WorkLaunchpad from '../components/work/WorkLaunchpad'
-// Notes picker is now integrated into ChatInputArea via ContextPicker
-import NotesManager from '../components/memory/NotesManager'
+// Notes picker is now integrated into ChatInputArea via ContextPicker.
+// The dedicated Notes management UI lives at /notes — there is no longer a
+// Notes sub-tab inside Sessions.
 import ExtensionSlot from '../components/extensions/ExtensionSlot'
 
 // ── Session state ────────────────────────────────────────────────────────────
@@ -56,7 +57,7 @@ export default function Work(): JSX.Element {
   const [sessions, setSessions] = useState<Map<string, ActiveSessionState>>(new Map())
   const [showNewSession, setShowNewSession] = useState(false)
   const [showEditSession, setShowEditSession] = useState(false)
-  const [workMode, setWorkMode] = useState<'session' | 'compose' | 'schedule' | 'memory'>('session')
+  const [workMode, setWorkMode] = useState<'session' | 'compose' | 'schedule'>('session')
   const [quickConfig, setQuickConfig] = useState<ChatContextConfig>({})
   const [activeTemplate, setActiveTemplate] = useState<PromptTemplate | null>(null)
   const [showSessionManager, setShowSessionManager] = useState(false)
@@ -84,13 +85,32 @@ export default function Work(): JSX.Element {
 
   // ── Deep-link: parse URL params and location state ──────────────────────
   useEffect(() => {
-    const tab = searchParams.get('tab') as typeof workMode | null
-    if (tab && ['session', 'compose', 'schedule', 'memory'].includes(tab)) setWorkMode(tab)
+    const tabRaw = searchParams.get('tab')
+    // Back-compat redirect: pre-rename links used `?tab=memory` and
+    // `?tab=notes` for the Notes sub-tab that lived under Sessions. Notes is
+    // now its own top-level page at /notes — fold both legacy params into a
+    // navigation so bookmarks and notification deep-links keep working.
+    if (tabRaw === 'memory' || tabRaw === 'notes') {
+      navigate('/notes', { replace: true })
+      return
+    }
+    if (tabRaw && ['session', 'compose', 'schedule'].includes(tabRaw)) {
+      setWorkMode(tabRaw as typeof workMode)
+    }
 
-    const state = location.state as { sessionId?: string; quickPrompt?: string } | null
+    const state = location.state as {
+      sessionId?: string
+      quickPrompt?: string
+      preSelectedNoteIds?: string[]
+    } | null
     if (state?.sessionId) setSelectedId(state.sessionId)
     if (state?.quickPrompt) pendingQuickPrompt.current = state.quickPrompt
-  }, [location, searchParams, setSelectedId])
+    // Pre-select notes when arriving from the Notes page via "Use in next
+    // session →". The selection lives until the user sends or clears.
+    if (state?.preSelectedNoteIds && state.preSelectedNoteIds.length > 0) {
+      setSelectedNoteIds(new Set(state.preSelectedNoteIds))
+    }
+  }, [location, searchParams, setSelectedId, navigate])
 
   // ── Rehydrate sessions from main process on mount ──────────────────────
   // This recovers sessions that are still alive after navigating away and back.
@@ -267,38 +287,55 @@ export default function Work(): JSX.Element {
 
   // ── Session management ──────────────────────────────────────────────────
 
-  const startSession = useCallback(async (opts: { cli: BackendId; name?: string; workingDirectory?: string; initialPrompt?: string; displayPrompt?: string; agent?: string; model?: string; permissionMode?: string; additionalDirs?: string[]; contextSummary?: { memories: string[]; agent?: string; skill?: string } }) => {
-    const { sessionId } = (await window.electronAPI.invoke('cli:start-session', {
-      cli: opts.cli, mode: 'interactive', name: opts.name, workingDirectory: opts.workingDirectory, prompt: opts.initialPrompt, displayPrompt: opts.displayPrompt, agent: opts.agent, model: opts.model, permissionMode: opts.permissionMode, additionalDirs: opts.additionalDirs,
-    })) as { sessionId: string }
+  const startSession = useCallback(async (opts: {
+    cli: BackendId
+    name?: string
+    workingDirectory?: string
+    initialPrompt?: string
+    displayPrompt?: string
+    agent?: string
+    model?: string
+    permissionMode?: string
+    additionalDirs?: string[]
+    contextSummary?: { memories: string[]; agent?: string; skill?: string }
+    attachedAgent?: { id: string; name: string }
+    attachedSkills?: Array<{ id: string; name: string }>
+    attachedNotes?: Array<{ id: string; title: string }>
+  }) => {
+    const startResult = (await window.electronAPI.invoke('cli:start-session', {
+      cli: opts.cli, mode: 'interactive', name: opts.name, workingDirectory: opts.workingDirectory, prompt: opts.initialPrompt, displayPrompt: opts.displayPrompt, agent: opts.agent, model: opts.model, permissionMode: opts.permissionMode, additionalDirs: opts.additionalDirs, attachedNotes: opts.attachedNotes,
+    })) as { sessionId: string; agentApplied?: { id: string; name: string } }
+    const { sessionId, agentApplied } = startResult
     const info: SessionInfo = { sessionId, name: opts.name, cli: opts.cli, status: 'running', startedAt: Date.now() }
+
+    // Resolve effective agent for the chip: explicit attach wins; fall back to
+    // server-side auto-applied agent (user's saved active agent for this CLI).
+    const effectiveAgent = opts.attachedAgent ?? agentApplied
+    const effectiveContext = opts.contextSummary ?? (agentApplied ? { memories: [], agent: agentApplied.name } : undefined)
 
     // Show the clean user message in chat, not the raw injected context
     const initial: OutputMessage[] = []
     if (opts.initialPrompt) {
-      // If we have context (memories, agent, skill), show a summary card instead of raw text
-      if (opts.contextSummary) {
-        const parts: string[] = []
-        if (opts.contextSummary.agent) parts.push(`**Agent:** ${opts.contextSummary.agent}`)
-        if (opts.contextSummary.memories.length > 0) parts.push(`**Memories:** ${opts.contextSummary.memories.join(', ')}`)
-        if (opts.contextSummary.skill) parts.push(`**Skill:** ${opts.contextSummary.skill}`)
-        if (parts.length > 0) {
-          initial.push({ id: 'ctx', output: { type: 'status', content: `Session launched with context:\n${parts.join(' · ')}` }, sender: 'system', timestamp: Date.now() })
-        }
-      }
-      // Show the user's actual message (not the full injected prompt)
       const userMsg = opts.displayPrompt ?? opts.initialPrompt
-      initial.push({ id: '0', output: { type: 'text', content: userMsg }, sender: 'user', timestamp: Date.now() })
+      initial.push({
+        id: '0',
+        output: { type: 'text', content: userMsg },
+        sender: 'user',
+        timestamp: Date.now(),
+        attachedAgent: effectiveAgent,
+        attachedSkills: opts.attachedSkills,
+        attachedNotes: opts.attachedNotes,
+      })
     }
 
     setSessions((prev) => { const u = new Map(prev); u.set(sessionId, { info, messages: initial, mode: 'normal', msgIdCounter: initial.length, processing: !!opts.initialPrompt, usageHistory: [], currentModel: opts.model }); return u })
     setSelectedId(sessionId)
 
-    // Pre-populate the context bar with what was selected in the wizard
-    if (opts.contextSummary) {
+    // Pre-populate the context bar with what was selected (or auto-applied)
+    if (effectiveContext) {
       setQuickConfig({
-        agent: opts.contextSummary.agent || undefined,
-        skill: opts.contextSummary.skill || undefined,
+        agent: effectiveContext.agent || undefined,
+        skill: effectiveContext.skill || undefined,
       })
     }
   }, [])
@@ -362,14 +399,19 @@ export default function Work(): JSX.Element {
   }, [selectedId])
 
   // ── Auto-start session from Home page quick prompt ─────────────────────
+  // The location.state.quickPrompt is read by the deep-link effect into
+  // pendingQuickPrompt.current. After consuming it we clear the location
+  // state so React StrictMode's double-mount doesn't read it back and start
+  // a second session.
   useEffect(() => {
     if (pendingQuickPrompt.current) {
       const p = pendingQuickPrompt.current
       pendingQuickPrompt.current = null
       void startSession({ cli: 'copilot-cli', name: p.slice(0, 30), initialPrompt: p })
       setWorkMode('session')
+      navigate(location.pathname + location.search, { replace: true, state: null })
     }
-  }, [startSession])
+  }, [startSession, navigate, location.pathname, location.search])
 
   const stopSession = useCallback(async (sessionId: string) => {
     await window.electronAPI.invoke('cli:stop-session', { sessionId })
@@ -450,23 +492,33 @@ export default function Work(): JSX.Element {
 
     // ── Normal send ───────────────────────────────────────────────────
     // If fleet mode is active, instruct the AI to use parallel sub-agents
-    // If memories are selected, prepend them as context silently
+    // If memories are selected, prepend them as context silently.
+    // We resolve note titles BEFORE any setSessions / IPC so that the
+    // optimistic user bubble, the persisted CLI message log, and the in-chat
+    // "shared N notes" chip all see the same frozen titles. Titles snapshot
+    // here cannot drift afterwards (note rename / delete / flag flip).
     void (async () => {
       let actualInput = input
       if (quickConfig.fleet) {
         actualInput = `[Fleet mode: You may use &prompt to dispatch sub-agents for parallel work. Break this task into independent parts and delegate them to work simultaneously when appropriate.]\n\n${actualInput}`
       }
+
+      const capturedNotes: Array<{ id: string; title: string }> = []
       if (selectedNoteIds.size > 0) {
-        const blocks: string[] = []
-        for (const noteId of selectedNoteIds) {
-          const result = await window.electronAPI.invoke('notes:get-full-content', { id: noteId }) as { content?: string; error?: string }
+        // Snapshot titles BEFORE the bundle call so the in-chat chip / saved
+        // metadata never drifts (note rename / delete after send).
+        const ids = Array.from(selectedNoteIds)
+        for (const noteId of ids) {
           const noteMeta = await window.electronAPI.invoke('notes:get', { id: noteId }) as { title?: string } | null
-          if (result.content) {
-            blocks.push(`--- Memory: ${noteMeta?.title ?? 'Untitled'} ---\n${result.content}`)
-          }
+          capturedNotes.push({ id: noteId, title: noteMeta?.title ?? 'Untitled' })
         }
-        if (blocks.length > 0) {
-          actualInput = `[Reference context from saved memories]\n\n${blocks.join('\n\n')}\n\n---\n\n${input}`
+        // The bundle handler returns a framed XML-ish block the model can
+        // parse cleanly. We prepend it as a preamble; the user's request
+        // remains the trailing instruction.
+        const bundle = await window.electronAPI.invoke('notes:get-bundle-for-prompt', { ids }) as
+          { framedPrompt: string; noteCount: number; attachmentCount: number }
+        if (bundle.framedPrompt) {
+          actualInput = `${bundle.framedPrompt}\n\nUser request:\n${actualInput}`
         }
         setSelectedNoteIds(new Set()) // Clear after sending
       }
@@ -490,41 +542,47 @@ export default function Work(): JSX.Element {
           // Context fetch failed — send without it
         }
       }
-      window.electronAPI.invoke('cli:send-input', { sessionId: selectedId, input: actualInput })
-    })()
 
-    // Show only the user's original message in the chat (not the prepended context).
-    // Build a "Sent with..." annotation that surfaces what context was actually attached
-    // — makes the invisible visible.
-    setSessions((prev) => {
-      const s = prev.get(selectedId); if (!s) return prev
-      const u = new Map(prev)
-      const noteCount = selectedNoteIds.size
-      const ctxCount = selectedContextSources.length
-      const parts: string[] = []
-      if (quickConfig.agent) parts.push(`Prompt: ${quickConfig.agent}`)
-      if (quickConfig.skill) parts.push(`Playbook: ${quickConfig.skill}`)
-      if (noteCount > 0) parts.push(`${noteCount} note${noteCount === 1 ? '' : 's'}`)
-      if (ctxCount > 0) parts.push(`${ctxCount} source${ctxCount === 1 ? '' : 's'}`)
-      if (quickConfig.fleet) parts.push('Parallel Mode')
-      const contextAnnotation = parts.length > 0 ? `Sent with ${parts.join(' + ')}` : undefined
-      u.set(selectedId, {
-        ...s,
-        messages: [
-          ...s.messages,
-          {
-            id: String(s.msgIdCounter),
-            output: { type: 'text', content: input },
-            sender: 'user',
-            timestamp: Date.now(),
-            contextAnnotation,
-          },
-        ],
-        msgIdCounter: s.msgIdCounter + 1,
-        processing: true,
+      // Show only the user's original message in the chat (not the prepended
+      // context). The "Sent with..." annotation surfaces what context was
+      // attached. attachedNotes is what powers the in-chat chip.
+      setSessions((prev) => {
+        const s = prev.get(selectedId); if (!s) return prev
+        const u = new Map(prev)
+        const noteCount = capturedNotes.length
+        const ctxCount = selectedContextSources.length
+        const parts: string[] = []
+        if (quickConfig.agent) parts.push(`Prompt: ${quickConfig.agent}`)
+        if (quickConfig.skill) parts.push(`Playbook: ${quickConfig.skill}`)
+        if (noteCount > 0) parts.push(`${noteCount} note${noteCount === 1 ? '' : 's'}`)
+        if (ctxCount > 0) parts.push(`${ctxCount} source${ctxCount === 1 ? '' : 's'}`)
+        if (quickConfig.fleet) parts.push('Parallel Mode')
+        const contextAnnotation = parts.length > 0 ? `Sent with ${parts.join(' + ')}` : undefined
+        u.set(selectedId, {
+          ...s,
+          messages: [
+            ...s.messages,
+            {
+              id: String(s.msgIdCounter),
+              output: { type: 'text', content: input },
+              sender: 'user',
+              timestamp: Date.now(),
+              contextAnnotation,
+              attachedNotes: capturedNotes.length > 0 ? capturedNotes : undefined,
+            },
+          ],
+          msgIdCounter: s.msgIdCounter + 1,
+          processing: true,
+        })
+        return u
       })
-      return u
-    })
+
+      window.electronAPI.invoke('cli:send-input', {
+        sessionId: selectedId,
+        input: actualInput,
+        attachedNotes: capturedNotes.length > 0 ? capturedNotes : undefined,
+      })
+    })()
   }, [selectedId, sessions, selectedNoteIds, selectedContextSources, quickConfig])
 
   const handleSlashCommand = useCallback((command: string) => {
@@ -669,14 +727,6 @@ export default function Work(): JSX.Element {
                 workMode === 'schedule' ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:text-gray-200'
               }`}
             >Schedule</button>
-            )}
-            {flags.showMemory && (
-            <button
-              onClick={() => setWorkMode('memory')}
-              className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
-                workMode === 'memory' ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:text-gray-200'
-              }`}
-            >Memory</button>
             )}
           </div>
 
@@ -829,9 +879,18 @@ export default function Work(): JSX.Element {
             /* Launchpad: the default empty-state of /work — quick start, workflows, active + recent sessions. */
             <WorkLaunchpad
               defaultCli={lastUsedCli}
-              onQuickStart={({ prompt, cli, model, agent, permissionMode, additionalDirs }) =>
-                void startSession({ cli, model, agent, permissionMode, additionalDirs, initialPrompt: prompt, displayPrompt: prompt, name: prompt.slice(0, 30) })
-              }
+              onQuickStart={({ prompt, displayPrompt, cli, model, agent, permissionMode, additionalDirs, attachedAgent, attachedSkills, attachedNotes }) => {
+                const shown = displayPrompt ?? prompt
+                void startSession({
+                  cli, model, agent, permissionMode, additionalDirs,
+                  initialPrompt: prompt,
+                  displayPrompt: shown,
+                  name: shown.slice(0, 30),
+                  attachedAgent,
+                  attachedSkills,
+                  attachedNotes,
+                })
+              }}
               onOpenWorkflow={(id) => {
                 setSearchParams((prev) => {
                   const entries: Record<string, string> = {}
@@ -896,13 +955,6 @@ export default function Work(): JSX.Element {
             <SchedulePanel cli={selectedSession?.info.cli ?? 'copilot-cli'} />
           </div>
         )}
-
-        {/* Memory mode content */}
-        {workMode === 'memory' && (
-          <div className="flex-1 overflow-y-auto bg-gray-50 p-6">
-            <NotesManager />
-          </div>
-        )}
       </div>
 
       {/* Create-mode fallback — retained for callers that still want the full
@@ -936,7 +988,8 @@ export default function Work(): JSX.Element {
         />
       )}
 
-      {/* Save as memory note modal */}
+      {/* Save as memory note modal — opened from "Save as note" on AI
+          response actions. The full Notes management UI lives at /notes. */}
       {showSaveNoteModal !== null && (
         <SaveNoteModal
           content={showSaveNoteModal}

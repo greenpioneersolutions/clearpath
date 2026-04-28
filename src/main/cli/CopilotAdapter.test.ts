@@ -545,7 +545,15 @@ describe('CopilotAdapter', () => {
       expect(await a.isAuthenticated()).toBe(true)
     })
 
-    it('returns true when config file has logged_in_users', async () => {
+    it('returns true when config file has loggedInUsers (camelCase)', async () => {
+      mkdirSync(configDir, { recursive: true })
+      writeFileSync(configPath, JSON.stringify({ loggedInUsers: [{ host: 'https://github.com', login: 'user1' }] }))
+      existsSyncMock.mockReturnValue(true)
+      const a = new CopilotAdapterClass()
+      expect(await a.isAuthenticated()).toBe(true)
+    })
+
+    it('returns true when config file has logged_in_users (legacy snake_case)', async () => {
       mkdirSync(configDir, { recursive: true })
       writeFileSync(configPath, JSON.stringify({ logged_in_users: ['user1'] }))
       existsSyncMock.mockReturnValue(true)

@@ -9,7 +9,7 @@ import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
 
 const ROUTE_NAMES: Record<string, string> = {
   '/': 'Home',
-  '/work': 'Work',
+  '/work': 'Sessions',
   '/insights': 'Insights',
   '/pr-scores': 'PR Scores',
   '/configure': 'Configure',

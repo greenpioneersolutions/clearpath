@@ -4,15 +4,16 @@ import InstructionsEditor from '../components/memory/InstructionsEditor'
 import MemoryViewer from '../components/memory/MemoryViewer'
 import ContextUsage from '../components/memory/ContextUsage'
 import NewFileWizard from '../components/memory/NewFileWizard'
-import NotesManager from '../components/memory/NotesManager'
 import StarterMemories from '../components/memory/StarterMemories'
 import type { SessionInfo } from '../types/ipc'
 
-type Tab = 'notes' | 'files' | 'instructions' | 'memory' | 'context' | 'starter'
+// Notes have moved to Sessions → Notes (a first-class sub-tab on the Work page).
+// What remains here is the Project Memory surface — config files, instructions,
+// CLI memory, context usage, and starter templates.
+type Tab = 'starter' | 'files' | 'instructions' | 'memory' | 'context'
 
 const TABS: { key: Tab; label: string }[] = [
-  { key: 'notes', label: 'Notes' },
-  { key: 'starter', label: 'Starter Memories' },
+  { key: 'starter', label: 'Templates' },
   { key: 'files', label: 'Config Files' },
   { key: 'instructions', label: 'Instructions' },
   { key: 'memory', label: 'CLI Memory' },
@@ -20,7 +21,7 @@ const TABS: { key: Tab; label: string }[] = [
 ]
 
 export default function Memory(): JSX.Element {
-  const [tab, setTab] = useState<Tab>('notes')
+  const [tab, setTab] = useState<Tab>('starter')
   const [cli, setCli] = useState<'copilot' | 'claude'>('copilot')
   const [showWizard, setShowWizard] = useState(false)
   const [activeSessions, setActiveSessions] = useState<SessionInfo[]>([])
@@ -45,9 +46,9 @@ export default function Memory(): JSX.Element {
       {/* Page header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">Memory & Context</h1>
+          <h1 className="text-2xl font-bold text-white">Project Memory</h1>
           <p className="text-sm text-gray-500 mt-0.5">
-            Manage config files, instructions, memory entries, and context usage
+            Manage config files, instructions, CLI memory, and context usage
           </p>
         </div>
 
@@ -91,11 +92,7 @@ export default function Memory(): JSX.Element {
 
       {/* Tab content */}
       <div className="bg-gray-800 rounded-xl shadow-sm border border-gray-700 overflow-hidden">
-        {tab === 'notes' ? (
-          <div className="p-6">
-            <NotesManager />
-          </div>
-        ) : tab === 'starter' ? (
+        {tab === 'starter' ? (
           <div className="p-6">
             <StarterMemories />
           </div>

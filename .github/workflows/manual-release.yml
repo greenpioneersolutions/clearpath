@@ -1,0 +1,181 @@
+name: Manual Build & Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch, tag, or SHA to build from'
+        required: true
+        type: string
+        default: 'main'
+      release_tag:
+        description: 'Release tag (e.g. v1.13.0). Created from ref if it does not exist.'
+        required: true
+        type: string
+      release_name:
+        description: 'Release title (defaults to release_tag when blank)'
+        required: false
+        type: string
+        default: ''
+      platforms:
+        description: 'Which platforms to build'
+        required: true
+        type: choice
+        default: 'all'
+        options:
+          - all
+          - mac
+          - linux
+          - win
+          - mac+linux
+          - mac+win
+          - linux+win
+      prerelease:
+        description: 'Mark release as pre-release'
+        required: false
+        type: boolean
+        default: false
+      draft:
+        description: 'Create release as draft'
+        required: false
+        type: boolean
+        default: false
+      make_latest:
+        description: 'Show as Latest on the Releases page'
+        required: false
+        type: boolean
+        default: true
+      attach_mode:
+        description: 'How to handle an existing release with the same tag'
+        required: true
+        type: choice
+        default: 'update'
+        options:
+          - update
+          - replace
+          - create
+      release_notes_mode:
+        description: 'How to populate the release body'
+        required: true
+        type: choice
+        default: 'auto'
+        options:
+          - auto
+          - custom
+      release_notes:
+        description: 'Custom release notes (used when release_notes_mode=custom)'
+        required: false
+        type: string
+        default: ''
+      skip_tests:
+        description: 'Skip npm test before packaging'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            platform: mac
+          - os: ubuntu-latest
+            platform: linux
+          - os: windows-latest
+            platform: win
+
+    runs-on: ${{ matrix.os }}
+    if: ${{ inputs.platforms == 'all' || contains(inputs.platforms, matrix.platform) }}
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          lfs: true
+          ref: ${{ inputs.ref }}
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        if: ${{ !inputs.skip_tests }}
+        run: npm test
+
+      - name: Build & package
+        run: npm run package:${{ matrix.platform }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v5
+        with:
+          name: build-${{ matrix.platform }}
+          path: |
+            dist-electron/*.dmg
+            dist-electron/*.AppImage
+            dist-electron/*.exe
+            dist-electron/*.blockmap
+          if-no-files-found: ignore
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v5
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: List artifacts
+        run: find artifacts -type f | head -20
+
+      - name: Fail if release already exists (create mode)
+        if: ${{ inputs.attach_mode == 'create' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view "${{ inputs.release_tag }}" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release ${{ inputs.release_tag }} already exists and attach_mode=create"
+            exit 1
+          fi
+
+      - name: Replace existing release (replace mode)
+        if: ${{ inputs.attach_mode == 'replace' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete "${{ inputs.release_tag }}" --yes --cleanup-tag=false --repo "$GITHUB_REPOSITORY" || true
+
+      - name: Create / update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.release_tag }}
+          target_commitish: ${{ inputs.ref }}
+          name: ${{ inputs.release_name != '' && inputs.release_name || inputs.release_tag }}
+          prerelease: ${{ inputs.prerelease }}
+          draft: ${{ inputs.draft }}
+          make_latest: ${{ inputs.make_latest && 'true' || 'false' }}
+          generate_release_notes: ${{ inputs.release_notes_mode == 'auto' }}
+          body: ${{ inputs.release_notes_mode == 'custom' && inputs.release_notes || '' }}
+          files: |
+            artifacts/*.dmg
+            artifacts/*.AppImage
+            artifacts/*.exe

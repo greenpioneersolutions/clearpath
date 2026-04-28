@@ -36,6 +36,17 @@ interface MessageLogEntry {
   metadata?: unknown
   sender?: 'user' | 'ai' | 'system'
   timestamp?: number
+  /**
+   * Notes the user attached when sending this message. Title is captured at
+   * attach time and frozen here — the renderer's "shared N notes" chip reads
+   * straight from this metadata, never from the notes store. That's why
+   * deleting a note (or flag-toggling Notes off) doesn't break old transcripts.
+   */
+  attachedNotes?: Array<{ id: string; title: string }>
+  /** Agent persona attached at session start. Frozen at attach time, names only. */
+  attachedAgent?: { id: string; name: string }
+  /** Skills the user tagged this chat with. Frozen at attach time, names only. */
+  attachedSkills?: Array<{ id: string; name: string }>
 }
 
 interface PersistedSession {
@@ -442,7 +453,17 @@ export class CLIManager {
     // Log the user's actual message (displayPrompt) — not the full injected prompt
     if (options.prompt?.trim()) {
       const logContent = options.displayPrompt?.trim() || options.prompt
-      session.messageLog.push({ type: 'text', content: logContent, sender: 'user', timestamp: Date.now() })
+      const entry: MessageLogEntry = { type: 'text', content: logContent, sender: 'user', timestamp: Date.now() }
+      if (options.attachedNotes && options.attachedNotes.length > 0) {
+        entry.attachedNotes = options.attachedNotes.map((n) => ({ id: n.id, title: n.title }))
+      }
+      if (options.attachedAgent) {
+        entry.attachedAgent = { id: options.attachedAgent.id, name: options.attachedAgent.name }
+      }
+      if (options.attachedSkills && options.attachedSkills.length > 0) {
+        entry.attachedSkills = options.attachedSkills.map((s) => ({ id: s.id, name: s.name }))
+      }
+      session.messageLog.push(entry)
     }
 
     this.sessions.set(sessionId, session)
@@ -471,7 +492,7 @@ export class CLIManager {
     return { sessionId }
   }
 
-  sendInput(sessionId: string, input: string): void {
+  sendInput(sessionId: string, input: string, attachedNotes?: Array<{ id: string; title: string }>): void {
     const session = this.sessions.get(sessionId)
     if (!session || session.info.status !== 'running') return
 
@@ -482,7 +503,11 @@ export class CLIManager {
 
     // Log user input to message history
     if (input !== 'y' && input !== 'n' && !input.startsWith('\x1b')) {
-      session.messageLog.push({ type: 'text', content: input, sender: 'user', timestamp: Date.now() })
+      const entry: MessageLogEntry = { type: 'text', content: input, sender: 'user', timestamp: Date.now() }
+      if (attachedNotes && attachedNotes.length > 0) {
+        entry.attachedNotes = attachedNotes.map((n) => ({ id: n.id, title: n.title }))
+      }
+      session.messageLog.push(entry)
     }
 
     // If there's a deferred agent context (session started without a prompt),

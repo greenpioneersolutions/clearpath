@@ -31,10 +31,11 @@ vi.mock('../contexts/FeatureFlagContext', () => {
       enableExperimentalFeatures: false, showPrScores: false,
       showSessionWizard: true, showComposer: true, showScheduler: true, showMemory: true,
       showSubAgents: true, showTemplates: true, showAgentSelection: true,
-      showSkillsManagement: true, showBackstageExplorer: true,
+      showSkillsManagement: true, showBackstageExplorer: true, showNotes: true,
     }
   return {
   useFeatureFlags: () => ({ flags: flagsObj }),
+  useFlag: (key: string) => Boolean((flagsObj as Record<string, boolean>)[key]),
   FeatureFlags: {} as any,
 }})
 vi.mock('../contexts/BrandingContext', () => ({
@@ -1378,6 +1379,52 @@ describe('Work', () => {
     localCleanup()
   })
 
+  it('redirects ?tab=notes to /notes (legacy sub-tab URL)', async () => {
+    const { render: localRender, cleanup: localCleanup } = await import('@testing-library/react')
+    const { MemoryRouter: LocalRouter, Routes: LocalRoutes, Route: LocalRoute, useLocation: useLoc } = await import('react-router-dom')
+    const WorkPage = (await import('./Work')).default
+    function Probe() {
+      const loc = useLoc()
+      return <div data-testid="redir-probe">{loc.pathname}</div>
+    }
+    const { unmount } = localRender(
+      <LocalRouter initialEntries={['/work?tab=notes']}>
+        <LocalRoutes>
+          <LocalRoute path="/work" element={<WorkPage />} />
+          <LocalRoute path="/notes" element={<Probe />} />
+        </LocalRoutes>
+      </LocalRouter>,
+    )
+    await waitFor(() => {
+      expect(screen.getByTestId('redir-probe').textContent).toBe('/notes')
+    })
+    unmount()
+    localCleanup()
+  })
+
+  it('redirects legacy ?tab=memory to /notes', async () => {
+    const { render: localRender, cleanup: localCleanup } = await import('@testing-library/react')
+    const { MemoryRouter: LocalRouter, Routes: LocalRoutes, Route: LocalRoute, useLocation: useLoc } = await import('react-router-dom')
+    const WorkPage = (await import('./Work')).default
+    function Probe() {
+      const loc = useLoc()
+      return <div data-testid="redir-probe">{loc.pathname}</div>
+    }
+    const { unmount } = localRender(
+      <LocalRouter initialEntries={['/work?tab=memory']}>
+        <LocalRoutes>
+          <LocalRoute path="/work" element={<WorkPage />} />
+          <LocalRoute path="/notes" element={<Probe />} />
+        </LocalRoutes>
+      </LocalRouter>,
+    )
+    await waitFor(() => {
+      expect(screen.getByTestId('redir-probe').textContent).toBe('/notes')
+    })
+    unmount()
+    localCleanup()
+  })
+
   // ── startSession with contextSummary (context card) ──────────────────
 
   it('startSession with contextSummary shows context card in chat', async () => {
@@ -1994,6 +2041,80 @@ describe('Work', () => {
     expect(s.queryByText(/Session launched with context/i)).not.toBeInTheDocument()
     unmount()
     cleanup()
+  })
+
+  // ── Attached-notes chip ───────────────────────────────────────────────────
+  // Sending a message with attached notes should render a "Shared N notes —
+  // <titles>" chip on the user bubble. The chip exposes all titles via the
+  // accessible label / title attribute so the audit trail survives even when
+  // the visible summary is truncated. Note BODIES must NEVER appear in the
+  // chat DOM — the chip is title-only by design.
+
+  it('renders the attached-notes chip with all titles when notes are attached', async () => {
+    mockInvoke.mockImplementation((channel: string, args?: unknown) => {
+      if (channel === 'cli:list-sessions') return Promise.resolve([
+        { sessionId: 'chip-sess', cli: 'copilot', name: 'Chip Test', status: 'running', startedAt: Date.now() },
+      ])
+      if (channel === 'cli:get-persisted-sessions') return Promise.resolve([])
+      if (channel === 'cli:get-message-log') return Promise.resolve([])
+      if (channel === 'wizard:get-state') return Promise.resolve({ hasCompletedWizard: true })
+      if (channel === 'starter-pack:get-prompts') return Promise.resolve([])
+      if (channel === 'notes:list') return Promise.resolve([
+        { id: 'n-a', title: 'Quarterly goals', content: 'SECRET_BODY_TEXT_FOR_NOTE_A_quarterly', tags: [], category: 'reference', pinned: false, attachments: [], createdAt: 0, updatedAt: 0 },
+        { id: 'n-b', title: 'Onboarding checklist', content: 'SECRET_BODY_TEXT_FOR_NOTE_B_onboarding', tags: [], category: 'reference', pinned: false, attachments: [], createdAt: 0, updatedAt: 0 },
+      ])
+      if (channel === 'notes:get-tags') return Promise.resolve([])
+      if (channel === 'notes:get-categories') return Promise.resolve([])
+      if (channel === 'notes:get-full-content') {
+        const id = (args as { id: string }).id
+        if (id === 'n-a') return Promise.resolve({ content: 'SECRET_BODY_TEXT_FOR_NOTE_A_quarterly' })
+        if (id === 'n-b') return Promise.resolve({ content: 'SECRET_BODY_TEXT_FOR_NOTE_B_onboarding' })
+        return Promise.resolve({ content: '' })
+      }
+      if (channel === 'notes:get-bundle-for-prompt') {
+        const ids = (args as { ids: string[] }).ids ?? []
+        return Promise.resolve({
+          framedPrompt: `<notes count="${ids.length}">framed body (titles + content)</notes>`,
+          noteCount: ids.length,
+          attachmentCount: 0,
+        })
+      }
+      if (channel === 'notes:get') {
+        const id = (args as { id: string }).id
+        if (id === 'n-a') return Promise.resolve({ title: 'Quarterly goals' })
+        if (id === 'n-b') return Promise.resolve({ title: 'Onboarding checklist' })
+        return Promise.resolve(null)
+      }
+      return Promise.resolve(null)
+    })
+    renderWork({ sessionId: 'chip-sess' })
+    await waitFor(() => screen.getByLabelText('Message input'))
+
+    // Open Context Picker → Notes tab → check both notes.
+    fireEvent.click(screen.getByLabelText('Attach context'))
+    await waitFor(() => screen.getByRole('tab', { name: 'Notes' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Notes' }))
+    await waitFor(() => screen.getByText('Quarterly goals'))
+    fireEvent.click(screen.getByText('Quarterly goals'))
+    fireEvent.click(screen.getByText('Onboarding checklist'))
+
+    // Send a message.
+    const input = screen.getByLabelText('Message input')
+    fireEvent.change(input, { target: { value: 'My visible question' } })
+    fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' })
+
+    // Chip carries an accessible label naming all attached notes — the visible
+    // text is split across spans (label "2 notes" + summary), so we assert via
+    // aria-label rather than getByText.
+    const chip = await screen.findByLabelText(/2 notes: Quarterly goals, Onboarding checklist/i)
+    expect(chip).toHaveAttribute('title', 'Quarterly goals, Onboarding checklist')
+    // The "2 notes" label span should be visible inside the chip.
+    expect(chip.textContent).toMatch(/2 notes/i)
+
+    // Critical: note BODIES must never reach the rendered DOM.
+    const dom = document.body.innerHTML
+    expect(dom).not.toContain('SECRET_BODY_TEXT_FOR_NOTE_A_quarterly')
+    expect(dom).not.toContain('SECRET_BODY_TEXT_FOR_NOTE_B_onboarding')
   })
 
 })

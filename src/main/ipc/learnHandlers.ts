@@ -2514,6 +2514,116 @@ const PATHS: LearningPath[] = [
 
     ],
   },
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // CAPTURE CONTEXT WITH NOTES — Save reusable context, attach it to sessions
+  // ═══════════════════════════════════════════════════════════════════════════
+  {
+    id: 'notes', name: 'Capture context with Notes', icon: '📝',
+    description: 'Save takeaways, recurring prompts, and reference material — then attach them to new sessions for instant context.',
+    prerequisitePaths: [],
+    modules: [
+      makeModule('notes-basics', 'Notes Basics', 'What notes are good for and how to capture one', [], [
+        makeLesson('notes-1', 'What notes are good for', 'interactive-walkthrough', 3,
+          'Three concrete ways notes save you time across sessions',
+          {
+            kind: 'walkthrough',
+            introduction: 'Notes are short, reusable bits of context you save once and attach to future sessions. They\'re not durable rules (that\'s CLAUDE.md) and not cross-session memory (that\'s ClearMemory). Think of them as the sticky-note pile next to your keyboard.',
+            steps: [
+              { title: 'Meeting takeaways', description: 'After a planning meeting, save the decisions and follow-ups as a note titled "Q3 planning — auth migration scope". Next time you open a session about auth, attach it and the AI starts with the right context.', tip: 'Outcomes are easier to write up while they\'re fresh — capture them right after the meeting.' },
+              { title: 'Recurring prompts', description: 'If you keep typing the same instructions ("Format the response as a stakeholder-friendly summary, no jargon, three bullets max"), save it as a note. Attach it instead of retyping.' },
+              { title: 'File snippets you keep referencing', description: 'A schema, a config snippet, a key paragraph from a spec — paste it into a note once. The AI gets the exact text every time, no copy-pasting from a doc.' },
+            ],
+            keyTakeaway: 'Notes are sticky notes for AI sessions: meeting takeaways, recurring prompts, and reference snippets. Save once, attach many times.',
+          },
+        ),
+        makeLesson('notes-2', 'Save a takeaway from this session', 'guided-task', 4,
+          'Capture something useful from a real conversation',
+          {
+            kind: 'guided-task',
+            introduction: 'The fastest way to learn notes is to make one. We\'ll save a real takeaway from a session — either an AI response you want to reference later, or a piece of text you wrote and want to reuse.',
+            goal: 'Create your first note from the Save as note flow.',
+            steps: [
+              { title: 'Open a session', instruction: 'Go to Sessions and either open a running session or start a new one. Have a quick conversation — ask anything, get a useful response.', detail: 'You need an actual AI response to save. A short question like "What\'s the difference between a pull request and a merge request?" works fine.' },
+              { title: 'Hover the AI response', instruction: 'Move your cursor over the AI\'s reply. A small "Save as note" button appears.', detail: 'You can save any AI response — explanations, code, summaries. The button only shows on AI bubbles, not your own messages.', successCheck: 'A "Save as note" button is visible.' },
+              { title: 'Fill in the note details', instruction: 'Click "Save as note". A dialog opens. Give it a title that makes sense to future-you (not "Untitled" — something searchable). Pick a category (Outcome / Reference / etc.) and add tags if useful.', detail: 'The body text is pre-filled from the AI response. You can edit it before saving — trim what you don\'t need.', successCheck: 'You\'ve filled in a title and clicked Save.' },
+              { title: 'Find your note', instruction: 'Go to Sessions → Notes (sub-tab in the top bar). Your note is there.', detail: 'This is also where you\'ll come back to edit, pin, or delete notes. Pinned notes float to the top.', successCheck: 'Your new note appears in the Notes list.' },
+            ],
+            celebration: 'You just saved your first note. The next lesson shows how to use it.',
+          },
+        ),
+      ]),
+
+      makeModule('notes-attach', 'Attaching Notes', 'Use saved notes as context for new sessions', ['notes-basics'], [
+        makeLesson('notes-3', 'Attach notes to your next session', 'guided-task', 4,
+          'Pre-load context so the AI starts where you left off',
+          {
+            kind: 'guided-task',
+            introduction: 'Notes earn their keep when you attach them. Instead of retyping context every time, you pick a note (or two) and the session starts with that context already loaded.',
+            goal: 'Start a session with at least one note attached.',
+            steps: [
+              { title: 'Open Sessions', instruction: 'Go to Sessions and look at the Quick Start card on the launchpad.', detail: 'The launchpad is where you start new sessions — you\'ll see a Quick Start card with a prompt input and a paperclip icon for attaching context.' },
+              { title: 'Click the paperclip', instruction: 'Click the paperclip icon next to the prompt input. The Context Picker opens.', detail: 'The Context Picker has tabs for Prompts, Notes, Playbooks, and Files. Click the Notes tab.', successCheck: 'The Notes tab shows your saved notes.' },
+              { title: 'Pick at least one note', instruction: 'Check the box next to one or two notes you want to attach. The count at the top updates as you select.', detail: 'You can attach multiple notes — they all get prepended to your prompt. Search filters the list as you type.', successCheck: 'At least one note is checked.' },
+              { title: 'Send the prompt', instruction: 'Type your prompt and hit Enter. The session starts with the note(s) attached as reference context.', detail: 'In the chat, you\'ll see a small chip below your message: "Shared N notes — <titles>". The body text isn\'t shown — only the titles, so the chat stays clean.', successCheck: 'Your message bubble shows a "Shared N notes" chip.' },
+            ],
+            celebration: 'Now every session can start with the right context. Build a small library of go-to notes and you\'ll save real time.',
+          },
+        ),
+        makeLesson('notes-4', 'Organize: pin, tag, search', 'interactive-walkthrough', 2,
+          'Find a note 30 days from now without scrolling',
+          {
+            kind: 'walkthrough',
+            introduction: 'A pile of 50 untitled notes is worse than no notes. A few minutes of organization keeps the system useful as it grows.',
+            steps: [
+              { title: 'Pin the ones you use weekly', description: 'On any note, click the pin icon. Pinned notes float to the top of the list and the Context Picker. Use this for the 3-5 notes you reach for constantly.', tip: 'Don\'t pin everything — pinning loses meaning if the whole list is pinned.' },
+              { title: 'Tag by project or topic', description: 'Tags are free-form: "q3", "auth", "stakeholders". You can filter the Notes list by tag. Tags show up in the search index too.', tip: 'Pick 3-5 tag names and stick with them. Tag drift ("auth", "authentication", "Auth") makes search worse, not better.' },
+              { title: 'Search by title or body', description: 'The search box matches both title and body text. So if you can\'t remember the title but remember a phrase from the content, you\'ll still find it.' },
+              { title: 'Filter by category', description: 'Categories (Meeting / Conversation / Reference / Outcome / Idea / Custom) are coarse buckets. Useful when you want all your meeting takeaways from a quarter — pick the category, then narrow with search.' },
+            ],
+            keyTakeaway: 'Pin the ~5 you use weekly. Tag with a small consistent vocabulary. Search by phrase when you forget titles. Filter by category for broad sweeps.',
+          },
+        ),
+        makeLesson('notes-5', 'When NOT to use notes', 'knowledge-check', 2,
+          'Distinguish notes from CLAUDE.md and ClearMemory',
+          {
+            kind: 'knowledge-check',
+            introduction: 'Notes are one of three context tools. Using the wrong one for the wrong job is the most common mistake. This quick check makes the distinctions concrete.',
+            questions: [
+              {
+                question: 'You have a coding convention you want the AI to follow in EVERY session for this project (e.g. "use 2-space indents, never tabs"). Where does it go?',
+                options: [
+                  { text: 'A note — attach it to every session', correct: false },
+                  { text: 'CLAUDE.md / AGENTS.md in the project — durable instructions', correct: true },
+                  { text: 'ClearMemory — cross-session AI memory', correct: false },
+                ],
+                explanation: 'Durable, project-wide rules belong in CLAUDE.md / AGENTS.md. The AI loads those automatically — no attachment needed. Notes are for context you opt into per-session.',
+              },
+              {
+                question: 'You captured the outcome of a planning meeting and want to bring it into the next two sessions about that topic. Where does it go?',
+                options: [
+                  { text: 'A note — attach to those specific sessions', correct: true },
+                  { text: 'CLAUDE.md — so it\'s in every session', correct: false },
+                  { text: 'A new file in the repo', correct: false },
+                ],
+                explanation: 'One-shot context for specific sessions is exactly what notes are for. CLAUDE.md would force the meeting outcome into unrelated sessions; a repo file would mix planning notes with code.',
+              },
+              {
+                question: 'You want the AI to recall what you discussed in last week\'s sessions without you having to attach anything. Which feature?',
+                options: [
+                  { text: 'Notes — they remember automatically', correct: false },
+                  { text: 'ClearMemory — cross-session memory engine', correct: true },
+                  { text: 'CLAUDE.md — durable instructions', correct: false },
+                ],
+                explanation: 'ClearMemory is the cross-session recall feature (opt-in, runs locally). Notes don\'t self-attach — you pick them deliberately. CLAUDE.md is for instructions, not history.',
+              },
+            ],
+          },
+        ),
+      ]),
+
+    ],
+  },
 ]
 
 // ── Helpers ──────────────────────────────────────────────────────────────────

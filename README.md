@@ -30,7 +30,7 @@ ClearPathAI wraps GitHub Copilot CLI (and Claude Code CLI for teams that have ac
 
 ## Key Features
 
-- **Intuitive sidebar navigation** — Home dashboard, Work session, Insights analytics, Clear Memory workspace, Connect (integrations & extensions), and Settings. No menu maze.
+- **Intuitive sidebar navigation** — Home dashboard, Sessions chat, Notes (saved reference context), Insights analytics, Connect (integrations & extensions), and Settings. No menu maze.
 - **Multi-CLI support** — GitHub Copilot CLI (primary) and Claude Code CLI (secondary) with adapter pattern for adding more backends
 - **Real-time session management** — Streaming output display, slash command autocomplete, mode switching (normal/plan/autopilot)
 - **Agent management** — Toggle built-in and custom agents, create agent definitions, agent profiles
@@ -58,7 +58,7 @@ ClearPathAI wraps GitHub Copilot CLI (and Claude Code CLI for teams that have ac
 │                   Clear Path                     │
 │  ┌───────────────────────────────────────────┐  │
 │  │    Sidebar React Renderer (UI)            │  │
-│  │  Home · Work · Insights · Clear Memory    │  │
+│  │  Home · Sessions · Notes · Insights       │  │
 │  │  Connect · Settings                       │  │
 │  └──────────────────┬────────────────────────┘  │
 │                     │ IPC Bridge                 │
@@ -130,13 +130,14 @@ Clear Path uses a streamlined sidebar with the following entries:
 | Screen | Purpose |
 |--------|---------|
 | **Home** | Dashboard / HomeHub greeting, quick prompt input, and recent sessions |
-| **Work** | Session chat with mode toggle (Session, Wizard, Compose, Schedule, Memory) |
+| **Sessions** | Session chat with mode toggle (Session, Compose, Schedule). New chat's Advanced section attaches per-chat agent / skills / notes |
+| **Notes** | Saved reference notes — capture takeaways, attach to new sessions for AI context. Three-pane page (filters · cards · editor drawer). Feature-flagged via `showNotes` |
+| **Learn** | Onboarding paths and feature-discovery tracks (e.g. "Capture context with Notes"). Feature-flagged |
 | **Insights** | Activity (merged Analytics + Usage Analytics) and Compliance tabs, plus extension-contributed tabs when installed |
-| **Clear Memory** | ClearMemory IDE workspace |
+| **Clear Memory** | ClearMemory IDE workspace (feature-flagged via `showClearMemory`, default off) |
 | **Connect** | Integrations, Extensions, MCP Servers, Environment, Plugins, Webhooks |
 | **PR Scores** | Experimental — GitHub PR scoring, repo dashboards, AI review (feature-flagged) |
-| **Settings** | Setup Wizard, Accessibility, Prompts, Playbooks, Notes & Context, General, Tools & Permissions, Session Wizard, Policies, Workspaces, Team Hub, Scheduler, Branding |
-| **Learn** | Optional, feature-flagged — onboarding and learning paths |
+| **Settings** | Setup Wizard, Accessibility, Prompts, Playbooks, Project Memory (CLAUDE.md / AGENTS.md / context usage), General, Tools & Permissions, Session Wizard, Policies, Workspaces, Team Hub, Scheduler, Branding |
 
 Managers see a focused sidebar, not 18 pages. Power users reach every detail through the sub-tabs inside each screen.
 

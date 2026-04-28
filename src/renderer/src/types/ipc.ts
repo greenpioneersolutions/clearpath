@@ -160,6 +160,18 @@ export interface SessionOptions {
   /** The user's actual typed message (without injected agent/skill/memory context).
    *  Used for message log display so rehydrated sessions show clean messages. */
   displayPrompt?: string
+
+  /**
+   * Notes the user attached when starting this session. Title is captured at
+   * attach time and frozen with the user message — the in-chat "shared N notes"
+   * chip reads from message metadata, not the notes store, so deleting a note
+   * (or flag-toggling Notes off) never breaks old transcripts.
+   */
+  attachedNotes?: Array<{ id: string; title: string }>
+  /** Agent persona attached at session start. Frozen for chip display. */
+  attachedAgent?: { id: string; name: string }
+  /** Skills the user tagged this chat with. Frozen for chip display. */
+  attachedSkills?: Array<{ id: string; name: string }>
 }
 
 export interface ParsedOutput {

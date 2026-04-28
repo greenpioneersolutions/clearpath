@@ -152,7 +152,11 @@ export default function NotificationInbox({ isOpen, onClose }: Props): JSX.Eleme
           ) : (
             <div>
               {notifications.map((n) => {
-                const style = SEVERITY_STYLES[n.severity]
+                // Persisted notifications may carry severities older code could
+                // emit ('error', 'success') that aren't in SEVERITY_STYLES. Fall
+                // back to the 'info' style so the row still renders.
+                const style = SEVERITY_STYLES[n.severity] ?? SEVERITY_STYLES.info
+                const typeLabel = TYPE_LABELS[n.type] ?? n.type
                 const isExpanded = expanded === n.id
                 return (
                   <div key={n.id} className={`border-b border-gray-50 ${!n.read ? 'bg-indigo-50/30' : ''}`}>
@@ -179,7 +183,7 @@ export default function NotificationInbox({ isOpen, onClose }: Props): JSX.Eleme
                           <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{n.message}</p>
                           <div className="flex items-center gap-2 mt-1 text-xs text-gray-400">
                             <span>{timeAgo(n.timestamp)}</span>
-                            <span className="bg-gray-100 px-1.5 py-0.5 rounded">{TYPE_LABELS[n.type]}</span>
+                            <span className="bg-gray-100 px-1.5 py-0.5 rounded">{typeLabel}</span>
                             <span>{n.source}</span>
                           </div>
                         </div>

@@ -55,16 +55,27 @@ export default function Composer({ onSendToSession, onSendToNewSession, cli, ses
   // user lands directly on the canvas with the saved workflow ready to edit.
   useEffect(() => {
     if (!workflowId) return
+    let cancelled = false
     void (async () => {
-      const wf = await window.electronAPI.invoke('workflow:get', { id: workflowId }) as
-        | { id: string; name: string; description: string; steps: WorkflowStep[] }
-        | null
-      if (wf && wf.steps.length > 0) {
-        setSteps(wf.steps)
-        setHasStarted(true)
-        void window.electronAPI.invoke('workflow:record-usage', { id: workflowId })
+      try {
+        const wf = await window.electronAPI.invoke('workflow:get', { id: workflowId }) as
+          | { id: string; name: string; description: string; steps: WorkflowStep[] }
+          | null
+        if (cancelled) return
+        if (wf && wf.steps.length > 0) {
+          setSteps(wf.steps)
+          setHasStarted(true)
+          try {
+            await window.electronAPI.invoke('workflow:record-usage', { id: workflowId })
+          } catch (err) {
+            console.warn('Composer: workflow:record-usage failed', err)
+          }
+        }
+      } catch (err) {
+        console.warn('Composer: workflow:get failed', err)
       }
     })()
+    return () => { cancelled = true }
   }, [workflowId])
 
   // ── Handlers ──────────────────────────────────────────────────────────────

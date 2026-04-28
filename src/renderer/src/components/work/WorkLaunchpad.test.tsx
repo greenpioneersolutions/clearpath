@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { render, screen, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom'
+import { MemoryRouter } from 'react-router-dom'
 import { setupElectronAPI } from '../../../../test/ipc-mock-helper'
 
 import WorkLaunchpad from './WorkLaunchpad'
@@ -17,13 +18,15 @@ beforeEach(() => {
 describe('WorkLaunchpad', () => {
   it('renders all four sub-cards', async () => {
     render(
-      <WorkLaunchpad
-        onQuickStart={vi.fn()}
-        onOpenWorkflow={vi.fn()}
-        onOpenActiveSession={vi.fn()}
-        onResumeSession={vi.fn()}
-        onSeeMoreSessions={vi.fn()}
-      />,
+      <MemoryRouter>
+        <WorkLaunchpad
+          onQuickStart={vi.fn()}
+          onOpenWorkflow={vi.fn()}
+          onOpenActiveSession={vi.fn()}
+          onResumeSession={vi.fn()}
+          onSeeMoreSessions={vi.fn()}
+        />
+      </MemoryRouter>,
     )
 
     expect(screen.getByTestId('work-launchpad')).toBeInTheDocument()

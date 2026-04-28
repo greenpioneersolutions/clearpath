@@ -374,7 +374,29 @@ describe('AuthManager', () => {
       expect(result.copilot.tokenSource).toBe('env-var')
     })
 
-    it('detects copilot auth via config file with logged_in_users', async () => {
+    it('detects copilot auth via config file with loggedInUsers (camelCase)', async () => {
+      resolveInShellMock.mockImplementation(async (name: string) => {
+        if (name === 'copilot') return '/usr/local/bin/copilot'
+        return null
+      })
+      mockExecFileSuccess('1.2.3\n')
+      existsSyncMock.mockImplementation((p: string) => {
+        if (p === '/mock/home/.copilot/config.json') return true
+        return false
+      })
+      readFileSyncMock.mockReturnValue(JSON.stringify({
+        loggedInUsers: [{ host: 'https://github.com', login: 'testuser' }],
+      }))
+
+      const mgr = new AuthManager(() => mockWc as any)
+      const result = await mgr.refresh()
+
+      expect(result.copilot.installed).toBe(true)
+      expect(result.copilot.authenticated).toBe(true)
+      expect(result.copilot.tokenSource).toBe('config-file')
+    })
+
+    it('detects copilot auth via config file with logged_in_users (legacy snake_case)', async () => {
       resolveInShellMock.mockImplementation(async (name: string) => {
         if (name === 'copilot') return '/usr/local/bin/copilot'
         return null

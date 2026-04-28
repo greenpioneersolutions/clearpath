@@ -33,7 +33,7 @@ describe('ClearPathAI — Work Launchpad', () => {
   before(async () => {
     await waitForAppReady()
     await stopAllRunningSessions()
-    await navigateSidebarTo('Work')
+    await navigateSidebarTo('Sessions')
     await navigateToHash('#/work')
   })
 
@@ -85,7 +85,7 @@ describe('ClearPathAI — Work Launchpad', () => {
       const beforeHash = await browser.execute(() => window.location.hash)
       expect(beforeHash).toMatch(/\bid=/)
 
-      await navigateSidebarTo('Work')
+      await navigateSidebarTo('Sessions')
       await browser.pause(500)
 
       const afterHash = await browser.execute(() => window.location.hash)

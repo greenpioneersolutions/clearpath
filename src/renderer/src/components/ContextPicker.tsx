@@ -2,6 +2,8 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import type { PromptTemplate } from '../types/template'
 import type { ContextProviderDeclaration, SelectedContextSource } from '../types/contextSources'
 import type { BackendId } from '../../../shared/backends'
+import { useFlag } from '../contexts/FeatureFlagContext'
+import { NOTE_CATEGORY_COLORS_DARK } from '../lib/noteCategoryColors'
 
 // ── Types reused from QuickCompose ────────────────────────────────────────────
 
@@ -55,14 +57,8 @@ interface Props {
   defaultTab?: ContextPickerTab
 }
 
-const CAT_COLORS: Record<string, string> = {
-  meeting: 'bg-blue-900/30 text-blue-400',
-  conversation: 'bg-green-900/30 text-green-400',
-  reference: 'bg-purple-900/30 text-purple-400',
-  outcome: 'bg-amber-900/30 text-amber-400',
-  idea: 'bg-pink-900/30 text-pink-400',
-  custom: 'bg-gray-800 text-gray-400',
-}
+// Shared with the dedicated Notes page so the two surfaces stay in sync.
+const CAT_COLORS = NOTE_CATEGORY_COLORS_DARK
 
 /**
  * Unified tabbed context picker — replaces the per-feature dropdowns from QuickCompose.
@@ -93,7 +89,11 @@ export default function ContextPicker({
   onTemplateSelect,
   defaultTab = 'prompts',
 }: Props): JSX.Element | null {
-  const [tab, setTab] = useState<ContextPickerTab>(defaultTab)
+  const showNotes = useFlag('showNotes')
+  // When showNotes is off, the Notes tab cannot be the initial tab — fall
+  // back to Prompts so deep-linked callers don't land on a hidden tab.
+  const initialTab: ContextPickerTab = !showNotes && defaultTab === 'notes' ? 'prompts' : defaultTab
+  const [tab, setTab] = useState<ContextPickerTab>(initialTab)
   const [search, setSearch] = useState('')
   const wrapRef = useRef<HTMLDivElement>(null)
 
@@ -105,13 +105,14 @@ export default function ContextPicker({
   const [contextProviders, setContextProviders] = useState<ContextProviderDeclaration[]>([])
   const [contextParams, setContextParams] = useState<Record<string, Record<string, string>>>({})
 
-  // Reset tab + search when re-opened
+  // Reset tab + search when re-opened. If showNotes is off, the Notes tab
+  // cannot be the initial tab — fall back to Prompts.
   useEffect(() => {
     if (open) {
-      setTab(defaultTab)
+      setTab(!showNotes && defaultTab === 'notes' ? 'prompts' : defaultTab)
       setSearch('')
     }
-  }, [open, defaultTab])
+  }, [open, defaultTab, showNotes])
 
   // Outside click closes
   useEffect(() => {
@@ -143,9 +144,13 @@ export default function ContextPicker({
   }, [search])
 
   useEffect(() => {
-    if (!open || tab !== 'notes') return
+    // notes:list IS NOT flag-gated on the main side — the IPC handlers stay
+    // registered regardless of showNotes. We just don't fetch from the
+    // renderer when the flag is off, so flipping the flag back on returns
+    // the same data.
+    if (!open || tab !== 'notes' || !showNotes) return
     void loadNotes()
-  }, [open, tab, loadNotes])
+  }, [open, tab, loadNotes, showNotes])
 
   // Playbooks = templates + skills (merged)
   useEffect(() => {
@@ -185,7 +190,7 @@ export default function ContextPicker({
         {(
           [
             ['prompts', 'Prompts'],
-            ['notes', 'Notes'],
+            ...(showNotes ? [['notes', 'Notes']] as const : []),
             ['playbooks', 'Playbooks'],
             ['files', 'Files'],
           ] as const
