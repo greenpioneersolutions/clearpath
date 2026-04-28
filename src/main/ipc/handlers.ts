@@ -180,6 +180,10 @@ export function registerIpcHandlers(
     cliManager.archivePersistedSession(sessionId, archived)
   )
 
+  ipcMain.handle('cli:archive-sessions', (_event, { sessionIds, archived }: { sessionIds: string[]; archived: boolean }) =>
+    cliManager.archivePersistedSessions(sessionIds, archived)
+  )
+
   ipcMain.handle('cli:rename-session', (_event, { sessionId, name }: { sessionId: string; name: string }) =>
     cliManager.renamePersistedSession(sessionId, name)
   )

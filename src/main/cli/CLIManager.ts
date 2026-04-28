@@ -236,6 +236,16 @@ export class CLIManager {
     }
   }
 
+  /** Toggle archive flag on multiple sessions at once */
+  archivePersistedSessions(sessionIds: string[], archived: boolean): void {
+    if (sessionIds.length === 0) return
+    const idSet = new Set(sessionIds)
+    const sessions = sessionStore.get('sessions').map((s) =>
+      idSet.has(s.sessionId) ? { ...s, archived } : s,
+    )
+    sessionStore.set('sessions', sessions)
+  }
+
   /** Rename a persisted session */
   renamePersistedSession(sessionId: string, name: string): void {
     const sessions = sessionStore.get('sessions')
