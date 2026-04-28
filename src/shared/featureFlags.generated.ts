@@ -26,6 +26,7 @@ export type FeatureFlagKey =
   | 'showLearn'
   | 'showMcpServers'
   | 'showMemory'
+  | 'showMyWork'
   | 'showNotes'
   | 'showPlugins'
   | 'showPolicies'
@@ -69,6 +70,7 @@ export type FeatureFlags = {
   showLearn: boolean;
   showMcpServers: boolean;
   showMemory: boolean;
+  showMyWork: boolean;
   showNotes: boolean;
   showPlugins: boolean;
   showPolicies: boolean;
@@ -124,6 +126,7 @@ export const BUILD_FLAGS: Readonly<FeatureFlags> = Object.freeze({
   showLearn: true,
   showMcpServers: false,
   showMemory: false,
+  showMyWork: true,
   showNotes: true,
   showPlugins: false,
   showPolicies: false,
@@ -178,6 +181,7 @@ export const FEATURE_FLAG_META: Readonly<Record<FeatureFlagKey, FeatureFlagMetad
   showLearn: { experimental: false, enabled: true, addedIn: "1.0.0" },
   showMcpServers: { experimental: true, enabled: false, addedIn: "1.9.0" },
   showMemory: { experimental: false, enabled: false, addedIn: "1.0.0" },
+  showMyWork: { experimental: false, enabled: true, addedIn: "1.14.0" },
   showNotes: { experimental: false, enabled: true, addedIn: "1.13.0" },
   showPlugins: { experimental: false, enabled: false, addedIn: "1.0.0" },
   showPolicies: { experimental: false, enabled: false, addedIn: "1.0.0" },
@@ -233,6 +237,7 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = Object.freeze([
   'showLearn',
   'showMcpServers',
   'showMemory',
+  'showMyWork',
   'showNotes',
   'showPlugins',
   'showPolicies',

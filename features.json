@@ -20,6 +20,12 @@
       "enabled": true,
       "addedIn": "1.0.0"
     },
+    "showMyWork": {
+      "description": "Top-level My Work nav entry — aggregates Jira issues, sprint, and GitHub PRs/reviews/mentions assigned to you.",
+      "experimental": false,
+      "enabled": true,
+      "addedIn": "1.14.0"
+    },
     "showInsights": {
       "description": "Top-level Insights nav entry (analytics, cost, compliance).",
       "experimental": false,
