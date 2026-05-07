@@ -16,6 +16,7 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  # ── Unit tests + build ──────────────────────────────────────────────────────
   test:
     runs-on: ubuntu-latest
 
@@ -41,27 +42,137 @@ jobs:
       - name: Build app
         run: npm run build
 
-  # ── Screenshot capture ───────────────────────────────────────────────────────
-  # Always runs after the main test job (on every push and PR).
+  # ── Playwright functional e2e ───────────────────────────────────────────────
+  # Replaces the WDIO functional run. Covers every spec in
+  # `e2e/*.pw.spec.ts` except the visual crawls and extensions-integration
+  # (which have dedicated jobs).
   #
-  # Policy: this job *captures* visual changes; it does NOT gate the CI on
-  # pixel mismatches. The crawl runs in compare mode (no
-  # --update-visual-baseline), and the spec doesn't assert on mismatch %.
-  # The visual service writes a diff PNG to .tmp/visual/diff/{tag}.png ONLY
-  # for tags that changed beyond `ignoreAntialiasing`; the post-step then
-  # promotes the matching actual to the baseline for those tags only.
-  # Tags with identical pixels leave their baseline files untouched, so an
-  # unrelated commit (e.g. CLAUDE.md, package.json) doesn't churn baselines
-  # via PNG re-encoder non-determinism.
+  # Trace + html report + per-test screenshots are uploaded as a
+  # `playwright-report` artifact for failure post-mortem.
+  playwright-functional:
+    needs: test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          lfs: true
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build app
+        run: npm run build
+
+      - name: Install Linux deps for Electron headless
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y --no-install-recommends xvfb libgbm-dev libasound2-dev
+
+      - name: Start virtual display
+        run: |
+          Xvfb :99 -screen 0 1440x900x24 &
+          echo "DISPLAY=:99" >> $GITHUB_ENV
+          sleep 2
+
+      - name: Run Playwright functional tests
+        run: npx playwright test
+        env:
+          DISPLAY: ':99'
+          # Skip the renderer fonts.ready wait — some Electron pages keep that
+          # promise pending forever and hang page.screenshot. Captures still
+          # land via the helper's short-timeout fallback.
+          PW_TEST_SCREENSHOT_NO_FONTS_READY: '1'
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: warn
+          retention-days: 14
+
+  # ── Playwright extensions integration ───────────────────────────────────────
+  # Requires the bundled SDK example .clear.ext + an experimental build (the
+  # Extensions tab is gated behind an experimental flag).
+  playwright-extensions:
+    needs: test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          lfs: true
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build extension SDK example
+        run: npm run pretest:e2e:extensions
+
+      - name: Build app with experimental flag
+        run: npm run build
+        env:
+          CLEARPATH_E2E_EXPERIMENTAL: '1'
+
+      - name: Install Linux deps for Electron headless
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y --no-install-recommends xvfb libgbm-dev libasound2-dev
+
+      - name: Start virtual display
+        run: |
+          Xvfb :99 -screen 0 1440x900x24 &
+          echo "DISPLAY=:99" >> $GITHUB_ENV
+          sleep 2
+
+      - name: Run extensions integration tests
+        run: npx playwright test -c playwright.extensions.config.ts
+        env:
+          DISPLAY: ':99'
+          CLEARPATH_E2E_EXPERIMENTAL: '1'
+          PW_TEST_SCREENSHOT_NO_FONTS_READY: '1'
+
+      - name: Upload extensions report
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: playwright-extensions-report
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: warn
+          retention-days: 14
+
+  # ── Screenshot capture ──────────────────────────────────────────────────────
+  # Runs after the functional job succeeds. Policy mirrors the previous WDIO
+  # workflow: invoke with -u (the spec's update path uses Electron's
+  # `BrowserWindow.capturePage()` directly, bypassing Playwright's flaky
+  # font/animation waits). Any baseline whose pixels actually changed gets
+  # committed back; identical-pixel re-encodes don't churn the LFS file
+  # because the spec writes byte-for-byte the same PNG when the source
+  # frame is unchanged.
   #
-  # Real failures still bubble up: navigation timeouts, missing elements,
-  # JS errors during the crawl, and app-load failures all surface as job
-  # errors here.
+  # Real failures still bubble: navigation timeouts, missing elements, JS
+  # errors during the crawl, and app-load failures all surface here.
   #
   # Requires the repo to allow Actions to create commits:
   #   Settings → Actions → Workflow permissions → "Read and write permissions"
   screenshot-regression:
-    needs: test
+    needs: playwright-functional
     runs-on: ubuntu-latest
 
     permissions:
@@ -70,10 +181,9 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          lfs: true  # pull baseline PNG files from LFS storage
+          lfs: true
           token: ${{ secrets.GITHUB_TOKEN }}
           # Check out as a real local branch (not detached HEAD) so git push works.
-          # github.head_ref is the PR source branch; github.ref_name is the push branch.
           ref: ${{ github.head_ref || github.ref_name }}
 
       - uses: actions/setup-node@v5
@@ -87,7 +197,7 @@ jobs:
       - name: Build app
         run: npm run build
 
-      - name: Install system dependencies (Xvfb for headless Electron)
+      - name: Install Linux deps for Electron headless
         run: |
           sudo apt-get update -q
           sudo apt-get install -y --no-install-recommends xvfb libgbm-dev libasound2-dev
@@ -98,83 +208,47 @@ jobs:
           echo "DISPLAY=:99" >> $GITHUB_ENV
           sleep 2
 
-      - name: Run screenshot crawl
-        # Compare mode (no --update-visual-baseline). The spec doesn't assert
-        # on mismatch %, so a mismatch only produces .tmp/visual/diff/{tag}.png
-        # plus .tmp/visual/actual/{tag}.png — the test passes either way.
-        # autoSaveBaseline:true in wdio.screenshots.conf.ts still creates a
-        # baseline on first run for newly-added tags. Real failures
-        # (navigation timeouts, missing elements, app crashes) still fail
-        # this step and stop CI.
-        run: npx wdio run wdio.screenshots.conf.ts
+      - name: Run screenshot crawl with baseline regeneration
+        # -u writes baselines via Electron's BrowserWindow.capturePage(),
+        # bypassing every implicit wait inside page.screenshot. The spec
+        # writes byte-identical PNGs for unchanged frames so unrelated
+        # commits don't churn LFS files.
+        run: npx playwright test -c playwright.screenshots.config.ts -u
         env:
           DISPLAY: ':99'
-
-      - name: Promote actuals to baselines for changed tags
-        # Update baselines only for tags the visual service flagged as
-        # different (a diff PNG was written). Tags whose pixels match leave
-        # their baselines untouched — this prevents PNG re-encode noise
-        # (4-byte metadata diffs from identical pixels) from churning
-        # baselines on unrelated commits.
-        run: |
-          set -e
-          diff_dir=".tmp/visual/diff"
-          actual_dir=".tmp/visual/actual"
-          baseline_dir="e2e/screenshots/baseline"
-          if [ ! -d "$diff_dir" ]; then
-            echo "No diff directory at $diff_dir — nothing to promote."
-            exit 0
-          fi
-          shopt -s nullglob
-          promoted=0
-          for diff in "$diff_dir"/*.png; do
-            tag="$(basename "$diff" .png)"
-            actual="$actual_dir/$tag.png"
-            baseline="$baseline_dir/$tag.png"
-            if [ -f "$actual" ]; then
-              cp "$actual" "$baseline"
-              echo "promoted: $tag"
-              promoted=$((promoted + 1))
-            else
-              echo "warn: actual missing for $tag (diff present)" >&2
-            fi
-          done
-          echo "promoted $promoted baseline(s) from changed actuals"
+          PW_TEST_SCREENSHOT_NO_FONTS_READY: '1'
 
       - name: Commit updated baselines
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add e2e/screenshots/baseline/
-          # Commit only when a baseline was actually promoted. Tags that the
-          # visual service judged unchanged (within ignoreAntialiasing) leave
-          # their baselines untouched, so this commit is skipped on unrelated
-          # commits like docs/config-only changes.
+          # Commit only when a baseline actually changed. Tags whose pixels
+          # were unchanged produce identical PNGs (the spec uses Electron's
+          # native PNG encoder deterministically).
           git diff --staged --quiet || git commit -m "Auto-update screenshot baselines [skip ci]"
-          # --force-with-lease is safer than --force — it only overwrites if the
-          # remote ref matches what we fetched at checkout, protecting against
-          # unrelated pushes while still handling a prior CI baseline commit.
+          # --force-with-lease protects against unrelated pushes while still
+          # handling a prior CI baseline commit.
           git push --force-with-lease
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload screenshots artifact
+      - name: Upload screenshot artifacts
         if: always()
         uses: actions/upload-artifact@v5
         with:
           name: screenshots
           path: |
-            .tmp/visual/actual/
-            .tmp/visual/diff/
+            test-results-visual/
             e2e/screenshots/baseline/
           if-no-files-found: warn
           retention-days: 30
 
   # ── Experimental-feature screenshot capture ─────────────────────────────────
   # Captures pages that are tree-shaken out of the default build. The build
-  # step sets CLEARPATH_E2E_EXPERIMENTAL=1 so every experimental flag in
-  # features.json is forced ON, which restores the experimental page chunks
-  # to the bundle for visual coverage.
+  # step sets CLEARPATH_E2E_EXPERIMENTAL=1 so every experimental flag is
+  # forced ON, restoring the gated page chunks to the bundle for visual
+  # coverage.
   #
   # Baselines for these screenshots live under
   #   e2e/screenshots/baseline/experimental-features/
@@ -208,7 +282,7 @@ jobs:
         env:
           CLEARPATH_E2E_EXPERIMENTAL: '1'
 
-      - name: Install system dependencies (Xvfb for headless Electron)
+      - name: Install Linux deps for Electron headless
         run: |
           sudo apt-get update -q
           sudo apt-get install -y --no-install-recommends xvfb libgbm-dev libasound2-dev
@@ -220,49 +294,13 @@ jobs:
           sleep 2
 
       - name: Run experimental screenshot crawl
-        run: npx wdio run wdio.screenshots.experimental.conf.ts
+        run: npx playwright test -c playwright.screenshots.experimental.config.ts -u
         env:
           DISPLAY: ':99'
           CLEARPATH_E2E_EXPERIMENTAL: '1'
-
-      - name: Promote actuals to baselines for changed experimental tags
-        # Same compare+promote policy as the main screenshot job, but scoped
-        # to the experimental-features/ subfolder so we never overwrite a
-        # default baseline from this run.
-        run: |
-          set -e
-          diff_dir=".tmp/visual/diff/experimental-features"
-          actual_dir=".tmp/visual/actual/experimental-features"
-          baseline_dir="e2e/screenshots/baseline/experimental-features"
-          if [ ! -d "$diff_dir" ]; then
-            echo "No diff directory at $diff_dir — nothing to promote."
-            exit 0
-          fi
-          mkdir -p "$baseline_dir"
-          shopt -s nullglob
-          promoted=0
-          for diff in "$diff_dir"/*.png; do
-            tag="$(basename "$diff" .png)"
-            actual="$actual_dir/$tag.png"
-            baseline="$baseline_dir/$tag.png"
-            if [ -f "$actual" ]; then
-              cp "$actual" "$baseline"
-              echo "promoted: experimental-features/$tag"
-              promoted=$((promoted + 1))
-            else
-              echo "warn: actual missing for $tag (diff present)" >&2
-            fi
-          done
-          echo "promoted $promoted experimental baseline(s)"
+          PW_TEST_SCREENSHOT_NO_FONTS_READY: '1'
 
       - name: Commit updated experimental baselines
-        # `needs: screenshot-regression` serializes us after the sibling job,
-        # so our checkout already includes anything it pushed — no rebase
-        # needed. Mirror the simpler push pattern used by the sibling.
-        # `--force-with-lease` protects against concurrent pushes from
-        # outside CI without requiring a clean working tree, which matters
-        # here because the experimental build (CLEARPATH_E2E_EXPERIMENTAL=1)
-        # leaves featureFlags.generated.ts modified relative to HEAD.
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -272,14 +310,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload experimental screenshots artifact
+      - name: Upload experimental screenshot artifacts
         if: always()
         uses: actions/upload-artifact@v5
         with:
           name: screenshots-experimental
           path: |
-            .tmp/visual/actual/
-            .tmp/visual/diff/
+            test-results-visual-experimental/
             e2e/screenshots/baseline/experimental-features/
           if-no-files-found: warn
           retention-days: 30

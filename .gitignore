@@ -66,3 +66,12 @@ com.clearpathai.sdk-example-v1.0.0.clear.ext
 
 # Visual regression — actual + diff images generated during test runs (ephemeral)
 .tmp/
+
+# Playwright artifacts
+test-results/
+test-results-visual/
+test-results-visual-experimental/
+playwright-report/
+blob-report/
+e2e/.userData/
+.last-run.json

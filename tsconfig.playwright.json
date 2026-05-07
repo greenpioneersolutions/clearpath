@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ESNext", "DOM"],
+    "strict": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "outDir": "out/playwright",
+    "rootDir": ".",
+    "types": ["@playwright/test", "node"],
+    "skipLibCheck": true
+  },
+  "include": [
+    "e2e/**/*.pw.spec.ts",
+    "e2e/fixtures.ts",
+    "e2e/global-teardown.ts",
+    "e2e/helpers/pw.ts",
+    "e2e/helpers/pw-screenshots.ts",
+    "playwright.config.ts",
+    "playwright.screenshots.config.ts"
+  ],
+  "exclude": ["node_modules", "out", "src"]
+}
