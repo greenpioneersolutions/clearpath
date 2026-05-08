@@ -77,6 +77,18 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
         '--hide-scrollbars',
       ]
 
+      // Visual configs set CLEARPATH_E2E_VISUAL=1 (in the config file itself
+      // before fixtures load). Match the original WDIO behavior: pass
+      // `--force-dark-mode` as a Chromium command-line flag so the renderer's
+      // `prefers-color-scheme: dark` media query fires and BrandingContext
+      // toggles the Tailwind `dark` class. Playwright's `use.colorScheme`
+      // option is a BrowserContext setting that does NOT propagate to
+      // _electron.launch — passing the Chromium flag is the only reliable
+      // path.
+      if (process.env.CLEARPATH_E2E_VISUAL === '1') {
+        args.push('--force-dark-mode')
+      }
+
       const app = await electron.launch({ args, env, timeout: 30_000 })
 
       // Forward main-process logs — invaluable when diagnosing CI crashes.

@@ -1,6 +1,12 @@
 import { defineConfig } from '@playwright/test'
 import baseConfig from './playwright.config'
 
+// Signal to fixtures.ts that this run wants dark-mode + visual-stable Electron
+// args. Set BEFORE the config object is constructed, so the env var is in
+// place when Playwright loads the worker process. fixtures.ts reads this and
+// pushes `--force-dark-mode` into the Electron launch args.
+process.env.CLEARPATH_E2E_VISUAL = '1'
+
 /**
  * Visual regression config — runs ONLY the screenshot crawl spec.
  *
@@ -44,8 +50,10 @@ export default defineConfig({
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     video: 'off',
-    // Visual run gets dark-mode + DPR pin; the fixture honors this option.
-    colorScheme: 'dark',
+    // NOTE: `colorScheme: 'dark'` does NOT work with _electron.launch — it's a
+    // BrowserContext option only. Dark mode is forced via the Chromium
+    // `--force-dark-mode` flag pushed into Electron launch args by
+    // fixtures.ts when CLEARPATH_E2E_VISUAL=1.
   },
 
   outputDir: 'test-results-visual',
