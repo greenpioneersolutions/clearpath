@@ -77,17 +77,12 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
         '--hide-scrollbars',
       ]
 
-      // Visual configs set CLEARPATH_E2E_VISUAL=1 (in the config file itself
-      // before fixtures load). Match the original WDIO behavior: pass
-      // `--force-dark-mode` as a Chromium command-line flag so the renderer's
-      // `prefers-color-scheme: dark` media query fires and BrandingContext
-      // toggles the Tailwind `dark` class. Playwright's `use.colorScheme`
-      // option is a BrowserContext setting that does NOT propagate to
-      // _electron.launch — passing the Chromium flag is the only reliable
-      // path.
-      if (process.env.CLEARPATH_E2E_VISUAL === '1') {
-        args.push('--force-dark-mode')
-      }
+      // NOTE: dark mode is enforced via `page.emulateMedia({ colorScheme:
+      // 'dark' })` in the per-test `page` fixture below — NOT via Chromium's
+      // `--force-dark-mode` flag. We tried the flag and the renderer's
+      // matchMedia('(prefers-color-scheme: dark)') still returned false; the
+      // flag affects only Chrome's UI chrome auto-darken, not the CSS media
+      // query value. emulateMedia uses CDP to override the value correctly.
 
       const app = await electron.launch({ args, env, timeout: 30_000 })
 
@@ -106,6 +101,18 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
 
   page: async ({ electronApp }, use) => {
     const window = await electronApp.firstWindow()
+
+    // Visual configs set CLEARPATH_E2E_VISUAL=1 on the parent process.
+    // Override the renderer's prefers-color-scheme media query via CDP so
+    // BrandingContext (which reads matchMedia('(prefers-color-scheme: dark)')
+    // on mount AND listens for change events) flips the Tailwind `dark`
+    // class. This is the Playwright-native equivalent of the WDIO config's
+    // `--force-dark-mode` Chromium flag — that flag does NOT propagate to
+    // _electron.launch's Chromium media-query layer, but emulateMedia does.
+    if (process.env.CLEARPATH_E2E_VISUAL === '1') {
+      await window.emulateMedia({ colorScheme: 'dark' })
+    }
+
     await window.waitForLoadState('domcontentloaded')
 
     // Pin the content area to exactly 1280×800 on every platform. The
