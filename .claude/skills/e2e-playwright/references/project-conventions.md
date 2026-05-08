@@ -4,7 +4,7 @@ CoPilot Commander-specific helpers, route table, sidebar labels, and the two-con
 
 ## Tech stack
 
-- **Electron 31** with `electron-vite` (build to `out/main/index.js`)
+- **Electron 39** (`^39.8.6` per package.json) with `electron-vite` (build to `out/main/index.js`)
 - **React 18** + React Router 6, **hash-based** (`#/work?tab=session`)
 - **Tailwind CSS** for styling
 - IPC bridge: `window.electronAPI.invoke(channel, args)`
@@ -197,7 +197,7 @@ Visual baselines live at `e2e/screenshots/baseline/<name>.png`, tracked via Git 
 CoPilot Commander spawns real `copilot` and `claude` CLI processes via `CLIManager`. **For e2e tests these MUST be stubbed** — otherwise tests need internet and real credentials.
 
 Two approaches:
-1. Inject a `CLEARPATH_E2E_FAKE_CLI=1` env var; the main process gates `CLIManager.startSession` on it and uses a fake adapter that emits scripted output.
+1. **Proposed (not yet implemented):** an env var like `CLEARPATH_E2E_FAKE_CLI=1` could gate `CLIManager.startSession` to use a fake adapter that emits scripted output. As of this writing, no such flag is wired in `src/`.
 2. Override the spawn function via `electronApp.evaluate` to monkey-patch `child_process.spawn` (more invasive — requires app code awareness).
 
-Approach (1) is preferred. If not yet wired up, prefer testing IPC handlers directly (`invokeIPC`) rather than full chat flows.
+Until approach (1) is implemented, **prefer testing IPC handlers directly via `invokeIPC` rather than full chat flows.** Existing Playwright specs avoid spawning real CLI sessions entirely.

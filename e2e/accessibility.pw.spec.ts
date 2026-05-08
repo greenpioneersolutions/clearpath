@@ -77,7 +77,11 @@ test.describe('ClearPathAI — Accessibility & Keyboard', () => {
       await navigateSidebarTo(page, 'Home')
       await page.waitForTimeout(500)
 
-      // Press Tab and check that activeElement changes
+      // Click body first to make sure focus starts on a known element, then
+      // press Tab and verify focus actually moved to a focusable element.
+      await page.evaluate(() => {
+        if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
+      })
       const initialTag = await page.evaluate(() =>
         document.activeElement?.tagName ?? 'BODY',
       )
@@ -89,10 +93,11 @@ test.describe('ClearPathAI — Accessibility & Keyboard', () => {
         document.activeElement?.tagName ?? 'BODY',
       )
 
-      // Focus should have moved to a focusable element (A, BUTTON, INPUT, etc.)
-      // Just verify that something is focused (not still on BODY)
-      const isFocused = afterTag !== 'BODY' || initialTag !== 'BODY'
-      expect(isFocused).toBe(true)
+      // After a Tab press from a blurred state, focus must land on a real
+      // focusable element — not on BODY (which means nothing was focused) and
+      // not on the same element as before (which means Tab did nothing).
+      expect(afterTag).not.toBe('BODY')
+      expect(afterTag).not.toBe(initialTag)
     })
 
     test('Enter key activates a focused link', async ({ page }) => {

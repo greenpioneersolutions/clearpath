@@ -19,7 +19,9 @@
     "e2e/helpers/pw.ts",
     "e2e/helpers/pw-screenshots.ts",
     "playwright.config.ts",
-    "playwright.screenshots.config.ts"
+    "playwright.screenshots.config.ts",
+    "playwright.screenshots.experimental.config.ts",
+    "playwright.extensions.config.ts"
   ],
   "exclude": ["node_modules", "out", "src"]
 }

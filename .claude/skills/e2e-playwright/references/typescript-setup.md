@@ -84,15 +84,14 @@ Other options (`strict`, `noUnusedLocals`, `target`, etc.) are ignored at runtim
 
 ## ESM vs CommonJS
 
-Playwright supports both. The recommended setup is ESM:
-- `package.json` has `"type": "module"` (the project does — main is `out/main/index.js` which is ESM)
-- `module: NodeNext` in tsconfig
-- `.js` extensions on relative imports inside `.ts` files:
-  ```ts
-  import { setInputValue } from './helpers/app.js';   // note .js
-  ```
+Playwright supports both. **In this repo, `package.json` does NOT set `"type": "module"`** — the Electron main bundle (`out/main/index.js`) is emitted as CommonJS by `electron-vite`, and Playwright loads its config + specs through `tsx`/Node loaders.
 
-If `tsconfig.json` uses `"module": "NodeNext"`, the `.js` extension on imports is **required** (TS resolves it the same way Node does at runtime).
+Practical implication for e2e files:
+- The Playwright tsconfig (`tsconfig.playwright.json`) uses `"module": "NodeNext"`, but **without `"type": "module"` in package.json, `.ts` files are inferred as CJS**. That means:
+  - `import.meta.url` is **not allowed** — it triggers `TS1470` ("not allowed in files which will build into CommonJS output"). Use `process.cwd()` or `__dirname` (CJS) for path resolution. The shipped `e2e/fixtures.ts` does this.
+  - `.js` extensions on relative imports are **not required** in our setup. Existing WDIO specs use `from './helpers/app.js'`; the new Playwright specs use `from './helpers/pw'` (no extension). Both work because Playwright's loader resolves `.ts` siblings either way.
+
+If you add a new spec that uses ESM-only constructs (`import.meta.url`, top-level `await`), either compute the value differently or wrap it in a `.mjs` helper.
 
 ## Path aliases
 
