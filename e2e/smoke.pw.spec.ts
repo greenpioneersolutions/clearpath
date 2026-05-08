@@ -44,12 +44,10 @@ test.describe('ClearPathAI — Smoke Tests', () => {
   // ── 2. Console Error Check ──────────────────────────────────────────────
 
   test('has no critical console errors on initial load', async ({ consoleErrors }) => {
-    if (consoleErrors.length > 0) {
-      console.warn('Critical console errors found:', consoleErrors)
-    }
-    // We report them but don't fail the suite — some IPC calls may error
-    // when CLIs aren't installed, which is expected in CI environments
-    expect(Array.isArray(consoleErrors)).toBe(true)
+    // Renderer-side console.error and pageerror events. Main-process stderr
+    // (e.g. ClearMemory binary missing, dbus errors on Linux CI) does NOT
+    // appear here — those go through process.stderr forwarding in fixtures.
+    expect(consoleErrors).toEqual([])
   })
 
   // ── 3. Sidebar Navigation ───────────────────────────────────────────────
@@ -91,10 +89,6 @@ test.describe('ClearPathAI — Smoke Tests', () => {
     expect(html.length).toBeGreaterThan(50)
   })
 
-  test('has no new critical errors after navigating to Work', async ({ consoleErrors }) => {
-    expect(Array.isArray(consoleErrors)).toBe(true)
-  })
-
   test('navigates to Insights without crashing', async ({ page }) => {
     await navigateSidebarTo(page, 'Insights')
     const root = page.locator('#root')
@@ -123,9 +117,6 @@ test.describe('ClearPathAI — Smoke Tests', () => {
   // ── 6. Final Error Check ────────────────────────────────────────────────
 
   test('has no critical errors after full navigation round-trip', async ({ consoleErrors }) => {
-    if (consoleErrors.length > 0) {
-      console.warn('Errors after navigation:', consoleErrors)
-    }
-    expect(Array.isArray(consoleErrors)).toBe(true)
+    expect(consoleErrors).toEqual([])
   })
 })

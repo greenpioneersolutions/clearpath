@@ -13,7 +13,7 @@ import { test } from '@playwright/test';
 
 > The `_electron` namespace ships in the same `playwright` package as `chromium`/`firefox`/`webkit`. The leading underscore signals "experimental" — but the API has been stable since v1.9. Both packages (`playwright` and `@playwright/test`) re-export it.
 
-Supported Electron versions: **v12.2.0+, v13.4.0+, v14+**. The project uses Electron 31, so this is fine.
+Supported Electron versions: **v12.2.0+, v13.4.0+, v14+**. The project uses Electron 39 (`^39.8.6` in package.json), well within the supported range.
 
 ## Install
 

@@ -1,11 +1,12 @@
 import { defineConfig } from '@playwright/test'
 import baseConfig from './playwright.config'
 
-// fixtures.ts reads CLEARPATH_E2E_VISUAL=1 to push `--force-dark-mode` into
-// the Electron launch args. The env var MUST be set on the parent process
-// (npm script or CI workflow) — setting it from this config file does NOT
-// reach Playwright workers, which fork before the config module re-runs in
-// the worker. Set via:
+// fixtures.ts reads CLEARPATH_E2E_VISUAL=1 and forces dark mode via
+// `page.emulateMedia({ colorScheme: 'dark' })` (CDP override of
+// prefers-color-scheme — what BrandingContext actually reads via
+// matchMedia). The env var MUST be set on the parent process — setting it
+// from this config file does NOT reach Playwright workers, which fork
+// before the config module re-runs in the worker. Set via:
 //   - npm: scripts use `CLEARPATH_E2E_VISUAL=1 playwright test ...`
 //   - CI:  workflow `env:` block on the visual jobs
 
@@ -17,8 +18,8 @@ import baseConfig from './playwright.config'
  *    so outer size differs — content size is what we control).
  *  - DPR pinned to 1 via `--force-device-scale-factor=1` in fixtures.ts.
  *  - `--hide-scrollbars` keeps usable viewport identical.
- *  - `--force-dark-mode` matches BrandingContext (BrandingProvider observes
- *    prefers-color-scheme).
+ *  - Dark mode via `page.emulateMedia({ colorScheme: 'dark' })` in fixtures
+ *    (matches BrandingContext which observes prefers-color-scheme).
  *  - `threshold: 0.2` + `maxDiffPixelRatio: 0.02` covers FreeType (linux) vs
  *    CoreText (mac) sub-pixel anti-aliasing — equivalent to the WDIO config's
  *    `compareOptions.ignoreAntialiasing: true`.
@@ -52,10 +53,10 @@ export default defineConfig({
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     video: 'off',
-    // NOTE: `colorScheme: 'dark'` does NOT work with _electron.launch — it's a
-    // BrowserContext option only. Dark mode is forced via the Chromium
-    // `--force-dark-mode` flag pushed into Electron launch args by
-    // fixtures.ts when CLEARPATH_E2E_VISUAL=1.
+    // NOTE: `colorScheme: 'dark'` does NOT work with _electron.launch — it's
+    // a BrowserContext option only. Dark mode is forced via
+    // `page.emulateMedia({ colorScheme: 'dark' })` in the per-test page
+    // fixture when CLEARPATH_E2E_VISUAL=1 (set on the parent process).
   },
 
   outputDir: 'test-results-visual',

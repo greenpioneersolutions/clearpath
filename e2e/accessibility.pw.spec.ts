@@ -146,10 +146,7 @@ test.describe('ClearPathAI — Accessibility & Keyboard', () => {
 
   test.describe('Stability', () => {
     test('has no critical errors after accessibility tests', async ({ consoleErrors }) => {
-      if (consoleErrors.length > 0) {
-        console.warn('Errors after accessibility tests:', consoleErrors)
-      }
-      expect(Array.isArray(consoleErrors)).toBe(true)
+      expect(consoleErrors).toEqual([])
     })
   })
 })

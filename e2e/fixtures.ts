@@ -77,12 +77,13 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
         '--hide-scrollbars',
       ]
 
-      // NOTE: dark mode is enforced via `page.emulateMedia({ colorScheme:
-      // 'dark' })` in the per-test `page` fixture below — NOT via Chromium's
-      // `--force-dark-mode` flag. We tried the flag and the renderer's
-      // matchMedia('(prefers-color-scheme: dark)') still returned false; the
-      // flag affects only Chrome's UI chrome auto-darken, not the CSS media
-      // query value. emulateMedia uses CDP to override the value correctly.
+      // NOTE: dark mode for the visual configs is enforced via
+      // `page.emulateMedia({ colorScheme: 'dark' })` in the per-test `page`
+      // fixture below — NOT via Chromium's `--force-dark-mode` flag. The
+      // CLEARPATH_E2E_VISUAL=1 signal must be set on the PARENT process
+      // (npm scripts: `pw:screenshots*` | CI: workflow `env:` block on the
+      // visual jobs) — Playwright workers fork from the parent at start, so
+      // mutating process.env from a config module won't reach them.
 
       const app = await electron.launch({ args, env, timeout: 30_000 })
 

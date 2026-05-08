@@ -278,15 +278,24 @@ async function checkScreenshot(
   // pixel-diff with pngjs + pixelmatch using the same tolerance as the
   // config's toHaveScreenshot defaults (threshold + maxDiffPixelRatio).
   if (!fs.existsSync(baselinePath)) {
-    // Auto-record on first run when no baseline exists yet (Playwright's
-    // default --update-snapshots=missing behavior).
+    // CI: a missing baseline is a hard error — likely indicates LFS didn't
+    // pull, or a baseline was deleted but never regenerated. Surface it.
+    if (process.env.CI) {
+      throw new Error(
+        `Missing baseline for "${name}" at ${baselinePath}. ` +
+        `On CI, baselines must already be committed (or the run must be invoked with -u). ` +
+        `Check Git LFS pulled and the baseline exists on the branch.`,
+      )
+    }
+    // Local: auto-record on first run for ergonomics (matches Playwright's
+    // --update-snapshots=missing behavior).
     await captureElectronWindow(electronApp, baselinePath)
     test.info().annotations.push({ type: 'note', description: `Wrote missing baseline: ${name}` })
     return
   }
   const tmpPath = path.join(test.info().outputDir, `${name.replace(/[/\\]/g, '_')}-actual.png`)
   await captureElectronWindow(electronApp, tmpPath)
-  const ratio = comparePngPixelRatio(baselinePath, tmpPath)
+  const ratio = await comparePngPixelRatio(baselinePath, tmpPath)
   // Match playwright.screenshots.config.ts: maxDiffPixelRatio: 0.02.
   if (ratio === null || ratio <= 0.02) return
   await test.info().attach(`${name}-actual`, { path: tmpPath, contentType: 'image/png' })
@@ -299,30 +308,41 @@ async function checkScreenshot(
 }
 
 /**
- * Pixel-diff two PNG files using pngjs + pixelmatch (already on disk through
- * Playwright). Returns the ratio of differing pixels, or null when the
- * images have different dimensions (treated as caller's choice — we report
- * "no diff" for the missing-baseline first-run case at the call site).
+ * Pixel-diff two PNG files using pngjs + pixelmatch. Returns the ratio of
+ * differing pixels, or null when the images have different dimensions
+ * (treated as caller's choice — we report "no diff" for the missing-baseline
+ * first-run case at the call site).
+ *
+ * pixelmatch v7 is ESM-only — `require()` would throw `ERR_REQUIRE_ESM`, so
+ * we use a dynamic `import()` and cache the resolved function across calls.
  */
-function comparePngPixelRatio(baselinePath: string, actualPath: string): number | null {
-  // pixelmatch v7 is ESM-only with `export default`; @types/pixelmatch
-  // describes the older CJS shape. We require() at runtime (Playwright's
-  // loader handles ESM/CJS interop) and grab `.default`. The function
-  // signature is hand-typed to bypass the stale @types.
-  type PixelmatchFn = (
-    img1: Uint8Array,
-    img2: Uint8Array,
-    output: Uint8Array | null,
-    width: number,
-    height: number,
-    options?: { threshold?: number },
-  ) => number
+type PixelmatchFn = (
+  img1: Uint8Array,
+  img2: Uint8Array,
+  output: Uint8Array | null,
+  width: number,
+  height: number,
+  options?: { threshold?: number },
+) => number
+
+let pixelmatchCache: PixelmatchFn | null = null
+async function loadPixelmatch(): Promise<PixelmatchFn> {
+  if (pixelmatchCache) return pixelmatchCache
+  const mod = (await import('pixelmatch')) as unknown as
+    | { default: PixelmatchFn }
+    | PixelmatchFn
+  pixelmatchCache = typeof mod === 'function' ? mod : mod.default
+  return pixelmatchCache
+}
+
+async function comparePngPixelRatio(
+  baselinePath: string,
+  actualPath: string,
+): Promise<number | null> {
+  // pngjs is CJS, so a normal import works.
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { PNG } = require('pngjs') as typeof import('pngjs')
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const pmRaw = require('pixelmatch') as { default?: PixelmatchFn } | PixelmatchFn
-  const pixelmatch: PixelmatchFn =
-    typeof pmRaw === 'function' ? pmRaw : (pmRaw.default as PixelmatchFn)
+  const pixelmatch = await loadPixelmatch()
   const baseline = PNG.sync.read(fs.readFileSync(baselinePath))
   const actual = PNG.sync.read(fs.readFileSync(actualPath))
   if (baseline.width !== actual.width || baseline.height !== actual.height) {

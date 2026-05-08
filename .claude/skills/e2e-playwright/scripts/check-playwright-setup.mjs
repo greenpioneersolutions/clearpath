@@ -17,7 +17,7 @@
  *   7. e2e/screenshots/baseline directory exists (creates if missing)
  *   8. .gitattributes has Git LFS for screenshots (warns if missing)
  *   9. xvfb-run available (Linux only — warns if missing)
- *  10. node version is >= 18
+ *  10. node version is >= 22 (>= 18 is warned but still allowed)
  *
  * Exits 0 if all GREEN/YELLOW; non-zero if any RED checks.
  */

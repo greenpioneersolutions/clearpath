@@ -31,7 +31,7 @@ test.describe('ClearPathAI — Work Page', () => {
     })
 
     test('renders without critical console errors', async ({ consoleErrors }) => {
-      expect(Array.isArray(consoleErrors)).toBe(true)
+      expect(consoleErrors).toEqual([])
     })
 
     test('contains a chat input area or session controls', async ({ page }) => {
@@ -262,10 +262,7 @@ test.describe('ClearPathAI — Work Page', () => {
     })
 
     test('has no critical errors after Work page interactions', async ({ consoleErrors }) => {
-      if (consoleErrors.length > 0) {
-        console.warn('Errors on Work page:', consoleErrors)
-      }
-      expect(Array.isArray(consoleErrors)).toBe(true)
+      expect(consoleErrors).toEqual([])
     })
   })
 })

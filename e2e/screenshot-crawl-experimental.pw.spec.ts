@@ -106,23 +106,35 @@ function isUpdateMode(): boolean {
   return mode === 'all' || mode === 'changed'
 }
 
-function comparePngPixelRatio(baselinePath: string, actualPath: string): number | null {
-  // pixelmatch v7 is ESM-only; @types/pixelmatch describes the older CJS
-  // shape. Hand-type the signature and pull `.default` if present.
-  type PixelmatchFn = (
-    img1: Uint8Array,
-    img2: Uint8Array,
-    output: Uint8Array | null,
-    width: number,
-    height: number,
-    options?: { threshold?: number },
-  ) => number
+// pixelmatch v7 is ESM-only — `require()` would throw `ERR_REQUIRE_ESM`,
+// so we use a dynamic `import()` and cache the resolved function.
+type PixelmatchFn = (
+  img1: Uint8Array,
+  img2: Uint8Array,
+  output: Uint8Array | null,
+  width: number,
+  height: number,
+  options?: { threshold?: number },
+) => number
+
+let pixelmatchCache: PixelmatchFn | null = null
+async function loadPixelmatch(): Promise<PixelmatchFn> {
+  if (pixelmatchCache) return pixelmatchCache
+  const mod = (await import('pixelmatch')) as unknown as
+    | { default: PixelmatchFn }
+    | PixelmatchFn
+  pixelmatchCache = typeof mod === 'function' ? mod : mod.default
+  return pixelmatchCache
+}
+
+async function comparePngPixelRatio(
+  baselinePath: string,
+  actualPath: string,
+): Promise<number | null> {
+  // pngjs is CJS, so a normal require works.
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { PNG } = require('pngjs') as typeof import('pngjs')
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const pmRaw = require('pixelmatch') as { default?: PixelmatchFn } | PixelmatchFn
-  const pixelmatch: PixelmatchFn =
-    typeof pmRaw === 'function' ? pmRaw : (pmRaw.default as PixelmatchFn)
+  const pixelmatch = await loadPixelmatch()
   const baseline = PNG.sync.read(fs.readFileSync(baselinePath))
   const actual = PNG.sync.read(fs.readFileSync(actualPath))
   if (baseline.width !== actual.width || baseline.height !== actual.height) {
@@ -153,13 +165,20 @@ async function checkScreenshot(
     return
   }
   if (!fs.existsSync(baselinePath)) {
+    if (process.env.CI) {
+      throw new Error(
+        `Missing baseline for "${name}" at ${baselinePath}. ` +
+        `On CI, baselines must already be committed (or the run must be invoked with -u). ` +
+        `Check Git LFS pulled and the baseline exists on the branch.`,
+      )
+    }
     await captureElectronWindow(electronApp, baselinePath)
     test.info().annotations.push({ type: 'note', description: `Wrote missing baseline: ${name}` })
     return
   }
   const tmpPath = path.join(test.info().outputDir, `${name.replace(/[/\\]/g, '_')}-actual.png`)
   await captureElectronWindow(electronApp, tmpPath)
-  const ratio = comparePngPixelRatio(baselinePath, tmpPath)
+  const ratio = await comparePngPixelRatio(baselinePath, tmpPath)
   if (ratio === null || ratio <= 0.02) return
   await test.info().attach(`${name}-actual`, { path: tmpPath, contentType: 'image/png' })
   await test.info().attach(`${name}-expected`, { path: baselinePath, contentType: 'image/png' })

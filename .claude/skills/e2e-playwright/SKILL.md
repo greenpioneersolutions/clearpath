@@ -284,8 +284,8 @@ The project has a complete WDIO suite in `e2e/*.spec.ts` (see the existing `e2e-
 | [scripts/convert-wdio-to-playwright.mjs](scripts/convert-wdio-to-playwright.mjs) | Best-effort find/replace of common WDIO patterns → Playwright. Run on a single spec; review every change manually. |
 | [scripts/check-playwright-setup.mjs](scripts/check-playwright-setup.mjs) | Doctor — verifies `@playwright/test` is installed, `out/main/index.js` exists, `ELECTRON_RUN_AS_NODE` not set, snapshot dirs exist. |
 
-Run scripts:
+Run scripts (paths relative to the repo root):
 ```bash
-node /Users/jaredkremer/development/clearpath-green/.claude/skills/e2e-playwright/scripts/check-playwright-setup.mjs
-node /Users/jaredkremer/development/clearpath-green/.claude/skills/e2e-playwright/scripts/convert-wdio-to-playwright.mjs e2e/smoke.spec.ts
+node .claude/skills/e2e-playwright/scripts/check-playwright-setup.mjs
+node .claude/skills/e2e-playwright/scripts/convert-wdio-to-playwright.mjs e2e/smoke.spec.ts
 ```

@@ -28,7 +28,9 @@ export async function waitForAppReady(page: Page): Promise<void> {
   })
   // Visible nav indicates initial render finished — and gives a much better
   // error message than a bare timeout if the app crashed during boot.
-  await expect(page.locator('nav, [role="navigation"]').first()).toBeVisible({
+  // Sidebar.tsx renders <aside role="navigation" aria-label="Main navigation">,
+  // so this role+name lookup is unambiguous and survives DOM refactors.
+  await expect(page.getByRole('navigation', { name: 'Main navigation' })).toBeVisible({
     timeout: ELEMENT_TIMEOUT,
   })
 }

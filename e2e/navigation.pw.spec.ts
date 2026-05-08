@@ -115,7 +115,7 @@ test.describe('ClearPathAI — Full Navigation', () => {
     })
 
     test('has no critical errors', async ({ consoleErrors }) => {
-      expect(Array.isArray(consoleErrors)).toBe(true)
+      expect(consoleErrors).toEqual([])
     })
   })
 
@@ -143,7 +143,7 @@ test.describe('ClearPathAI — Full Navigation', () => {
     })
 
     test('has no critical errors', async ({ consoleErrors }) => {
-      expect(Array.isArray(consoleErrors)).toBe(true)
+      expect(consoleErrors).toEqual([])
     })
   })
 
@@ -192,10 +192,7 @@ test.describe('ClearPathAI — Full Navigation', () => {
         await navigateSidebarTo(page, route)
         await page.waitForTimeout(200)
       }
-      if (consoleErrors.length > 0) {
-        console.warn('Errors after rapid navigation:', consoleErrors)
-      }
-      expect(Array.isArray(consoleErrors)).toBe(true)
+      expect(consoleErrors).toEqual([])
     })
   })
 })

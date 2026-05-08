@@ -42,14 +42,15 @@ test.describe('ClearPathAI — White Label Branding', () => {
     })
 
     test('can click through all section tabs without crash', async ({ page }) => {
+      // All five tabs MUST exist — silently skipping a missing tab would
+      // hide a regression in BrandingPageRenderer's section list.
       const tabs = ['Identity', 'Brand Colors', 'UI Colors', 'Surfaces & Mode', 'Preview']
       for (const label of tabs) {
         const btn = page.getByRole('button', { name: label }).first()
-        if ((await btn.count()) > 0) {
-          await btn.click()
-          await page.waitForTimeout(300)
-          await expect(page.locator('#root')).toBeAttached()
-        }
+        await expect(btn).toBeVisible()
+        await btn.click()
+        await page.waitForTimeout(300)
+        await expect(page.locator('#root')).toBeAttached()
       }
     })
   })
@@ -148,10 +149,7 @@ test.describe('ClearPathAI — White Label Branding', () => {
 
   test.describe('Stability', () => {
     test('has no critical errors after branding interactions', async ({ consoleErrors }) => {
-      if (consoleErrors.length > 0) {
-        console.warn('Errors after branding tests:', consoleErrors)
-      }
-      expect(Array.isArray(consoleErrors)).toBe(true)
+      expect(consoleErrors).toEqual([])
     })
   })
 })
