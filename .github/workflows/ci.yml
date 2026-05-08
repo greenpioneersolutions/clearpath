@@ -217,6 +217,7 @@ jobs:
         env:
           DISPLAY: ':99'
           PW_TEST_SCREENSHOT_NO_FONTS_READY: '1'
+          CLEARPATH_E2E_VISUAL: '1'
 
       - name: Commit updated baselines
         run: |
@@ -299,6 +300,7 @@ jobs:
           DISPLAY: ':99'
           CLEARPATH_E2E_EXPERIMENTAL: '1'
           PW_TEST_SCREENSHOT_NO_FONTS_READY: '1'
+          CLEARPATH_E2E_VISUAL: '1'
 
       - name: Commit updated experimental baselines
         run: |

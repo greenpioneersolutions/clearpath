@@ -1,11 +1,13 @@
 import { defineConfig } from '@playwright/test'
 import baseConfig from './playwright.config'
 
-// Signal to fixtures.ts that this run wants dark-mode + visual-stable Electron
-// args. Set BEFORE the config object is constructed, so the env var is in
-// place when Playwright loads the worker process. fixtures.ts reads this and
-// pushes `--force-dark-mode` into the Electron launch args.
-process.env.CLEARPATH_E2E_VISUAL = '1'
+// fixtures.ts reads CLEARPATH_E2E_VISUAL=1 to push `--force-dark-mode` into
+// the Electron launch args. The env var MUST be set on the parent process
+// (npm script or CI workflow) — setting it from this config file does NOT
+// reach Playwright workers, which fork before the config module re-runs in
+// the worker. Set via:
+//   - npm: scripts use `CLEARPATH_E2E_VISUAL=1 playwright test ...`
+//   - CI:  workflow `env:` block on the visual jobs
 
 /**
  * Visual regression config — runs ONLY the screenshot crawl spec.
