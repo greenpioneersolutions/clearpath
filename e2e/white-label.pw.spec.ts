@@ -72,21 +72,21 @@ test.describe('ClearPathAI — White Label Branding', () => {
       expect(html).toContain('App Name')
     })
 
-    test('changing App Name updates the input value', async ({ page }) => {
+    test('changing App Name updates the input value and persists via IPC', async ({ page }) => {
       // Identity section renders multiple text inputs (app name, tagline,
       // wordmark fragments). Target the first one — the App Name field —
       // explicitly via .first() to avoid Playwright strict-mode violations.
       const input = page.locator('input[type="text"]').first()
-      if ((await input.count()) > 0) {
-        await input.fill('My Custom App')
-        await expect(input).toHaveValue('My Custom App')
+      // Hard requirement — if the input is missing, that's a regression in
+      // BrandingPageRenderer's Identity section, not a reason to skip.
+      await expect(input).toBeVisible()
+      await input.fill('My Custom App')
+      await expect(input).toHaveValue('My Custom App')
 
-        // App Name change persists via IPC
-        const result = (await invokeIPC(page, 'branding:get')) as Record<string, unknown>
-        if (result && result.appName) {
-          expect(result.appName).toBe('My Custom App')
-        }
-      }
+      // The change must round-trip through `branding:set` → store → `branding:get`.
+      const result = (await invokeIPC(page, 'branding:get')) as Record<string, unknown>
+      expect(result).toBeTruthy()
+      expect(result.appName).toBe('My Custom App')
     })
   })
 

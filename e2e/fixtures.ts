@@ -11,7 +11,8 @@
  *    stable across mac (HiDPI/CoreText) and linux (Xvfb/FreeType).
  *  - `consoleErrors` is auto-attached: collects `console.error` and
  *    `pageerror` for the duration of each test and writes them as a test
- *    attachment on failure.
+ *    attachment on failure. Listeners are attached by the `page` fixture
+ *    immediately after `firstWindow()` so initial-load errors are captured.
  *  - `userDataDir` gives each worker an isolated electron-store dir so a
  *    parallel run (or rerun after a crash) starts from a clean slate.
  */
@@ -41,6 +42,10 @@ type TestFixtures = {
   page: Page
   consoleErrors: string[]
 }
+
+// Per-page error buffers, populated by the `page` fixture and read by the
+// `consoleErrors` fixture. WeakMap means entries get GC'd with the Page.
+const pageErrorsMap = new WeakMap<Page, string[]>()
 
 export const test = base.extend<TestFixtures, WorkerFixtures>({
   // ── WORKER-SCOPED ────────────────────────────────────────────────────────
@@ -103,6 +108,20 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
   page: async ({ electronApp }, use) => {
     const window = await electronApp.firstWindow()
 
+    // Attach console + pageerror listeners IMMEDIATELY, before any waits or
+    // emulation. Otherwise initial-load renderer errors fire before we're
+    // listening and we miss them — Playwright's page.on() does not buffer
+    // past events. The listeners feed pageErrorsMap, which the
+    // `consoleErrors` fixture reads.
+    const errors: string[] = []
+    const onConsole = (msg: ConsoleMessage) => {
+      if (msg.type() === 'error') errors.push(`[console] ${msg.text()}`)
+    }
+    const onPageError = (e: Error) => errors.push(`[pageerror] ${e.message}\n${e.stack ?? ''}`)
+    window.on('console', onConsole)
+    window.on('pageerror', onPageError)
+    pageErrorsMap.set(window, errors)
+
     // Visual configs set CLEARPATH_E2E_VISUAL=1 on the parent process.
     // Override the renderer's prefers-color-scheme media query via CDP so
     // BrandingContext (which reads matchMedia('(prefers-color-scheme: dark)')
@@ -129,22 +148,22 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
     await window.locator('#root').waitFor({ state: 'attached', timeout: 20_000 })
 
     await use(window)
+
+    // Detach listeners so they don't accumulate across tests in the same
+    // worker (electronApp + its first window are worker-scoped, reused).
+    window.off('console', onConsole)
+    window.off('pageerror', onPageError)
+    pageErrorsMap.delete(window)
   },
 
   consoleErrors: [
     async ({ page }, use, testInfo) => {
-      const errors: string[] = []
-      const onConsole = (msg: ConsoleMessage) => {
-        if (msg.type() === 'error') errors.push(`[console] ${msg.text()}`)
-      }
-      const onPageError = (e: Error) => errors.push(`[pageerror] ${e.message}\n${e.stack ?? ''}`)
-      page.on('console', onConsole)
-      page.on('pageerror', onPageError)
+      // Errors are collected by the `page` fixture starting at firstWindow()
+      // (BEFORE the load + mount waits) so we don't miss initial-load
+      // failures. We just expose the array here and attach it on failure.
+      const errors = pageErrorsMap.get(page) ?? []
 
       await use(errors)
-
-      page.off('console', onConsole)
-      page.off('pageerror', onPageError)
 
       if (testInfo.status !== testInfo.expectedStatus && errors.length) {
         await testInfo.attach('console-errors', {

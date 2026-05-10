@@ -147,11 +147,10 @@ test.describe('ClearPathAI — App Lifecycle', () => {
       expect(html.length).toBeGreaterThan(300)
     })
 
-    test('Journey completed with no critical errors', async ({ consoleErrors }) => {
-      if (consoleErrors.length > 0) {
-        console.warn('Errors during user journey:', consoleErrors.slice(0, 5))
-      }
-      expect(Array.isArray(consoleErrors)).toBe(true)
+    test('final tab in user journey has no critical errors', async ({ consoleErrors }) => {
+      // Test-scoped: covers errors from the page fixture's load + navigation
+      // for THIS test. Prior 'journey' tests assert their own emptiness.
+      expect(consoleErrors).toEqual([])
     })
   })
 

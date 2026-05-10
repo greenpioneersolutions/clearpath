@@ -111,7 +111,7 @@ test.describe('ClearPathAI — Configure Page', () => {
     })
 
     test('has no critical errors', async ({ consoleErrors }) => {
-      expect(Array.isArray(consoleErrors)).toBe(true)
+      expect(consoleErrors).toEqual([])
     })
   })
 
@@ -356,7 +356,7 @@ test.describe('ClearPathAI — Configure Page', () => {
   // ── Cross-Tab Navigation Stability ─────────────────────────────────────
 
   test.describe('Tab Round-Trip Stability', () => {
-    test('cycles through all tabs without crashing', async ({ page }) => {
+    test('cycles through all tabs without crashing or console errors', async ({ page, consoleErrors }) => {
       // PR #47: integrations/extensions removed; tools added.
       const tabs = [
         'settings', 'tools', 'policies',
@@ -372,13 +372,10 @@ test.describe('ClearPathAI — Configure Page', () => {
         const html = await root.innerHTML()
         expect(html.length).toBeGreaterThan(100)
       }
-    })
 
-    test('has no critical errors after cycling all tabs', async ({ consoleErrors }) => {
-      if (consoleErrors.length > 0) {
-        console.warn('Errors after Configure tab round-trip:', consoleErrors)
-      }
-      expect(Array.isArray(consoleErrors)).toBe(true)
+      // The cycle interactions happen inside this test body so consoleErrors
+      // (test-scoped) actually covers them.
+      expect(consoleErrors).toEqual([])
     })
   })
 })

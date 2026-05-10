@@ -43,7 +43,7 @@ test.describe('ClearPathAI — Home Page', () => {
     })
 
     test('has no critical errors', async ({ consoleErrors }) => {
-      expect(Array.isArray(consoleErrors)).toBe(true)
+      expect(consoleErrors).toEqual([])
     })
   })
 

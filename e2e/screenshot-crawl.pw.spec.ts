@@ -1,21 +1,35 @@
 /**
  * e2e/screenshot-crawl.pw.spec.ts
  *
- * Visual coverage spec — crawls every page and tab in the app and captures a
- * screenshot of each via `expect(page).toHaveScreenshot()`.
+ * Visual coverage spec — crawls every page and tab in the app and writes/
+ * compares a screenshot of each.
+ *
+ * Capture pipeline (NOT Playwright's `expect(page).toHaveScreenshot()`):
+ *   - Captures via `BrowserWindow.capturePage()` from the main process
+ *     (through `electronApp.evaluate`). Bypasses Playwright's implicit waits
+ *     inside `page.screenshot` (fonts.ready, RAF, animation-sync) which hang
+ *     on busy Electron pages (Memory tab, Skills tab) where async promises
+ *     stay pending in the headless renderer.
+ *   - Updates: `-u` writes the captured PNG straight to baseline.
+ *   - Compares: captures into `test.info().outputDir` then pixel-diffs the
+ *     baseline vs actual via `pngjs` + dynamic `import('pixelmatch')`.
+ *     The same tolerance as `playwright.screenshots.config.ts` defaults
+ *     (`threshold: 0.2`, `maxDiffPixelRatio: 0.02`).
  *
  * Cross-OS strategy is centralized in `playwright.screenshots.config.ts`:
  *   - Window pinned to 1280×800 content size
  *   - DPR pinned to 1 via `--force-device-scale-factor=1`
  *   - `--hide-scrollbars` keeps usable viewport identical
- *   - Dark color scheme matches BrandingContext
- *   - threshold: 0.2 + maxDiffPixelRatio: 0.02 covers FreeType vs CoreText
+ *   - Dark color scheme via `page.emulateMedia({ colorScheme: 'dark' })`
+ *     in fixtures (CLEARPATH_E2E_VISUAL=1 set on the parent process)
+ *   - `threshold: 0.2` + `maxDiffPixelRatio: 0.02` covers FreeType vs CoreText
  *
  * What still fails the test:
  *   - Navigation / element-wait timeouts
  *   - JS exceptions thrown from the spec or app
  *   - Required Insights tabs missing (built-in tabs throw)
  *   - Visual diff above the configured threshold (use -u to update baselines)
+ *   - On CI: a missing baseline (would silently auto-create locally)
  *
  * Local usage:
  *   npm run pw:screenshots          - compare against committed baselines
@@ -122,6 +136,8 @@ const CONFIGURE_TABS: ConfigureTab[] = [
 
 const CONFIGURE_SUB_TABS: ConfigureSubTab[] = [
   // ── Settings / "General" ──
+  // Order matches Settings.tsx TABS array (CLI Flags is the default sub-tab).
+  { configureTab: 'settings', subLabel: 'CLI Flags',       screenshot: 'configure--tab-settings--sub-cli-flags' },
   { configureTab: 'settings', subLabel: 'Model',           screenshot: 'configure--tab-settings--sub-model' },
   { configureTab: 'settings', subLabel: 'Session Limits',  screenshot: 'configure--tab-settings--sub-limits' },
   { configureTab: 'settings', subLabel: 'Profiles',        screenshot: 'configure--tab-settings--sub-profiles' },

@@ -133,7 +133,7 @@ test.describe('ClearPathAI — Extensions', () => {
     })
 
     test('has no critical errors', async ({ consoleErrors }) => {
-      expect(Array.isArray(consoleErrors)).toBe(true)
+      expect(consoleErrors).toEqual([])
     })
   })
 
@@ -369,7 +369,7 @@ test.describe('ClearPathAI — Extensions', () => {
     })
 
     test('has no critical errors after Extensions interactions', async ({ consoleErrors }) => {
-      expect(Array.isArray(consoleErrors)).toBe(true)
+      expect(consoleErrors).toEqual([])
     })
   })
 })

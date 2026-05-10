@@ -402,7 +402,7 @@ test.describe('ClearPathAI — Extension Integration', () => {
     test('has no critical errors after all integration tests', async ({ consoleErrors }) => {
       // Use the auto-attached fixture — collects console.error + pageerror
       // for the duration of THIS test only (test-scoped).
-      expect(Array.isArray(consoleErrors)).toBe(true)
+      expect(consoleErrors).toEqual([])
     })
   })
 })

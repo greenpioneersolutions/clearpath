@@ -31,7 +31,7 @@ test.describe('ClearPathAI — Integrations', () => {
     })
 
     test('has no critical errors on initial render', async ({ consoleErrors }) => {
-      expect(Array.isArray(consoleErrors)).toBe(true)
+      expect(consoleErrors).toEqual([])
     })
   })
 
@@ -246,7 +246,7 @@ test.describe('ClearPathAI — Integrations', () => {
     })
 
     test('has no critical errors after interactions', async ({ consoleErrors }) => {
-      expect(Array.isArray(consoleErrors)).toBe(true)
+      expect(consoleErrors).toEqual([])
     })
   })
 })
