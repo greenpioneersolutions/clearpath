@@ -42,24 +42,25 @@ test.describe('ClearPathAI — Insights Page', () => {
   // ── Tab Switching ─────────────────────────────────────────────────────
 
   test.describe('Tab Switching', () => {
+    // Activity + Compliance are BUILTIN_TABS in pages/Insights.tsx — always
+    // present. A missing tab is a regression, never gracefully skipped.
+
     test('can switch to Activity tab', async ({ page }) => {
       const tab = page.getByRole('button', { name: 'Activity' }).first()
-      if ((await tab.count()) > 0) {
-        await tab.click()
-        await page.waitForTimeout(500)
-        const html = await getRootHTML(page)
-        expect(html.length).toBeGreaterThan(200)
-      }
+      await expect(tab).toBeVisible()
+      await tab.click()
+      await page.waitForTimeout(500)
+      const html = await getRootHTML(page)
+      expect(html.length).toBeGreaterThan(200)
     })
 
     test('can switch to Compliance tab', async ({ page }) => {
       const tab = page.getByRole('button', { name: 'Compliance' }).first()
-      if ((await tab.count()) > 0) {
-        await tab.click()
-        await page.waitForTimeout(500)
-        const html = await getRootHTML(page)
-        expect(html.length).toBeGreaterThan(200)
-      }
+      await expect(tab).toBeVisible()
+      await tab.click()
+      await page.waitForTimeout(500)
+      const html = await getRootHTML(page)
+      expect(html.length).toBeGreaterThan(200)
     })
 
     test('has no critical errors after tab switching', async ({ consoleErrors }) => {
@@ -72,47 +73,44 @@ test.describe('ClearPathAI — Insights Page', () => {
   test.describe('Tab Active State', () => {
     test('clicking Activity tab gives it active styling', async ({ page }) => {
       const btn = page.getByRole('button', { name: 'Activity' }).first()
-      if ((await btn.count()) > 0) {
-        await btn.click()
-        await page.waitForTimeout(300)
-        const classes = (await btn.getAttribute('class')) ?? ''
-        // Active tab should have a distinctive style (border-blue, text-blue, etc.)
-        expect(classes.length).toBeGreaterThan(0)
-      }
+      await expect(btn).toBeVisible()
+      await btn.click()
+      await page.waitForTimeout(300)
+      const classes = (await btn.getAttribute('class')) ?? ''
+      // Active tab should have a distinctive style (border-blue, text-blue, etc.)
+      expect(classes.length).toBeGreaterThan(0)
     })
 
     test('Compliance tab shows compliance-related content', async ({ page }) => {
       const btn = page.getByRole('button', { name: 'Compliance' }).first()
-      if ((await btn.count()) > 0) {
-        await btn.click()
-        await page.waitForTimeout(500)
-        const html = await getRootHTML(page)
-        const hasComplianceContent =
-          html.includes('policy') || html.includes('Policy') ||
-          html.includes('audit') || html.includes('Audit') ||
-          html.includes('compliance') || html.includes('Compliance') ||
-          html.includes('scan') || html.includes('Scan')
-        expect(hasComplianceContent).toBe(true)
-      }
+      await expect(btn).toBeVisible()
+      await btn.click()
+      await page.waitForTimeout(500)
+      const html = await getRootHTML(page)
+      const hasComplianceContent =
+        html.includes('policy') || html.includes('Policy') ||
+        html.includes('audit') || html.includes('Audit') ||
+        html.includes('compliance') || html.includes('Compliance') ||
+        html.includes('scan') || html.includes('Scan')
+      expect(hasComplianceContent).toBe(true)
     })
 
     test('tab round-trip preserves rendering', async ({ page }) => {
+      // Both tabs are BUILTIN — assert visible then click; no silent skip.
       const tabs = ['Activity', 'Compliance']
       for (const label of tabs) {
         const btn = page.getByRole('button', { name: label }).first()
-        if ((await btn.count()) > 0) {
-          await btn.click()
-          await page.waitForTimeout(300)
-        }
+        await expect(btn).toBeVisible()
+        await btn.click()
+        await page.waitForTimeout(300)
       }
       // Return to Activity
       const activityBtn = page.getByRole('button', { name: 'Activity' }).first()
-      if ((await activityBtn.count()) > 0) {
-        await activityBtn.click()
-        await page.waitForTimeout(300)
-        const html = await getRootHTML(page)
-        expect(html.length).toBeGreaterThan(200)
-      }
+      await expect(activityBtn).toBeVisible()
+      await activityBtn.click()
+      await page.waitForTimeout(300)
+      const html = await getRootHTML(page)
+      expect(html.length).toBeGreaterThan(200)
     })
   })
 

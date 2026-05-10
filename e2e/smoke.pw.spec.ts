@@ -53,13 +53,18 @@ test.describe('ClearPathAI — Smoke Tests', () => {
   // ── 3. Sidebar Navigation ───────────────────────────────────────────────
 
   test('renders the sidebar navigation', async ({ page }) => {
-    // The sidebar is rendered as a <nav> element in Sidebar.tsx
-    await expect(page.locator('nav').first()).toBeAttached({ timeout: ELEMENT_TIMEOUT })
+    // Sidebar.tsx renders <aside role="navigation" aria-label="Main navigation">.
+    // Use the role+name lookup so a stray <nav> elsewhere in the page
+    // (tab headers, etc.) cannot satisfy this check.
+    await expect(page.getByRole('navigation', { name: 'Main navigation' })).toBeVisible({
+      timeout: ELEMENT_TIMEOUT,
+    })
   })
 
   test('renders multiple navigation links in the sidebar', async ({ page }) => {
-    // NavLink elements render as anchor tags inside the nav
-    const count = await page.locator('nav a').count()
+    // Scope to the sidebar specifically — `aside a` matches only the
+    // sidebar's anchors, not any other <nav> a in the page.
+    const count = await page.locator('aside a').count()
     expect(count).toBeGreaterThan(0)
   })
 

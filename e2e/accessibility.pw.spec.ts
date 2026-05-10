@@ -104,10 +104,11 @@ test.describe('ClearPathAI — Accessibility & Keyboard', () => {
       await navigateSidebarTo(page, 'Home')
       await page.waitForTimeout(500)
 
-      // Focus a sidebar link via Tab navigation
-      // Tab until we hit a link element
+      // Tab into the document until focus lands on an anchor. The sidebar's
+      // top-level NavLinks are anchors and should be reachable within a few
+      // tabs. If not, that's a keyboard-accessibility regression — fail.
       let foundLink = false
-      for (let i = 0; i < 10; i++) {
+      for (let i = 0; i < 20; i++) {
         await page.keyboard.press('Tab')
         await page.waitForTimeout(100)
         const tag = await page.evaluate(() => document.activeElement?.tagName)
@@ -116,14 +117,16 @@ test.describe('ClearPathAI — Accessibility & Keyboard', () => {
           break
         }
       }
+      expect(
+        foundLink,
+        'Tab navigation never reached an <a> element within 20 presses — sidebar links are not keyboard-reachable',
+      ).toBe(true)
 
-      if (foundLink) {
-        await page.keyboard.press('Enter')
-        await page.waitForTimeout(500)
+      await page.keyboard.press('Enter')
+      await page.waitForTimeout(500)
 
-        // Navigation should have occurred (hash changed)
-        await expect(page.locator('#root')).toBeAttached()
-      }
+      // Navigation should have occurred (hash changed) and the app is alive.
+      await expect(page.locator('#root')).toBeAttached()
     })
   })
 

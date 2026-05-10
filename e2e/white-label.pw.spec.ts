@@ -59,11 +59,13 @@ test.describe('ClearPathAI — White Label Branding', () => {
 
   test.describe('Identity Section', () => {
     test.beforeEach(async ({ page }) => {
+      // Identity is a built-in BrandingPageRenderer section — must exist.
+      // A missing tab is a regression, not a reason to fall through to
+      // whichever section happens to be rendered by default.
       const btn = page.getByRole('button', { name: 'Identity' }).first()
-      if ((await btn.count()) > 0) {
-        await btn.click()
-        await page.waitForTimeout(300)
-      }
+      await expect(btn).toBeVisible()
+      await btn.click()
+      await page.waitForTimeout(300)
     })
 
     test('shows App Name input with a value', async ({ page }) => {
@@ -94,11 +96,11 @@ test.describe('ClearPathAI — White Label Branding', () => {
 
   test.describe('Brand Colors Section', () => {
     test.beforeEach(async ({ page }) => {
+      // Brand Colors is a built-in BrandingPageRenderer section — must exist.
       const btn = page.getByRole('button', { name: 'Brand Colors' }).first()
-      if ((await btn.count()) > 0) {
-        await btn.click()
-        await page.waitForTimeout(300)
-      }
+      await expect(btn).toBeVisible()
+      await btn.click()
+      await page.waitForTimeout(300)
     })
 
     test('renders color picker inputs', async ({ page }) => {

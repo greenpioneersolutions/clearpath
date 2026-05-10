@@ -139,6 +139,18 @@ await expect(locator).toBeVisible();              // ✅ retries
 
 ---
 
+## Don't write tests that pass silently
+
+The most common review feedback on the existing suite was variants of "this test passes when the thing it claims to verify is missing." Three rules:
+
+1. **Test name must match the assertion.** `'has no critical errors'` MUST assert `expect(consoleErrors).toEqual([])`, not `Array.isArray(consoleErrors)` (always true). `'contains a nav element with aria-label'` MUST assert the aria-label value, not just attachment.
+2. **No `if (count > 0)` guards** for elements the test name treats as required. Use `await expect(loc).toBeVisible()` so a missing element fails the test loudly. Reserve `if`-guards for genuinely feature-gated UI and pair them with an explicit `test.skip(true, 'reason')`.
+3. **Scope locators.** `page.locator('nav').first()` matches any `<nav>` on the page (tab strips, breadcrumbs, etc). Prefer `page.getByRole('navigation', { name: 'Main navigation' })` or scope to a known container (`page.locator('aside').getByRole(...)`).
+
+> Full taxonomy + worked before/after examples: [references/anti-patterns.md](references/anti-patterns.md).
+
+---
+
 ## React input values — `fill()` works (no native-setter dance needed)
 
 Unlike WDIO's `setValue`, **Playwright's `locator.fill()` correctly fires React's `onChange`** because it dispatches real input events from the browser side. Only fall back to the native-setter helper for stubborn cases (CodeMirror, Monaco, custom controlled wrappers that intercept `input`).
@@ -255,6 +267,7 @@ The project has a complete WDIO suite in `e2e/*.spec.ts` (see the existing `e2e-
 | [references/typescript-setup.md](references/typescript-setup.md) | `tsconfig.e2e.json`, why Playwright runs even with TS errors, separate `tsc --noEmit` step | TypeScript errors in e2e files |
 | [references/organizing-tests.md](references/organizing-tests.md) | `test.describe.configure`, parallel/serial mode, retries, projects, sharding | Organizing or running subsets of tests |
 | [references/migration-from-webdriverio.md](references/migration-from-webdriverio.md) | API translation table, what stays, what changes, helper rewrites | Converting an existing WDIO spec |
+| [references/anti-patterns.md](references/anti-patterns.md) | Silent-pass guards, name/assertion mismatches, ESM-require traps, listener timing, baseline auto-create — every mistake the PR review caught | **Read before writing or reviewing any new spec.** Quick scan if you're adding a `if ((await loc.count()) > 0)` guard or a "no errors" assertion |
 
 ---
 

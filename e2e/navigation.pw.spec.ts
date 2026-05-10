@@ -25,8 +25,13 @@ test.describe('ClearPathAI — Full Navigation', () => {
     })
 
     test('contains a nav element with aria-label', async ({ page }) => {
+      // Sidebar.tsx renders the inner primary <nav aria-label="Primary">
+      // inside <aside role="navigation" aria-label="Main navigation">.
+      // Assert the actual aria-label value so this test catches regressions
+      // where the attribute is dropped or renamed (which screen readers care about).
       const nav = page.locator('aside nav')
       await expect(nav).toBeAttached()
+      await expect(nav).toHaveAttribute('aria-label', 'Primary')
     })
 
     test('renders the expected navigation items', async ({ page }) => {
