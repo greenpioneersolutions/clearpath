@@ -42,9 +42,10 @@ test.describe('ClearPathAI — White Label Branding', () => {
     })
 
     test('can click through all section tabs without crash', async ({ page }) => {
-      // All five tabs MUST exist — silently skipping a missing tab would
-      // hide a regression in BrandingPageRenderer's section list.
-      const tabs = ['Identity', 'Brand Colors', 'UI Colors', 'Surfaces & Mode', 'Preview']
+      // Order matches WhiteLabel.tsx's section nav (Theme Presets is first
+      // and is the default section — including it in the list catches a
+      // regression where the presets tab is removed/renamed).
+      const tabs = ['Theme Presets', 'Identity', 'Brand Colors', 'UI Colors', 'Surfaces & Mode', 'Preview']
       for (const label of tabs) {
         const btn = page.getByRole('button', { name: label }).first()
         await expect(btn).toBeVisible()
@@ -111,12 +112,12 @@ test.describe('ClearPathAI — White Label Branding', () => {
 
     test('color inputs have hex values', async ({ page }) => {
       const colorInputs = page.locator('input[type="color"]')
-      const count = await colorInputs.count()
-      if (count > 0) {
-        const value = await colorInputs.first().inputValue()
-        // Color inputs return hex values like #5B4FC4
-        expect(value).toMatch(/^#[0-9a-fA-F]{6}$/)
-      }
+      // Brand Colors section MUST render at least one color input
+      // (Primary, Secondary, Accent, etc) — the test exists to verify the
+      // hex format, so a missing input is a regression to catch, not skip.
+      await expect(colorInputs.first()).toBeVisible()
+      const value = await colorInputs.first().inputValue()
+      expect(value).toMatch(/^#[0-9a-fA-F]{6}$/)
     })
   })
 
@@ -124,18 +125,20 @@ test.describe('ClearPathAI — White Label Branding', () => {
 
   test.describe('Reset to Default', () => {
     test('Reset to Default button exists on presets section', async ({ page }) => {
-      // Navigate back to the presets section where the Reset button lives
+      // Theme Presets is a built-in WhiteLabel section — required, not optional.
+      // Asserting visible up front means a missing tab fails this test loudly
+      // instead of letting the test pass when "Reset to Default" happens to
+      // appear elsewhere in the rendered HTML.
       const presetsBtn = page.getByRole('button', { name: 'Theme Presets' }).first()
-      if ((await presetsBtn.count()) > 0) {
-        await presetsBtn.click()
-        await page.waitForTimeout(300)
-        // Capture the theme presets gallery with the Reset button visible
-        await captureScreenshot(page, 'white-label/theme-presets')
-      }
+      await expect(presetsBtn).toBeVisible()
+      await presetsBtn.click()
+      await page.waitForTimeout(300)
+      // Capture the theme presets gallery with the Reset button visible
+      await captureScreenshot(page, 'white-label/theme-presets')
 
-      const html = await getRootHTML(page)
-      const hasReset = html.includes('Reset to Default')
-      expect(hasReset).toBe(true)
+      // The Reset button MUST be visible inside the presets section, not
+      // just present somewhere in the rendered HTML.
+      await expect(page.getByRole('button', { name: 'Reset to Default' })).toBeVisible()
     })
 
     test('reset restores default branding via IPC', async ({ page }) => {

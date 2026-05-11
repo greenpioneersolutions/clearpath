@@ -138,60 +138,67 @@ test.describe('ClearPathAI — Integrations', () => {
       await page.waitForTimeout(500)
     })
 
-    test('shows a password input for the GitHub token', async ({ page }) => {
-      const input = page.locator('input[type="password"][placeholder*="ghp_"]')
-      const exists = (await input.count()) > 0
-      // The input may be hidden behind a "Connect" button click — either way is valid
-      if (!exists) {
-        // Try clicking Connect GitHub first
-        const connectBtn = page.getByRole('button', { name: 'Connect' }).first()
-        if ((await connectBtn.count()) > 0) {
-          await connectBtn.click()
-          await page.waitForTimeout(300)
-        }
+    /**
+     * Reveal the GitHub token form by clicking "Connect GitHub" if the form
+     * isn't already shown. IntegrationCard hides the form behind a connect
+     * button until the user opens it (or reveals it after a prior session).
+     */
+    async function revealTokenInput(page: import('@playwright/test').Page): Promise<void> {
+      const input = page.getByLabel('GitHub personal access token')
+      if ((await input.count()) === 0) {
+        // The card shows "Connect GitHub" (or "Connect Atlassian" etc).
+        // Use the exact GitHub variant to avoid strict-mode collision with
+        // sibling integration cards.
+        const connectBtn = page.getByRole('button', { name: 'Connect GitHub', exact: true })
+        await expect(connectBtn).toBeVisible()
+        await connectBtn.click()
+        await page.waitForTimeout(300)
       }
+      // After reveal, the labeled input MUST exist.
+      await expect(input).toBeVisible()
+    }
+
+    test('shows a password input for the GitHub token', async ({ page }) => {
+      await revealTokenInput(page)
+      // The form's tokens have a `ghp_`-prefixed placeholder.
       const html = await getRootHTML(page)
       expect(html.includes('ghp_') || html.includes('token') || html.includes('Token')).toBe(true)
     })
 
     test('token input accepts typed text', async ({ page }) => {
+      await revealTokenInput(page)
       const selector = 'input[type="password"]'
-      const input = page.locator(selector).first()
-      if ((await input.count()) > 0) {
-        await setInputValue(page, selector, 'ghp_test_fake_token')
-        const value = await getInputValue(page, selector)
-        expect(value).toBe('ghp_test_fake_token')
-      }
+      await setInputValue(page, selector, 'ghp_test_fake_token')
+      const value = await getInputValue(page, selector)
+      expect(value).toBe('ghp_test_fake_token')
     })
 
     test('Connect button with invalid token shows an error response', async ({ page }) => {
+      await revealTokenInput(page)
       const selector = 'input[type="password"]'
-      const input = page.locator(selector).first()
-      if (!((await input.count()) > 0)) return
-
       await setInputValue(page, selector, 'ghp_invalid_token_12345')
       await page.waitForTimeout(200)
 
-      // Click the Connect button (not Disconnect)
+      // Click the Connect button (not Disconnect). Required button — assert
+      // it's visible so a missing button fails the test loudly.
       const connectBtn = page
         .locator('//button[contains(., "Connect") and not(contains(., "Disconnect"))]')
         .first()
-      if ((await connectBtn.count()) > 0) {
-        await connectBtn.click()
-        // Wait for the IPC round-trip to complete
-        await page.waitForTimeout(2000)
+      await expect(connectBtn).toBeVisible()
+      await connectBtn.click()
+      // Wait for the IPC round-trip to complete
+      await page.waitForTimeout(2000)
 
-        // Capture the error / rejected-credentials state
-        await captureScreenshot(page, 'integrations/github-connect-error')
+      // Capture the error / rejected-credentials state
+      await captureScreenshot(page, 'integrations/github-connect-error')
 
-        // After a failed connection, should show an error message or the form stays
-        const html = await getRootHTML(page)
-        const hasErrorOrForm =
-          html.includes('error') || html.includes('Error') ||
-          html.includes('failed') || html.includes('Failed') ||
-          html.includes('credentials') || html.includes('ghp_')
-        expect(hasErrorOrForm).toBe(true)
-      }
+      // After a failed connection, should show an error message or the form stays
+      const html = await getRootHTML(page)
+      const hasErrorOrForm =
+        html.includes('error') || html.includes('Error') ||
+        html.includes('failed') || html.includes('Failed') ||
+        html.includes('credentials') || html.includes('ghp_')
+      expect(hasErrorOrForm).toBe(true)
     })
   })
 

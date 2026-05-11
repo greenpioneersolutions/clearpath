@@ -91,6 +91,90 @@ if ((await ext.count()) === 0) {
 
 ---
 
+### 1a. Selectors that can never match the real DOM
+
+A subspecies of silent-pass: a selector typed against the wrong tag/attribute combination matches zero elements forever, then the `if (count > 0)` guard around it makes the test pass without doing anything.
+
+```ts
+// ❌ HomeHub action cards are <button onClick={navigate(...)}> NOT <a> —
+// `a[href*="/work"]` matches nothing on this page, ever.
+const cardLink = page.locator('a[href*="/work"]').first()
+if ((await cardLink.count()) > 0) {
+  await cardLink.click()
+  expect(...).toContain('/work')   // never runs
+}
+```
+
+**Fix** — use the actual element type and click via accessible name:
+
+```ts
+// ✅ Click the button by its visible text, then assert the route change
+await page.getByRole('button', { name: /Ask a question or get guidance/ }).click()
+await page.waitForTimeout(500)
+const hash = await page.evaluate(() => window.location.hash)
+expect(hash).toContain('/work')
+expect(hash).toContain('wizard')
+```
+
+Sniff test for this anti-pattern: any time you write a CSS attribute selector (`[href*=...]`, `[class*=...]`, `[data-foo=...]`), open the actual rendered HTML in DevTools and verify the attribute exists. If it doesn't, your test is broken even if it's "passing."
+
+### 1b. Trivially-true substring assertions
+
+`expect(html.includes('button')).toBe(true)` is true for almost any non-empty page — it matches the literal word "button" inside any rendered class name, `<button>` tag, button-related text, etc. The test passes when nothing it's supposedly checking is actually present.
+
+```ts
+// ❌ Always true on any page that has any button anywhere
+test('action cards have clickable links/buttons', async ({ page }) => {
+  const html = await getRootHTML(page)
+  const hasClickable = html.includes('href') || html.includes('button') || html.includes('onClick')
+  expect(hasClickable).toBe(true)
+})
+```
+
+**Fix** — assert on the actual content the test claims to verify:
+
+```ts
+// ✅ Check each card heading explicitly — if a card is removed or renamed,
+//    the test fails with a clear "expected text not found" message.
+test('all four action cards render with their headings', async ({ page }) => {
+  for (const heading of [
+    'Ask a question or get guidance',
+    'Write or do something',
+    'Explore what I can do',
+    'Set up my workspace',
+  ]) {
+    await expect(page.getByText(heading)).toBeVisible()
+  }
+})
+```
+
+### 1c. Incomplete data tables for crawl/loop tests
+
+When a test iterates over an "expected" array and the source-of-truth has more entries than the test enumerates, the missing entries get zero coverage. A silent gap.
+
+```ts
+// ❌ Source has 6 sections; test only enumerates 5 — Theme Presets is silently uncovered
+const tabs = ['Identity', 'Brand Colors', 'UI Colors', 'Surfaces & Mode', 'Preview']
+for (const label of tabs) await expect(page.getByRole('button', { name: label })).toBeVisible()
+```
+
+**Fix** — keep the test's array in sync with the source. Add a comment naming the source file so reviewers know where to look:
+
+```ts
+// ✅ Order matches WhiteLabel.tsx's section nav. Update both together.
+const tabs = ['Theme Presets', 'Identity', 'Brand Colors', 'UI Colors', 'Surfaces & Mode', 'Preview']
+```
+
+For visual crawls in particular, also keep an eye out for **orphan baselines** — a PNG sitting in `e2e/screenshots/baseline/` whose tag isn't in any data table means a previous spec entry was deleted but the baseline wasn't (or — like our case — the baseline was added to LFS but the corresponding crawl entry was never wired up). Periodic check:
+
+```bash
+# Tags in the baseline dir that don't appear in any data table
+ls e2e/screenshots/baseline/*.png | xargs -n1 basename | sed 's/\.png$//' | \
+  while read tag; do grep -q "$tag" e2e/screenshot-crawl*.spec.ts || echo "ORPHAN: $tag"; done
+```
+
+---
+
 ## 2. Test name doesn't match what the assertion checks
 
 Reviewers grep test titles to understand coverage. If the title lies, reviewers waste time and regressions slip through.

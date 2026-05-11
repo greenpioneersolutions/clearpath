@@ -178,45 +178,47 @@ test.describe('ClearPathAI — Extensions', () => {
     test('expands an extension card on click to show details', async ({ page }) => {
       const html = await getRootHTML(page)
       if (html.includes('No extensions installed')) {
-        // Skip — no extensions to expand
+        test.skip(true, 'No extensions installed in this build')
         return
       }
 
-      // Click first extension card (any element with border and cursor-pointer in the grid)
+      // After the empty-state guard above, at least one card MUST exist.
       const firstCard = page.locator('div.cursor-pointer').first()
-      if ((await firstCard.count()) > 0) {
-        await firstCard.click()
-        await page.waitForTimeout(300)
+      await expect(firstCard).toBeVisible()
+      await firstCard.click()
+      await page.waitForTimeout(300)
 
-        // Capture the expanded detail panel
-        await captureScreenshot(page, 'extensions/card-expanded')
+      // Capture the expanded detail panel
+      await captureScreenshot(page, 'extensions/card-expanded')
 
-        const expandedHtml = await getRootHTML(page)
-        // Detail panel shows metadata
-        const hasDetails =
-          expandedHtml.includes('Author') ||
-          expandedHtml.includes('ID') ||
-          expandedHtml.includes('Permissions')
-        expect(hasDetails).toBe(true)
-      }
+      const expandedHtml = await getRootHTML(page)
+      // Detail panel shows metadata
+      const hasDetails =
+        expandedHtml.includes('Author') ||
+        expandedHtml.includes('ID') ||
+        expandedHtml.includes('Permissions')
+      expect(hasDetails).toBe(true)
     })
 
     test('shows permissions section in expanded panel', async ({ page }) => {
       const html = await getRootHTML(page)
-      if (html.includes('No extensions installed')) return
+      if (html.includes('No extensions installed')) {
+        test.skip(true, 'No extensions installed in this build')
+        return
+      }
 
       const firstCard = page.locator('div.cursor-pointer').first()
-      if ((await firstCard.count()) > 0) {
-        await firstCard.click()
-        await page.waitForTimeout(300)
+      await expect(firstCard).toBeVisible()
+      await firstCard.click()
+      await page.waitForTimeout(300)
 
-        const expandedHtml = await getRootHTML(page)
-        if (expandedHtml.includes('Permissions')) {
-          // Should show Granted/Denied badges
-          const hasPerms =
-            expandedHtml.includes('Granted') || expandedHtml.includes('Denied')
-          expect(hasPerms).toBe(true)
-        }
+      const expandedHtml = await getRootHTML(page)
+      // Permissions section may legitimately be absent if the extension
+      // declared no permissions — but if present it must have status badges.
+      if (expandedHtml.includes('Permissions')) {
+        const hasPerms =
+          expandedHtml.includes('Granted') || expandedHtml.includes('Denied')
+        expect(hasPerms).toBe(true)
       }
     })
   })

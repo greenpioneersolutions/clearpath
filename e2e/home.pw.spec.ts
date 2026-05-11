@@ -115,23 +115,33 @@ test.describe('ClearPathAI — Home Page', () => {
   // ── Action Card Navigation ────────────────────────────────────────────
 
   test.describe('Action Card Navigation', () => {
-    test('action cards have clickable links/buttons', async ({ page }) => {
-      const html = await getRootHTML(page)
-      const hasClickable = html.includes('href') || html.includes('button') ||
-        html.includes('onClick')
-      expect(hasClickable).toBe(true)
+    test('all four action cards render with their headings', async ({ page }) => {
+      // HomeHub.tsx renders 4 cards with these exact headings. A trivial
+      // `html.includes('button')` would always be true on any non-empty
+      // page; asserting on the actual card headings catches regressions
+      // where a card is removed or its title changes.
+      for (const heading of [
+        'Ask a question or get guidance',
+        'Write or do something',
+        'Explore what I can do',
+        'Set up my workspace',
+      ]) {
+        await expect(page.getByText(heading)).toBeVisible()
+      }
     })
 
-    test('clicking an action card navigates away from home', async ({ page }) => {
-      // Find the first action card link (these navigate to /work with params)
-      const cardLink = page.locator('a[href*="/work"]').first()
-      if ((await cardLink.count()) > 0) {
-        await cardLink.click()
-        await page.waitForTimeout(500)
+    test('clicking the "Ask a question" action card navigates to the wizard', async ({
+      page,
+    }) => {
+      // HomeHub action cards are <button onClick={navigate(...)}> not <a> —
+      // a CSS selector like `a[href*="/work"]` would silently match nothing.
+      // Click via accessible name and assert the route change.
+      await page.getByRole('button', { name: /Ask a question or get guidance/ }).click()
+      await page.waitForTimeout(500)
 
-        const hash = await page.evaluate(() => window.location.hash)
-        expect(hash).toContain('/work')
-      }
+      const hash = await page.evaluate(() => window.location.hash)
+      expect(hash).toContain('/work')
+      expect(hash).toContain('wizard')
     })
   })
 })

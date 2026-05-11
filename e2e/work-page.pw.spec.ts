@@ -174,20 +174,23 @@ test.describe('ClearPathAI — Work Page', () => {
     })
 
     test('pressing Escape closes autocomplete (when session active)', async ({ page }) => {
-      if (!(await isInputAvailable(page))) return
+      if (!(await isInputAvailable(page))) {
+        test.skip(true, 'No active session — slash autocomplete unavailable')
+        return
+      }
 
       const selector = '[aria-label="Message input"]'
       await setInputValue(page, selector, '/')
       await page.waitForTimeout(500)
 
-      const listboxBefore = page.locator('[role="listbox"]')
-      if ((await listboxBefore.count()) > 0) {
-        await page.keyboard.press('Escape')
-        await page.waitForTimeout(300)
+      // Slash autocomplete MUST open when '/' is typed into the active
+      // session input — that's the entire feature this test covers.
+      const listbox = page.locator('[role="listbox"]')
+      await expect(listbox).toBeVisible()
 
-        const listboxAfter = page.locator('[role="listbox"]')
-        expect(await listboxAfter.count()).toBe(0)
-      }
+      await page.keyboard.press('Escape')
+      await page.waitForTimeout(300)
+      await expect(listbox).toHaveCount(0)
 
       await setInputValue(page, selector, '')
     })
@@ -217,20 +220,29 @@ test.describe('ClearPathAI — Work Page', () => {
       expect(html).toContain('Session')
     })
 
-    test('clicking mode buttons changes active styling without crash', async ({ page }) => {
-      // Find and click through mode buttons
-      const modeLabels = ['Compose', 'Session']
-      for (const label of modeLabels) {
-        const btn = page.getByRole('button', { name: label }).first()
-        if ((await btn.count()) > 0) {
-          await btn.click()
-          await page.waitForTimeout(300)
-          // Capture each mode's active state
-          await captureScreenshot(page, `work/mode-${label.toLowerCase()}`)
-          const root = page.locator('#root')
-          await expect(root).toBeAttached()
-        }
+    test('clicking the Session mode button changes active styling', async ({ page }) => {
+      // Session is the always-on default mode (Compose / Schedule are gated
+      // on showComposer / showScheduler feature flags — see Work.tsx).
+      const btn = page.getByRole('button', { name: 'Session', exact: true }).first()
+      await expect(btn).toBeVisible()
+      await btn.click()
+      await page.waitForTimeout(300)
+      await captureScreenshot(page, 'work/mode-session')
+      await expect(page.locator('#root')).toBeAttached()
+    })
+
+    test('clicking the Compose mode button (when showComposer flag is on)', async ({ page }) => {
+      // showComposer defaults to false in features.json — skip cleanly when
+      // the button isn't compiled into the bundle.
+      const btn = page.getByRole('button', { name: 'Compose', exact: true }).first()
+      if ((await btn.count()) === 0) {
+        test.skip(true, 'showComposer feature flag is off in this build')
+        return
       }
+      await btn.click()
+      await page.waitForTimeout(300)
+      await captureScreenshot(page, 'work/mode-compose')
+      await expect(page.locator('#root')).toBeAttached()
     })
 
     test('session select dropdown or session UI exists', async ({ page }) => {
