@@ -1,23 +1,21 @@
 ---
 name: e2e-playwright
-description: Playwright + Electron e2e testing reference for CoPilot Commander — _electron.launch setup, locators, web-first assertions, fixtures, visual regression, trace viewer, CI/CD, and a complete WebdriverIO→Playwright migration guide. Auto-loads when working on Playwright spec files, playwright.config files, or when migrating from WebdriverIO.
+description: Playwright + Electron e2e testing reference for CoPilot Commander — _electron.launch setup, locators, web-first assertions, fixtures, visual regression, trace viewer, CI/CD. Auto-loads when working on Playwright spec files or playwright.config files.
 user-invocable: false
-paths: "e2e/**/*.spec.ts, e2e/**/*.ts, playwright.config.ts, playwright.screenshots.config.ts, playwright-report/**, test-results/**"
+paths: "e2e/**/*.pw.spec.ts, e2e/**/*.ts, playwright.config.ts, playwright.screenshots.config.ts, playwright-report/**, test-results/**"
 allowed-tools: Read Glob Grep Bash
 ---
 
 # Playwright E2E Testing for Electron
 
-This skill covers **Playwright** with `_electron.launch()` driving the CoPilot Commander Electron app, plus a complete migration path from the project's existing WebdriverIO suite. Playwright is used in **library mode** (Electron is launched directly via `playwright`'s `_electron` API), but tests run under the `@playwright/test` runner via custom worker-scoped fixtures.
+This skill covers **Playwright** with `_electron.launch()` driving the CoPilot Commander Electron app. Playwright is used in **library mode** (Electron is launched directly via `playwright`'s `_electron` API), but tests run under the `@playwright/test` runner via custom worker-scoped fixtures.
 
 The app is built with `electron-vite` (unpackaged entry: `out/main/index.js`), React 18 with hash-based routing (`#/work?tab=session`), and exposes IPC via `window.electronAPI.invoke()`.
 
 Three layers work together:
 1. **`e2e/fixtures.ts`** — `test.extend()` worker-scoped `electronApp` + per-test `page` (first window)
-2. **`e2e/*.spec.ts`** — feature test files using `import { test, expect } from './fixtures'`
+2. **`e2e/*.pw.spec.ts`** — feature test files using `import { test, expect } from './fixtures'`
 3. **`playwright.config.ts`** / **`playwright.screenshots.config.ts`** — runner config (separate configs for functional vs visual)
-
-> **Migrating from WebdriverIO?** Start with [references/migration-from-webdriverio.md](references/migration-from-webdriverio.md) and the conversion script in [scripts/convert-wdio-to-playwright.mjs](scripts/convert-wdio-to-playwright.mjs).
 
 ---
 
@@ -56,7 +54,7 @@ DEBUG=pw:api npx playwright test
 
 ## Critical: ELECTRON_RUN_AS_NODE
 
-VS Code sets `ELECTRON_RUN_AS_NODE=1` in child processes, causing Electron to launch as plain Node with no renderer. **Strip it from the env before calling `_electron.launch()`** — exactly the same gotcha as WDIO.
+VS Code sets `ELECTRON_RUN_AS_NODE=1` in child processes, causing Electron to launch as plain Node with no renderer. **Strip it from the env before calling `_electron.launch()`** in `e2e/fixtures.ts`.
 
 ```ts
 // e2e/fixtures.ts
@@ -86,7 +84,7 @@ const app = await electron.launch({ args: [...], env });
 
 ## Locators — prefer role/text/testid over CSS
 
-Playwright's locators are auto-waiting and re-evaluated on every action — they replace WDIO's `$()` chained promises and the manual `waitForExist` pattern. **Order of preference:**
+Playwright's locators are auto-waiting and re-evaluated on every action. **Order of preference:**
 
 ```ts
 // 1. Role + accessible name (BEST — survives DOM/CSS/styling refactors)
@@ -153,7 +151,7 @@ The most common review feedback on the existing suite was variants of "this test
 
 ## React input values — `fill()` works (no native-setter dance needed)
 
-Unlike WDIO's `setValue`, **Playwright's `locator.fill()` correctly fires React's `onChange`** because it dispatches real input events from the browser side. Only fall back to the native-setter helper for stubborn cases (CodeMirror, Monaco, custom controlled wrappers that intercept `input`).
+**Playwright's `locator.fill()` correctly fires React's `onChange`** because it dispatches real input events from the browser side. Only fall back to the native-setter helper for stubborn cases (CodeMirror, Monaco, custom controlled wrappers that intercept `input`).
 
 ```ts
 await page.getByLabel('Session name').fill('My Test Session');
@@ -179,12 +177,14 @@ A `navigateToHash` helper is provided in the fixtures example.
 
 ---
 
-## Two-config pattern
+## Multi-config pattern
 
 | Config | Specs run | Trigger |
 |--------|-----------|---------|
-| `playwright.config.ts` | All `e2e/**/*.spec.ts` except crawl | `npm run pw` |
-| `playwright.screenshots.config.ts` | `screenshot-crawl.spec.ts` only | `npm run pw:screenshots` |
+| `playwright.config.ts` | All `e2e/**/*.pw.spec.ts` except the crawls + extensions-integration | `npm run pw` |
+| `playwright.screenshots.config.ts` | `screenshot-crawl.pw.spec.ts` only | `npm run pw:screenshots` |
+| `playwright.screenshots.experimental.config.ts` | `screenshot-crawl-experimental.pw.spec.ts` only | `npm run pw:screenshots:experimental` |
+| `playwright.extensions.config.ts` | `extensions-integration.pw.spec.ts` only | `npm run pw:extensions` |
 
 The visual config pins device-pixel-ratio (`--force-device-scale-factor=1`), disables animations/caret, and uses a different `snapshotPathTemplate` so visual baselines live in `e2e/screenshots/baseline/` (Git LFS).
 
@@ -231,17 +231,6 @@ npx playwright show-trace test-results/.../trace.zip
 
 ---
 
-## Migrating from WebdriverIO
-
-The project has a complete WDIO suite in `e2e/*.spec.ts` (see the existing `e2e-webdriverio` skill). The Playwright migration path:
-
-1. Read [references/migration-from-webdriverio.md](references/migration-from-webdriverio.md) for the API translation table.
-2. Run [scripts/convert-wdio-to-playwright.mjs](scripts/convert-wdio-to-playwright.mjs) on a single spec to get a starting point.
-3. Walk through [examples/migrate-spec-from-wdio.md](examples/migrate-spec-from-wdio.md) for the manual cleanup steps.
-4. Replace the WDIO mocking layer with the helper in [examples/electron-mock-dialog.md](examples/electron-mock-dialog.md) (Playwright has no built-in equivalent to `browser.electron.mock`).
-
----
-
 ## Reference materials
 
 | File | Topic | Read when... |
@@ -249,7 +238,7 @@ The project has a complete WDIO suite in `e2e/*.spec.ts` (see the existing `e2e-
 | [references/project-conventions.md](references/project-conventions.md) | App-specific helpers, route table, sidebar labels, two-config pattern | Starting any e2e work; understanding project specifics |
 | [references/playwright-electron-setup.md](references/playwright-electron-setup.md) | `_electron.launch` options, executable paths, fuses, supported Electron versions | Setting up `e2e/fixtures.ts` or troubleshooting launch |
 | [references/electron-api-access.md](references/electron-api-access.md) | `electronApp.evaluate`, `evaluateHandle`, `browserWindow`, `process()`, `windows()` | Accessing main process or BrowserWindow APIs from tests |
-| [references/electron-api-mocking.md](references/electron-api-mocking.md) | Custom monkey-patch helper that mirrors WDIO's mock API | Mocking dialog, shell, app.quit, or other Electron APIs |
+| [references/electron-api-mocking.md](references/electron-api-mocking.md) | Custom monkey-patch helper for mocking dialog, shell, app.quit, etc. | Mocking dialog, shell, app.quit, or other Electron APIs |
 | [references/playwright-config.md](references/playwright-config.md) | Full `TestConfig`/`TestProject`/`use` options, two-config pattern | Editing the config or adding a project |
 | [references/locators.md](references/locators.md) | All `getBy*` strategies, filtering, chaining, strictness, lists | Writing or reviewing selectors |
 | [references/locator-api.md](references/locator-api.md) | Every `Locator` method: `click`, `fill`, `press`, `screenshot`, `waitFor`, etc. | Looking up a locator method signature |
@@ -264,9 +253,8 @@ The project has a complete WDIO suite in `e2e/*.spec.ts` (see the existing `e2e-
 | [references/timeouts.md](references/timeouts.md) | Test/expect/action/navigation timeouts, `test.setTimeout`, `test.slow` | Timeout errors; configuring test timing |
 | [references/ci-cd.md](references/ci-cd.md) | GitHub Actions, Xvfb, `npx playwright install --with-deps`, sharding, blob+merge | Writing or fixing CI workflows |
 | [references/page-objects.md](references/page-objects.md) | Class-based POM with locators, fixture-injected pages | Organizing selectors into reusable classes |
-| [references/typescript-setup.md](references/typescript-setup.md) | `tsconfig.e2e.json`, why Playwright runs even with TS errors, separate `tsc --noEmit` step | TypeScript errors in e2e files |
+| [references/typescript-setup.md](references/typescript-setup.md) | `tsconfig.playwright.json`, why Playwright runs even with TS errors, separate `tsc --noEmit` step | TypeScript errors in e2e files |
 | [references/organizing-tests.md](references/organizing-tests.md) | `test.describe.configure`, parallel/serial mode, retries, projects, sharding | Organizing or running subsets of tests |
-| [references/migration-from-webdriverio.md](references/migration-from-webdriverio.md) | API translation table, what stays, what changes, helper rewrites | Converting an existing WDIO spec |
 | [references/anti-patterns.md](references/anti-patterns.md) | Silent-pass guards, name/assertion mismatches, ESM-require traps, listener timing, baseline auto-create — every mistake the PR review caught | **Read before writing or reviewing any new spec.** Quick scan if you're adding a `if ((await loc.count()) > 0)` guard or a "no errors" assertion |
 
 ---
@@ -278,7 +266,7 @@ The project has a complete WDIO suite in `e2e/*.spec.ts` (see the existing `e2e-
 | [examples/playwright-config-example.md](examples/playwright-config-example.md) | Annotated `playwright.config.ts` + `playwright.screenshots.config.ts` | Creating or reviewing the configs |
 | [examples/electron-fixtures.md](examples/electron-fixtures.md) | Complete `e2e/fixtures.ts` — worker-scoped app, per-test page, helpers | Setting up the fixture file |
 | [examples/writing-functional-test.md](examples/writing-functional-test.md) | Full spec file: imports, `test.describe`, hooks, web-first assertions | Writing a new spec file |
-| [examples/custom-helpers.md](examples/custom-helpers.md) | Every helper from `e2e/helpers/app.ts` rewritten for Playwright | Porting helpers from WDIO; understanding the helper layer |
+| [examples/custom-helpers.md](examples/custom-helpers.md) | Every helper in `e2e/helpers/pw.ts` annotated | Understanding the helper layer |
 | [examples/electron-evaluate-ipc.md](examples/electron-evaluate-ipc.md) | `electronApp.evaluate` (main) vs `page.evaluate` (renderer) vs `electronAPI.invoke` (IPC) | Accessing Electron APIs or IPC from tests |
 | [examples/electron-mock-dialog.md](examples/electron-mock-dialog.md) | Custom mock helper + worked dialog/shell/app.quit examples | Testing UI that triggers native Electron APIs |
 | [examples/visual-screenshot-test.md](examples/visual-screenshot-test.md) | Data-driven `toHaveScreenshot` crawl with masks and dynamic-content freezing | Working on the visual crawl spec |
@@ -286,19 +274,15 @@ The project has a complete WDIO suite in `e2e/*.spec.ts` (see the existing `e2e-
 | [examples/react-input-pattern.md](examples/react-input-pattern.md) | `locator.fill()` first; native-setter fallback for CodeMirror/Monaco | Setting input values in React-controlled UIs |
 | [examples/selector-strategies.md](examples/selector-strategies.md) | `getByRole`/`getByText`/`getByTestId` patterns; XPath fallback | Writing selectors when you need ideas |
 | [examples/ci-github-actions.md](examples/ci-github-actions.md) | Full GHA workflow: install deps, Xvfb, sharding, blob+merge, baselines | Writing or debugging CI |
-| [examples/migrate-spec-from-wdio.md](examples/migrate-spec-from-wdio.md) | Worked before/after of `e2e/smoke.spec.ts` | Converting a single WDIO spec by hand |
-
 ---
 
 ## Scripts
 
 | File | Purpose |
 |------|---------|
-| [scripts/convert-wdio-to-playwright.mjs](scripts/convert-wdio-to-playwright.mjs) | Best-effort find/replace of common WDIO patterns → Playwright. Run on a single spec; review every change manually. |
 | [scripts/check-playwright-setup.mjs](scripts/check-playwright-setup.mjs) | Doctor — verifies `@playwright/test` is installed, `out/main/index.js` exists, `ELECTRON_RUN_AS_NODE` not set, snapshot dirs exist. |
 
 Run scripts (paths relative to the repo root):
 ```bash
 node .claude/skills/e2e-playwright/scripts/check-playwright-setup.mjs
-node .claude/skills/e2e-playwright/scripts/convert-wdio-to-playwright.mjs e2e/smoke.spec.ts
 ```

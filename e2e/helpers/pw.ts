@@ -1,13 +1,9 @@
 /**
  * e2e/helpers/pw.ts
  *
- * Playwright equivalents of the WDIO helpers in `e2e/helpers/app.ts`.
- *
- * Every helper takes `page: Page` as the first argument since there's no
- * `browser` global in Playwright. The export surface mirrors `app.ts` so
- * specs port with minimal diff.
- *
- * Will be renamed to `app.ts` (overwriting the WDIO version) at cutover.
+ * Shared Playwright helpers for the Electron e2e suite. Every helper takes
+ * `page: Page` as the first argument since there's no `browser` global in
+ * Playwright.
  */
 import { expect, type Page } from '@playwright/test'
 
@@ -93,7 +89,7 @@ export async function isConfigureTabSelected(page: Page, tabKey: string): Promis
 }
 
 /**
- * Wait for the Work page chat area to render. Mirrors WDIO `waitForWorkPage`.
+ * Wait for the Work page chat area to render.
  */
 export async function waitForWorkPage(page: Page, timeout = ELEMENT_TIMEOUT): Promise<void> {
   await page.waitForFunction(
@@ -260,8 +256,7 @@ export async function getCriticalConsoleErrors(
 
 /**
  * Replace dynamic text patterns with deterministic placeholders so visual
- * baselines don't drift between runs. Pure DOM logic — ports 1:1 from the
- * WDIO version.
+ * baselines don't drift between runs.
  *
  * Two complementary mechanisms:
  *   1. Pattern-based replacement of common timestamp/date formats inside

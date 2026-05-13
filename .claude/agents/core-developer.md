@@ -102,7 +102,7 @@ When delegating to sub-agents:
 - Check `package.json` for available scripts before assuming what's available — `test`, `test:e2e`, `build`, `dev`, etc. all live there
 - Use the dev script to verify the app runs after changes
 - The Electron app uses a standard main/renderer split with preload scripts
-- Use wallaby tools for unit testing if installed; otherwise use `npm run test` (vitest) for unit tests and `npm run test:e2e` (or the equivalent wdio script) for e2e
+- Use wallaby tools for unit testing if installed; otherwise use `npm run test` (vitest) for unit tests and `npm run pw` (Playwright) for e2e
 
 ## Definition of Done
 

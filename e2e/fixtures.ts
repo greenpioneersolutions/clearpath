@@ -84,7 +84,8 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
 
       // NOTE: dark mode for the visual configs is enforced via
       // `page.emulateMedia({ colorScheme: 'dark' })` in the per-test `page`
-      // fixture below — NOT via Chromium's `--force-dark-mode` flag. The
+      // fixture below — NOT via Chromium's `--force-dark-mode` flag, which
+      // does not propagate to _electron.launch's media-query layer. The
       // CLEARPATH_E2E_VISUAL=1 signal must be set on the PARENT process
       // (npm scripts: `pw:screenshots*` | CI: workflow `env:` block on the
       // visual jobs) — Playwright workers fork from the parent at start, so
@@ -126,9 +127,8 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
     // Override the renderer's prefers-color-scheme media query via CDP so
     // BrandingContext (which reads matchMedia('(prefers-color-scheme: dark)')
     // on mount AND listens for change events) flips the Tailwind `dark`
-    // class. This is the Playwright-native equivalent of the WDIO config's
-    // `--force-dark-mode` Chromium flag — that flag does NOT propagate to
-    // _electron.launch's Chromium media-query layer, but emulateMedia does.
+    // class. Chromium's `--force-dark-mode` flag does NOT propagate to
+    // _electron.launch's media-query layer, but emulateMedia does.
     if (process.env.CLEARPATH_E2E_VISUAL === '1') {
       await window.emulateMedia({ colorScheme: 'dark' })
     }

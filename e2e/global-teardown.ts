@@ -2,7 +2,7 @@
  * e2e/global-teardown.ts
  *
  * Final safety net: kill any orphaned Electron processes after the entire
- * Playwright run completes. Replaces the `onComplete` hook in wdio.conf.ts.
+ * Playwright run completes.
  */
 export default async function (): Promise<void> {
   try {

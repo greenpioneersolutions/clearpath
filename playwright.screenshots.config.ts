@@ -21,8 +21,7 @@ import baseConfig from './playwright.config'
  *  - Dark mode via `page.emulateMedia({ colorScheme: 'dark' })` in fixtures
  *    (matches BrandingContext which observes prefers-color-scheme).
  *  - `threshold: 0.2` + `maxDiffPixelRatio: 0.02` covers FreeType (linux) vs
- *    CoreText (mac) sub-pixel anti-aliasing — equivalent to the WDIO config's
- *    `compareOptions.ignoreAntialiasing: true`.
+ *    CoreText (mac) sub-pixel anti-aliasing.
  */
 export default defineConfig({
   ...baseConfig,
