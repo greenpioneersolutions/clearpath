@@ -26,6 +26,10 @@ export const config: Options.Testrunner = {
     // experimental-feature crawl requires a build with CLEARPATH_E2E_EXPERIMENTAL=1.
     // Run separately via: npm run e2e:screenshots:experimental
     './e2e/screenshot-crawl-experimental.spec.ts',
+    // Playwright migration: .pw.spec.ts files are the new Playwright suite,
+    // run via `npm run pw`. They pattern-match the WDIO glob so we exclude
+    // them explicitly. Remove this entry after the WDIO suite is retired.
+    './e2e/**/*.pw.spec.ts',
   ],
   maxInstances: 1,
 
