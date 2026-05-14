@@ -1,6 +1,6 @@
 # Project Conventions
 
-CoPilot Commander-specific helpers, route table, sidebar labels, and the two-config pattern.
+CoPilot Commander-specific helpers, route table, sidebar labels, and the multi-config pattern.
 
 ## Tech stack
 
@@ -144,13 +144,14 @@ Tests that need hermetic state should override `userDataDir` per worker. The dat
 
 Reset with the worker fixture pattern in [fixtures.md](fixtures.md).
 
-## Two-config pattern
+## Multi-config pattern
 
 | Config | Specs run | npm script |
 |--------|-----------|-----------|
-| `playwright.config.ts` | All `e2e/**/*.spec.ts` except crawl/extensions-integration | `npm run pw` |
-| `playwright.screenshots.config.ts` | `screenshot-crawl.spec.ts` only | `npm run pw:screenshots` |
-| `playwright.screenshots.experimental.config.ts` | `screenshot-crawl-experimental.spec.ts` (with `CLEARPATH_E2E_EXPERIMENTAL=1`) | `npm run pw:screenshots:experimental` |
+| `playwright.config.ts` | All `e2e/**/*.pw.spec.ts` except both crawls + extensions-integration | `npm run pw` |
+| `playwright.screenshots.config.ts` | `screenshot-crawl.pw.spec.ts` only | `npm run pw:screenshots` |
+| `playwright.screenshots.experimental.config.ts` | `screenshot-crawl-experimental.pw.spec.ts` (with `CLEARPATH_E2E_EXPERIMENTAL=1`) | `npm run pw:screenshots:experimental` |
+| `playwright.extensions.config.ts` | `extensions-integration.pw.spec.ts` only (needs `npm run pretest:e2e:extensions` first) | `npm run pw:extensions` |
 
 The visual configs differ in:
 - `testIgnore` — empty (only the crawl spec runs)

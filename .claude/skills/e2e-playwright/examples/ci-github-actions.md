@@ -291,20 +291,3 @@ The official Docker image works on:
 | Sharded merge fails | Make sure `blob-*` pattern matches what `--reporter=blob` produced |
 | `forbidOnly` fails on PR | Remove the stray `test.only` or `describe.only` |
 
-## Migration: parallel WDIO + Playwright
-
-While migrating, run both side-by-side:
-
-```yaml
-jobs:
-  wdio:
-    name: WDIO (legacy)
-    runs-on: ubuntu-latest
-    steps: [/* existing WDIO steps */]
-  playwright:
-    name: Playwright (new)
-    runs-on: ubuntu-latest
-    steps: [/* new Playwright steps */]
-```
-
-Allow Playwright failures to be non-blocking by adding to PR rules `Required: WDIO only` until migration is complete. Once Playwright passes consistently for ~1 week, swap.

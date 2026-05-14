@@ -86,7 +86,7 @@ When delegating to sub-agents:
 
 - Check `package.json` for available scripts before assuming what's available
 - This repo does have test scripts configured; use the scripts defined in `package.json` rather than assuming tests are unavailable
-- Use `npm run test` for the Vitest unit test suite, and run the configured e2e/WebdriverIO scripts from `package.json` when your changes affect end-to-end behavior
+- Use `npm run test` for the Vitest unit test suite, and run the configured Playwright e2e scripts from `package.json` (`pw`, `pw:screenshots`, `pw:extensions`) when your changes affect end-to-end behavior
 - Use the dev script to verify the app runs after changes
 - The Electron app uses a standard main/renderer split with preload scripts
 - Use Wallaby tools for unit testing. If Wallaby is not installed, use command-line testing with `npm run test` and any other relevant scripts defined in `package.json`

@@ -144,7 +144,7 @@ The visual config inherits everything from the base config and overrides only wh
     "pw:screenshots": "npm run build && playwright test -c playwright.screenshots.config.ts",
     "pw:screenshots:update": "npm run build && playwright test -c playwright.screenshots.config.ts -u",
     "pw:report": "playwright show-report",
-    "typecheck:e2e": "tsc -p tsconfig.playwright.json --noEmit"
+    "typecheck:playwright": "tsc -p tsconfig.playwright.json --noEmit"
   }
 }
 ```

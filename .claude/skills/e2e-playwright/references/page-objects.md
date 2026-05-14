@@ -115,10 +115,11 @@ e2e/
       Toast.ts
       ContextPicker.ts
   helpers/
-    app.ts
+    pw.ts
+    pw-screenshots.ts
     electronMock.ts
-  smoke.spec.ts
-  sessions.spec.ts
+  smoke.pw.spec.ts
+  sessions.pw.spec.ts
   ...
 ```
 
