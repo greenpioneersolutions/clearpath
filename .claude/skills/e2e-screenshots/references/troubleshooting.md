@@ -62,9 +62,11 @@ PW_TEST_SCREENSHOT_NO_FONTS_READY=1 npx playwright test -c playwright.screenshot
 
 ## CI: missing baseline error
 
-**Cause:** Compare mode (no `-u`) on CI treats a missing baseline as a hard error — likely indicates Git LFS didn't pull, or a baseline was deleted but never regenerated.
+**Cause:** The screenshot crawl spec throws when `process.env.CI === 'true'` AND a baseline file doesn't exist on disk. Usually means Git LFS didn't pull the PNG, or a baseline was deleted but never regenerated.
 
-**Fix:** The CI screenshot jobs explicitly pass `-u`, so this normally only fires on functional jobs that pull LFS for their own reasons. Verify the workflow has `lfs: true` on the `actions/checkout` step. Locally, re-run with `-u` to regenerate, then commit the baseline.
+**When it actually fires:** Only on a screenshot-crawl run executed in **compare mode** (no `-u`) under CI. The two committed jobs — `screenshot-regression` and `screenshot-regression-experimental` — explicitly pass `-u`, so they take the write path and create whatever's missing. The error usually surfaces only if someone adds a new compare-mode workflow, runs the screenshot config manually under `CI=true`, or the functional/extensions configs accidentally pick up a screenshot spec (none of them do today).
+
+**Fix:** Verify the workflow's `actions/checkout` step has `lfs: true` (it does in `.github/workflows/ci.yml`). Locally, run `npm run pw:screenshots:update` to regenerate, then commit the new baseline.
 
 ---
 
