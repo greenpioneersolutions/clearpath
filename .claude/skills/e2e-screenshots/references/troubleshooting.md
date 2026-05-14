@@ -1,17 +1,17 @@
 # Screenshot System — Troubleshooting
 
-## "No tests found"
+## "No tests found" when trying to run the screenshot crawl
 
-**Cause:** Running `npx playwright test` without `-c playwright.screenshots.config.ts`. The default config (`playwright.config.ts`) has the screenshot crawl specs in `testIgnore`.
+**Cause:** You tried to run the screenshot crawl under the default config — e.g. `npx playwright test e2e/screenshot-crawl.pw.spec.ts` — and got "No tests found." The default `playwright.config.ts` has both crawl specs in `testIgnore`, so the crawl spec needs its dedicated config to be picked up. (Plain `npx playwright test` is *not* affected; that runs the functional `.pw.spec.ts` suite as designed.)
 
-**Fix:** Always use the dedicated config:
+**Fix:** Use the dedicated screenshot config:
 ```bash
 npx playwright test -c playwright.screenshots.config.ts
 # or via npm:
 npm run pw:screenshots
 ```
 
-For the experimental crawl, use `playwright.screenshots.experimental.config.ts`.
+For the experimental crawl, use `playwright.screenshots.experimental.config.ts` (`npm run pw:screenshots:experimental`).
 
 ---
 
