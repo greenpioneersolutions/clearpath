@@ -5,7 +5,7 @@ Worked example using the helper from [references/electron-api-mocking.md](../ref
 ## Setup
 
 ```ts
-// e2e/sessions.spec.ts
+// e2e/sessions.pw.spec.ts
 import { test, expect } from './fixtures';
 import { mockElectronApi, restoreAllElectronMocks } from './helpers/electronMock';
 ```

@@ -9,7 +9,7 @@ When a test fails, escalate through these tools — stop when you've found the c
 ### 1. Re-run the single failing spec
 
 ```bash
-npx playwright test e2e/sessions.spec.ts -g "archives a session"
+npx playwright test e2e/sessions.pw.spec.ts -g "archives a session"
 ```
 
 ### 2. Open the HTML report
@@ -40,7 +40,7 @@ In the trace UI:
 ### 4. Reproduce locally with `--debug`
 
 ```bash
-npx playwright test e2e/sessions.spec.ts -g "archives" --debug
+npx playwright test e2e/sessions.pw.spec.ts -g "archives" --debug
 ```
 
 This opens the Inspector and pauses at the start of the test. Step through actions one at a time, watching the page.
@@ -150,7 +150,7 @@ DEBUG=pw:* npx playwright test          # everything
 After `await page.pause()`, the **DevTools Console** in the renderer also exposes a `playwright` global if launched with `PWDEBUG=console`:
 
 ```bash
-PWDEBUG=console npx playwright test e2e/smoke.spec.ts
+PWDEBUG=console npx playwright test e2e/smoke.pw.spec.ts
 ```
 
 In the renderer's DevTools console:

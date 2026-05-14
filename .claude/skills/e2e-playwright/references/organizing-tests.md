@@ -23,20 +23,20 @@ The visual config has its own `testMatch` so `npm run pw:screenshots` only picks
 
 ```
 e2e/
-  fixtures.ts               # test.extend() — electronApp, page, POMs
+  fixtures.ts                       # test.extend() — electronApp, page, POMs
   helpers/
-    app.ts                  # waitForAppReady, navigateSidebarTo, freezeDynamicContent
+    pw.ts                           # waitForAppReady, navigateSidebarTo, freezeDynamicContent
+    pw-screenshots.ts               # ad-hoc captures
     electronMock.ts
-    screenshots.ts
   pages/
     SessionsPage.ts
     WorkPage.ts
-  smoke.spec.ts
-  home.spec.ts
-  sessions.spec.ts
-  navigation.spec.ts
-  configure.spec.ts
-  screenshot-crawl.spec.ts
+  smoke.pw.spec.ts
+  home.pw.spec.ts
+  session-manager.pw.spec.ts
+  navigation.pw.spec.ts
+  configure.pw.spec.ts
+  screenshot-crawl.pw.spec.ts
   ...
 ```
 
@@ -318,8 +318,8 @@ npx playwright test --last-failed
 ## Globs / direct file specs
 
 ```bash
-npx playwright test e2e/sessions.spec.ts e2e/work.spec.ts
-npx playwright test e2e/sessions.spec.ts:42       # specific line
+npx playwright test e2e/sessions.pw.spec.ts e2e/work.pw.spec.ts
+npx playwright test e2e/sessions.pw.spec.ts:42       # specific line
 npx playwright test 'sessions/*'                  # regex against full path
 ```
 
@@ -327,15 +327,13 @@ npx playwright test 'sessions/*'                  # regex against full path
 
 | File | Tests in scope |
 |------|---------------|
-| `smoke.spec.ts` | App launches, sidebar, basic navigation |
-| `home.spec.ts` | Home/Dashboard rendering, action cards, quick prompt |
-| `sessions.spec.ts` (was `work-launchpad.spec.ts`) | Sessions launchpad, new-session flow |
-| `work-page.spec.ts` | Work/chat page, message rendering, mode cycling |
-| `notes.spec.ts` (1.13.0+) | Notes page, attach-to-session flow |
-| `configure.spec.ts` | Settings tabs, MCP, plugins |
-| `extensions.spec.ts` | Extensions list, enable/disable |
-| `extensions-integration.spec.ts` | Real extension package — excluded from default run |
-| `screenshot-crawl.spec.ts` | Visual regression — separate config |
-| `accessibility.spec.ts` | a11y assertions |
-
-Match the names from the existing WDIO suite during migration; rename only when consolidating.
+| `smoke.pw.spec.ts` | App launches, sidebar, basic navigation |
+| `home.pw.spec.ts` | Home/Dashboard rendering, action cards, quick prompt |
+| `work-launchpad.pw.spec.ts` | Sessions launchpad, new-session flow |
+| `work-page.pw.spec.ts` | Work/chat page, message rendering, mode cycling |
+| `configure.pw.spec.ts` | Settings tabs, plugins |
+| `connections.pw.spec.ts` / `integrations.pw.spec.ts` | Connect page, MCP, integrations |
+| `extensions.pw.spec.ts` | Extensions list, enable/disable |
+| `extensions-integration.pw.spec.ts` | Real extension package — excluded from default run |
+| `screenshot-crawl.pw.spec.ts` | Visual regression — separate config |
+| `accessibility.pw.spec.ts` | a11y assertions |

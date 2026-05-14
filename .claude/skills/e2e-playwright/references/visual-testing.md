@@ -34,7 +34,7 @@ CI tip: include `[update-screenshots]` in commit messages and gate the update st
 
 ## Where snapshots live
 
-Default: `<spec-file-name>.ts-snapshots/<assertion-arg>-<project>-<platform>.png`. Example: `e2e/home.spec.ts-snapshots/home--initial-electron-darwin.png`.
+Default: `<spec-file-name>.ts-snapshots/<assertion-arg>-<project>-<platform>.png`. Example: `e2e/home.pw.spec.ts-snapshots/home--initial-electron-darwin.png`.
 
 Configure globally:
 
@@ -51,7 +51,7 @@ snapshotPathTemplate: '{testFileDir}/screenshots/{arg}-{platform}{ext}',
 Template tokens:
 - `{testDir}` — config `testDir` (e.g. `e2e`)
 - `{testFileDir}` — directory of the spec file
-- `{testFileName}` — `home.spec.ts`
+- `{testFileName}` — `home.pw.spec.ts`
 - `{testFilePath}` — full path
 - `{testName}` — test title
 - `{arg}` — the name passed to `toHaveScreenshot('foo.png')` (without extension)
@@ -233,9 +233,9 @@ await expect(page.getByRole('navigation')).toMatchAriaSnapshot(`
 ## Failure artifacts
 
 When `toHaveScreenshot` fails, Playwright writes:
-- `<test>.spec.ts-snapshots/<arg>-<project>-<platform>-actual.png` (the real capture)
-- `<test>.spec.ts-snapshots/<arg>-<project>-<platform>-expected.png` (the baseline)
-- `<test>.spec.ts-snapshots/<arg>-<project>-<platform>-diff.png` (red highlights)
+- `<test>.pw.spec.ts-snapshots/<arg>-<project>-<platform>-actual.png` (the real capture)
+- `<test>.pw.spec.ts-snapshots/<arg>-<project>-<platform>-expected.png` (the baseline)
+- `<test>.pw.spec.ts-snapshots/<arg>-<project>-<platform>-diff.png` (red highlights)
 
 These are visible in the HTML report and trace viewer. The HTML report has a slider to compare baseline/actual pixel-by-pixel.
 

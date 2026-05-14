@@ -170,7 +170,7 @@ For visual crawls in particular, also keep an eye out for **orphan baselines** â
 ```bash
 # Tags in the baseline dir that don't appear in any data table
 ls e2e/screenshots/baseline/*.png | xargs -n1 basename | sed 's/\.png$//' | \
-  while read tag; do grep -q "$tag" e2e/screenshot-crawl*.spec.ts || echo "ORPHAN: $tag"; done
+  while read tag; do grep -q "$tag" e2e/screenshot-crawl*.pw.spec.ts || echo "ORPHAN: $tag"; done
 ```
 
 ---

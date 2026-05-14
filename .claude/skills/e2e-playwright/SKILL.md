@@ -26,7 +26,7 @@ Three layers work together:
 npm run pw
 
 # Single spec
-npx playwright test e2e/smoke.spec.ts
+npx playwright test e2e/smoke.pw.spec.ts
 
 # Filter by title (regex)
 npx playwright test -g "navigates to Sessions"
@@ -44,7 +44,7 @@ npx playwright test --headed --workers=1
 npx playwright test --ui
 
 # Debug a specific test (Inspector + breakpoint)
-npx playwright test e2e/smoke.spec.ts --debug
+npx playwright test e2e/smoke.pw.spec.ts --debug
 
 # Verbose API logging
 DEBUG=pw:api npx playwright test

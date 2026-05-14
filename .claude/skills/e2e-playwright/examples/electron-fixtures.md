@@ -116,7 +116,7 @@ export { expect };
 ## Usage in a spec
 
 ```ts
-// e2e/smoke.spec.ts
+// e2e/smoke.pw.spec.ts
 import { test, expect } from './fixtures';
 
 test('app launches and shows main window', async ({ page, electronApp }) => {
