@@ -5,8 +5,6 @@
  * `screenshot: 'only-on-failure'` (in playwright.config.ts) covers the
  * automatic failure-capture case — keep this for explicit "save now"
  * captures during debugging.
- *
- * Will be renamed to `screenshots.ts` at cutover.
  */
 import type { Page } from '@playwright/test'
 import fs from 'node:fs'

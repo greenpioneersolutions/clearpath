@@ -6,10 +6,9 @@ delete process.env.ELECTRON_RUN_AS_NODE
 
 export default defineConfig({
   testDir: './e2e',
-  // During migration we use .pw.spec.ts to coexist with the WDIO .spec.ts suite.
-  // After cutover, rename to .spec.ts and drop this matcher.
   testMatch: /.*\.pw\.spec\.ts/,
   testIgnore: [
+    // Visual crawls + extension integration run under their dedicated configs.
     /screenshot-crawl\.pw\.spec\.ts/,
     /screenshot-crawl-experimental\.pw\.spec\.ts/,
     /extensions-integration\.pw\.spec\.ts/,

@@ -12,12 +12,11 @@ import { test, expect, type Page, type Locator } from '@playwright/test';
 
 ## Project tsconfig structure
 
-The repo already has `tsconfig.e2e.json` set up for the WDIO suite. Update or duplicate it for Playwright:
+The repo ships `tsconfig.playwright.json` at the root:
 
 ```jsonc
-// tsconfig.playwright.json
+// tsconfig.playwright.json (current shape — see file for the exact include list)
 {
-  "extends": "./tsconfig.json",
   "compilerOptions": {
     "target": "ESNext",
     "module": "NodeNext",
@@ -26,22 +25,28 @@ The repo already has `tsconfig.e2e.json` set up for the WDIO suite. Update or du
     "strict": true,
     "esModuleInterop": true,
     "resolveJsonModule": true,
-    "outDir": "out/e2e",
+    "outDir": "out/playwright",
     "rootDir": ".",
-    "types": ["@playwright/test", "node"]   // remove wdio/mocha
+    "types": ["@playwright/test", "node"]
   },
   "include": [
-    "e2e/**/*.ts",
+    "e2e/**/*.pw.spec.ts",
+    "e2e/fixtures.ts",
+    "e2e/global-teardown.ts",
+    "e2e/helpers/pw.ts",
+    "e2e/helpers/pw-screenshots.ts",
     "playwright.config.ts",
-    "playwright.screenshots.config.ts"
+    "playwright.screenshots.config.ts",
+    "playwright.screenshots.experimental.config.ts",
+    "playwright.extensions.config.ts"
   ]
 }
 ```
 
-Then in `package.json`:
+The matching npm script is already in `package.json`:
 ```json
 "scripts": {
-  "typecheck:e2e": "tsc -p tsconfig.playwright.json --noEmit"
+  "typecheck:playwright": "tsc -p tsconfig.playwright.json --noEmit"
 }
 ```
 
@@ -89,7 +94,7 @@ Playwright supports both. **In this repo, `package.json` does NOT set `"type": "
 Practical implication for e2e files:
 - The Playwright tsconfig (`tsconfig.playwright.json`) uses `"module": "NodeNext"`, but **without `"type": "module"` in package.json, `.ts` files are inferred as CJS**. That means:
   - `import.meta.url` is **not allowed** — it triggers `TS1470` ("not allowed in files which will build into CommonJS output"). Use `process.cwd()` or `__dirname` (CJS) for path resolution. The shipped `e2e/fixtures.ts` does this.
-  - `.js` extensions on relative imports are **not required** in our setup. Existing WDIO specs use `from './helpers/app.js'`; the new Playwright specs use `from './helpers/pw'` (no extension). Both work because Playwright's loader resolves `.ts` siblings either way.
+  - `.js` extensions on relative imports are **not required** in our setup. Playwright specs use `from './helpers/pw'` (no extension) and Playwright's loader resolves the `.ts` sibling.
 
 If you add a new spec that uses ESM-only constructs (`import.meta.url`, top-level `await`), either compute the value differently or wrap it in a `.mjs` helper.
 

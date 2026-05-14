@@ -1,19 +1,19 @@
 # Example: Visual Screenshot Test
 
-A data-driven crawl spec using `expect(page).toHaveScreenshot()`, dynamic-content freezing, and per-page mask configuration. Replaces the WDIO `screenshot-crawl.spec.ts`.
+A data-driven crawl spec using `expect(page).toHaveScreenshot()`, dynamic-content freezing, and per-page mask configuration. The production crawl lives at `e2e/screenshot-crawl.pw.spec.ts` and captures via `BrowserWindow.capturePage()` instead of `toHaveScreenshot` to bypass `fonts.ready` hangs — see the spec itself for the canonical pattern; this example illustrates a simpler shape.
 
 ## Spec skeleton
 
 ```ts
-// e2e/screenshot-crawl.spec.ts
+// e2e/screenshot-crawl.pw.spec.ts
 import { test, expect } from './fixtures';
 import {
   navigateSidebarTo,
   navigateToHash,
   navigateToConfigureTab,
   navigateToConnectTab,
-} from './helpers/app';
-import { freezeDynamicContent } from './helpers/app';
+} from './helpers/pw';
+import { freezeDynamicContent } from './helpers/pw';
 
 // Run serially — Electron + visual diffs need stable rendering.
 test.describe.configure({ mode: 'serial' });

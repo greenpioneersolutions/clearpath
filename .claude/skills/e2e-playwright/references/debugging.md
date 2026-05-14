@@ -27,8 +27,8 @@ When the test ends or you click Resume, the page closes and Playwright returns t
 
 ```bash
 npx playwright test --debug
-npx playwright test e2e/smoke.spec.ts --debug
-npx playwright test e2e/smoke.spec.ts:42 --debug   # specific line
+npx playwright test e2e/smoke.pw.spec.ts --debug
+npx playwright test e2e/smoke.pw.spec.ts:42 --debug   # specific line
 ```
 
 `--debug` implies:
@@ -179,10 +179,10 @@ electronApp: [async ({}, use) => {
 
 ```bash
 # By file
-npx playwright test e2e/smoke.spec.ts
+npx playwright test e2e/smoke.pw.spec.ts
 
 # By line in file
-npx playwright test e2e/smoke.spec.ts:42
+npx playwright test e2e/smoke.pw.spec.ts:42
 
 # By test title (regex)
 npx playwright test -g "navigates to Sessions"

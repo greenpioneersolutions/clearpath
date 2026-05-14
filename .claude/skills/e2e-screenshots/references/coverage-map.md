@@ -1,7 +1,9 @@
 # Screenshot Coverage Map
 
-Baseline screenshots currently captured by `e2e/screenshot-crawl.spec.ts`,
-keyed off the data tables in that spec.
+Baseline screenshots currently captured by `e2e/screenshot-crawl.pw.spec.ts`,
+keyed off the data tables in that spec. The experimental crawl
+(`e2e/screenshot-crawl-experimental.pw.spec.ts`) covers the
+flag-gated routes under `experimental-features/`.
 
 > Last verified after the PR #47 merge (MCP management + Connect page +
 > Work/Insights UX overhaul). Tab labels and inventory below match the

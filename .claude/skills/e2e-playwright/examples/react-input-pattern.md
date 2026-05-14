@@ -27,7 +27,7 @@ Three common cases where `fill()` doesn't behave:
 For these, fall back to setting the value through the React-patched native setter:
 
 ```ts
-import { setInputValueLowLevel } from './helpers/app';
+import { setInputValueLowLevel } from './helpers/pw';
 
 await setInputValueLowLevel(page, '#prompt-textarea', 'Hello, agent.');
 ```

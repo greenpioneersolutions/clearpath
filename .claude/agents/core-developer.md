@@ -47,7 +47,7 @@ Follow this iterative development cycle for every task:
 The rule, in order:
 
 1. **Unit tests** — run them with `npm run test` (or a scoped invocation like `npx vitest run path/to/file.test.ts` for fast feedback). Every new/changed unit test must execute and pass before you report completion. If it fails, fix the test or the code — do not move on.
-2. **E2E tests** — if you created or modified an e2e spec under `e2e/`, run it via `npm run test:e2e` (or whatever script is wired in `package.json`). E2E tests routinely surface integration bugs that unit tests miss (selector mismatches, IPC wiring, timing). **Skipping the e2e run because "the unit tests passed" is the exact failure mode this rule exists to prevent.**
+2. **E2E tests** — if you created or modified an e2e spec under `e2e/`, run it via `npm run pw` (or `npm run pw:screenshots` / `npm run pw:extensions` for the visual + extensions surfaces). E2E tests routinely surface integration bugs that unit tests miss (selector mismatches, IPC wiring, timing). **Skipping the e2e run because "the unit tests passed" is the exact failure mode this rule exists to prevent.**
 3. **Typecheck** — run the appropriate `tsc --noEmit -p tsconfig.<scope>.json` for any project you touched. Confirm you did not introduce new errors (compare counts to baseline if pre-existing errors exist).
 4. **Build** — for substantial changes (new IPC channels, new components, schema changes), run the build script to catch what `tsc` alone misses.
 
@@ -99,10 +99,10 @@ When delegating to sub-agents:
 
 ## Build & Development
 
-- Check `package.json` for available scripts before assuming what's available — `test`, `test:e2e`, `build`, `dev`, etc. all live there
+- Check `package.json` for available scripts before assuming what's available — `test`, `pw`, `build`, `dev`, etc. all live there
 - Use the dev script to verify the app runs after changes
 - The Electron app uses a standard main/renderer split with preload scripts
-- Use wallaby tools for unit testing if installed; otherwise use `npm run test` (vitest) for unit tests and `npm run test:e2e` (or the equivalent wdio script) for e2e
+- Use wallaby tools for unit testing if installed; otherwise use `npm run test` (vitest) for unit tests and `npm run pw` (Playwright) for e2e
 
 ## Definition of Done
 

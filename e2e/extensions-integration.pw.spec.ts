@@ -6,8 +6,9 @@
  * to ensure ../com.clearpathai.sdk-example-v1.0.0.clear.ext exists at the repo root.
  *
  * NOTE: This spec is intentionally excluded from the default `playwright.config.ts`
- * testMatch and is run via the dedicated `e2e:extensions:pw` script. The tests
- * mutate persistent state (installs / toggles an extension) so describe blocks
+ * testMatch and is run via the dedicated `pw:extensions` npm script
+ * (which uses `playwright.extensions.config.ts`). The tests mutate
+ * persistent state (installs / toggles an extension) so describe blocks
  * run in serial mode and assume earlier tests have completed.
  */
 

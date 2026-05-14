@@ -115,10 +115,11 @@ e2e/
       Toast.ts
       ContextPicker.ts
   helpers/
-    app.ts
+    pw.ts
+    pw-screenshots.ts
     electronMock.ts
-  smoke.spec.ts
-  sessions.spec.ts
+  smoke.pw.spec.ts
+  sessions.pw.spec.ts
   ...
 ```
 
@@ -166,7 +167,7 @@ export class SessionsPage extends BasePage {
 - **Pure smoke tests** that just assert "thing renders" — use locators directly
 - **Visual regression crawls** — the data-driven structure is its own pattern; POMs add noise
 
-The existing WDIO `e2e/helpers/app.ts` is a flat helper module, NOT a POM. That pattern is fine for cross-cutting helpers (`waitForAppReady`, `freezeDynamicContent`) — keep those in `e2e/helpers/`. Reserve POMs for stateful UI surfaces with multiple actions per spec.
+`e2e/helpers/pw.ts` is a flat helper module, NOT a POM. That pattern is fine for cross-cutting helpers (`waitForAppReady`, `freezeDynamicContent`) — keep those in `e2e/helpers/`. Reserve POMs for stateful UI surfaces with multiple actions per spec.
 
 ## Asserting from inside a POM
 
