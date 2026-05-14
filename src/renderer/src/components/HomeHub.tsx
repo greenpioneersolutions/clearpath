@@ -101,7 +101,7 @@ export default function HomeHub(): JSX.Element {
             </div>
           </div>
           <h1 className="text-2xl font-bold text-gray-900">{greeting}</h1>
-          <p className="text-sm text-gray-500">Start a session or pick a quick action below.</p>
+          <p className="text-sm text-gray-500">Type below to jump in, or pick an option.</p>
         </div>
 
         {/* ── Quick prompt input ─────────────────────────────────────────── */}
