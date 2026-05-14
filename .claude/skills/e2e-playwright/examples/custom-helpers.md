@@ -1,11 +1,11 @@
-# Example: Custom Helpers (`e2e/helpers/app.ts`)
+# Example: Custom Helpers (`e2e/helpers/pw.ts`)
 
-Every helper from the existing WDIO `e2e/helpers/app.ts` rewritten for Playwright. The export surface stays the same so specs port with minimal changes.
+Annotated tour of the helper module at `e2e/helpers/pw.ts`. Specs import via `from './helpers/pw'`.
 
 ## Full helper module
 
 ```ts
-// e2e/helpers/app.ts
+// e2e/helpers/pw.ts
 import type { Page } from '@playwright/test';
 import { expect } from '@playwright/test';
 
@@ -208,12 +208,12 @@ export async function mainContentIsRendered(page: Page): Promise<boolean> {
 }
 ```
 
-## `freezeDynamicContent` (lives in `e2e/helpers/app.ts`)
+## `freezeDynamicContent` (lives in `e2e/helpers/pw.ts`)
 
-The dynamic-content freezer is pure DOM logic and doesn't need adaptation. Keep it inline in `app.ts` next to the other helpers — that's where the existing WDIO suite has it.
+The dynamic-content freezer is pure DOM logic. It lives inline in `pw.ts` next to the other helpers.
 
 ```ts
-// in e2e/helpers/app.ts (alongside the helpers above)
+// in e2e/helpers/pw.ts (alongside the helpers above)
 import type { Page } from '@playwright/test';
 
 /**
@@ -260,12 +260,12 @@ export async function freezeDynamicContent(page: Page): Promise<void> {
 }
 ```
 
-## `e2e/helpers/screenshots.ts`
+## `e2e/helpers/pw-screenshots.ts`
 
 For ad-hoc captures (during debug sessions, etc.) — Playwright's built-in `screenshot: 'only-on-failure'` covers most needs. Keep this for explicit "save now" captures.
 
 ```ts
-// e2e/helpers/screenshots.ts
+// e2e/helpers/pw-screenshots.ts
 import type { Page } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -293,7 +293,7 @@ export async function captureScreenshot(page: Page, tag: string): Promise<void> 
 ## Helpers that didn't need changes
 
 - `freezeDynamicContent` — pure DOM logic
-- `navigateToHash` — `page.evaluate(() => window.location.hash = ...)` matches WDIO's body
+- `navigateToHash` — `page.evaluate(() => window.location.hash = ...)` is the natural Electron pattern
 - `invokeIPC` — same shape
 
 ## Helpers that changed shape

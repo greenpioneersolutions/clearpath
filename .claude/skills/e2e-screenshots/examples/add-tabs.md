@@ -90,7 +90,7 @@ The `key` must match the DOM id `#tab-{key}` on the tab button element. If unsur
 
 ## After adding
 
-1. Run `npm run e2e:screenshots` to capture the new baseline PNG(s)
+1. Run `npm run pw:screenshots:update` to capture the new baseline PNG(s)
 2. Visually inspect the output in `e2e/screenshots/baseline/`
 3. Update [references/coverage-map.md](../references/coverage-map.md) with the new row(s)
-4. Commit: `git add e2e/screenshots/baseline/ e2e/screenshot-crawl.spec.ts && git commit -m "feat: add {name} screenshot"`
+4. Commit: `git add e2e/screenshots/baseline/ e2e/screenshot-crawl.pw.spec.ts && git commit -m "feat: add {name} screenshot"`

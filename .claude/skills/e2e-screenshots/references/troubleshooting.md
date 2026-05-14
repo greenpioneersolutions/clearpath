@@ -46,7 +46,7 @@ For the Configure tabs section, the spec already navigates to Settings once in `
 
 **Cause:** Playwright's `page.screenshot` waits on `document.fonts.ready` and RAF stability. Some Electron pages keep a font-load promise pending forever in the headless renderer.
 
-**Fix:** The spec already uses `BrowserWindow.capturePage()` via `electronApp.evaluate` for the write path, which bypasses every implicit wait. If you're adding a new helper that calls `page.screenshot`, set `PW_TEST_SCREENSHOT_NO_FONTS_READY=1` in the worker environment — the npm scripts and CI workflow set this on every visual job:
+**Fix:** The spec already uses `BrowserWindow.capturePage()` via `electronApp.evaluate` for the write path, which bypasses every implicit wait. If you're adding a new helper that calls `page.screenshot` and hit the same hang locally, export `PW_TEST_SCREENSHOT_NO_FONTS_READY=1` for the run — CI sets it automatically on every visual job in `.github/workflows/ci.yml`; the npm scripts do **not** (so local runs that don't touch `page.screenshot` won't notice):
 
 ```bash
 PW_TEST_SCREENSHOT_NO_FONTS_READY=1 npx playwright test -c playwright.screenshots.config.ts -u

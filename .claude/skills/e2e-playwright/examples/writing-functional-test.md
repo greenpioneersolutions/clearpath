@@ -5,9 +5,9 @@ A complete spec file demonstrating Playwright Test patterns: imports, describe g
 ## Anatomy of a Playwright spec
 
 ```ts
-// e2e/sessions.spec.ts
+// e2e/sessions.pw.spec.ts
 import { test, expect } from './fixtures';
-import { invokeIPC, navigateSidebarTo, navigateToHash } from './helpers/app';
+import { invokeIPC, navigateSidebarTo, navigateToHash } from './helpers/pw';
 
 // ── File-level config (optional) ─────────────────────────────────────────────
 test.describe.configure({ mode: 'serial' });          // tests run in order in this file

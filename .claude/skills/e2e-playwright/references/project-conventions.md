@@ -9,9 +9,11 @@ CoPilot Commander-specific helpers, route table, sidebar labels, and the two-con
 - **Tailwind CSS** for styling
 - IPC bridge: `window.electronAPI.invoke(channel, args)`
 
-## Helpers we keep — `e2e/helpers/app.ts`
+## Helpers we keep — `e2e/helpers/pw.ts`
 
-The existing helper module ports almost verbatim — only the implementation calls change. The exported surface stays the same so tests (and the migration script) don't need to re-learn the API.
+The helper module (`e2e/helpers/pw.ts`) takes `page: Page` as the first
+argument on every helper since there's no `browser` global in Playwright.
+Specs import via `from './helpers/pw'`.
 
 ```ts
 // Constants
@@ -71,7 +73,7 @@ export async function navigateToConnectTab(page: Page, tabKey: string): Promise<
   await navigateToHash(page, `#/connect?tab=${tabKey}`);
 }
 
-// Screenshot dynamic-content freezing — kept inline in app.ts (not a separate file).
+// Screenshot dynamic-content freezing — kept inline in pw.ts (not a separate file).
 // See examples/custom-helpers.md for the full implementation.
 // export async function freezeDynamicContent(page: Page): Promise<void> { /* ... */ }
 ```

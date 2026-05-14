@@ -6,7 +6,7 @@ A new route `/my-feature` has been added to the React app with a sidebar nav lin
 
 ## Step 1 — Add to SIDEBAR_PAGES in the crawl spec
 
-Open `e2e/screenshot-crawl.spec.ts` and add an entry to `SIDEBAR_PAGES`:
+Open `e2e/screenshot-crawl.pw.spec.ts` and add an entry to `SIDEBAR_PAGES`:
 
 ```typescript
 const SIDEBAR_PAGES: SidebarPage[] = [
@@ -27,10 +27,13 @@ Use `optional: true` only for extension-contributed routes that may not be insta
 ## Step 2 — Capture the baseline
 
 ```bash
-npm run e2e:screenshots
+npm run pw:screenshots:update
 ```
 
-This writes `e2e/screenshots/baseline/my-feature--initial.png`.
+This writes `e2e/screenshots/baseline/my-feature--initial.png` via Electron's
+`BrowserWindow.capturePage()`. (Compare-mode `npm run pw:screenshots` also
+auto-records missing baselines locally, matching Playwright's
+`--update-snapshots=missing` default.)
 
 ## Step 3 — Verify the screenshot
 
@@ -51,7 +54,7 @@ Add a row to [references/coverage-map.md](../references/coverage-map.md) in the 
 
 ```bash
 git add e2e/screenshots/baseline/my-feature--initial.png
-git add e2e/screenshot-crawl.spec.ts
+git add e2e/screenshot-crawl.pw.spec.ts
 git add .claude/skills/e2e-screenshots/references/coverage-map.md
 git commit -m "feat: add my-feature page screenshot baseline"
 ```

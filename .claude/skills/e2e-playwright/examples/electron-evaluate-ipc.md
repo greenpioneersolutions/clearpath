@@ -127,7 +127,7 @@ test('read DOM directly', async ({ page }) => {
 CoPilot Commander exposes IPC as `window.electronAPI.invoke(channel, args)`. The cleanest way is the helper:
 
 ```ts
-import { invokeIPC } from './helpers/app';
+import { invokeIPC } from './helpers/pw';
 
 test('list sessions via IPC', async ({ page }) => {
   const sessions = await invokeIPC<{ id: string; name: string }[]>(page, 'cli:list-sessions');
