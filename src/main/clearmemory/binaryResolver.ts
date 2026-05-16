@@ -1,5 +1,6 @@
 import { app } from 'electron'
 import { existsSync, accessSync, constants as fsConstants } from 'fs'
+import { homedir } from 'os'
 import { join } from 'path'
 import { resolveInShell } from '../utils/shellEnv'
 
@@ -48,15 +49,33 @@ function isExecutable(filePath: string): boolean {
 }
 
 /**
+ * Well-known absolute install locations to probe before declaring the binary
+ * missing. These cover common cases where the binary exists but isn't on the
+ * user's login-shell PATH (cargo install drops binaries here, but ~/.cargo/bin
+ * isn't always on PATH unless rustup wrote a shell-rc snippet).
+ */
+function wellKnownInstallPaths(): string[] {
+  const home = homedir()
+  return [
+    join(home, '.cargo', 'bin', BINARY_NAME),       // `cargo install` default
+    join(home, '.local', 'bin', BINARY_NAME),       // user-bin convention
+    '/usr/local/bin/' + BINARY_NAME,                // homebrew on x86 macOS / Linux
+    '/opt/homebrew/bin/' + BINARY_NAME,             // homebrew on Apple Silicon
+  ]
+}
+
+/**
  * Resolve the clearmemory binary.
  *
- * - Tries the bundled location first (will only succeed once Slice F ships the
- *   binary in `resources/clearmemory/`).
- * - Falls back to the user's login-shell PATH.
- * - Returns `{ source: 'missing' }` with a user-facing install hint if neither
- *   location yields an executable binary.
+ * Resolution order:
+ *   1. Bundled copy under `resources/clearmemory/` (Slice F).
+ *   2. `which clearmemory` via the user's login shell (catches anything on PATH).
+ *   3. Well-known absolute install paths (~/.cargo/bin, ~/.local/bin, brew dirs)
+ *      — this saves users whose login shell doesn't export ~/.cargo/bin.
  *
- * Callers should NEVER throw based on a missing binary — the UI handles it.
+ * Returns `{ source: 'missing' }` with a user-facing install hint if every
+ * probe fails. Callers should NEVER throw based on a missing binary — the UI
+ * handles it.
  */
 export async function resolveClearMemoryBinary(): Promise<BinaryResolution> {
   // 1) Bundled copy
@@ -72,9 +91,19 @@ export async function resolveClearMemoryBinary(): Promise<BinaryResolution> {
     return { path: onPath, source: 'path' }
   }
 
+  // 3) Well-known absolute install locations. cargo install puts binaries in
+  //    ~/.cargo/bin but doesn't add it to PATH unless rustup managed the
+  //    install. We probe absolute paths so the user doesn't have to fix their
+  //    shell rc just to use the app.
+  for (const candidate of wellKnownInstallPaths()) {
+    if (isExecutable(candidate)) {
+      return { path: candidate, source: 'path' }
+    }
+  }
+
   return {
     path: '',
     source: 'missing',
-    error: 'clearmemory binary not found. Install with: cargo install clearmemory',
+    error: 'clearmemory binary not found. Install from source: cargo install --git https://github.com/greenpioneersolutions/clearmemory clearmemory',
   }
 }

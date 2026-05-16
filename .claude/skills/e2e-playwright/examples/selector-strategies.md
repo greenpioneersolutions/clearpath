@@ -1,6 +1,6 @@
 # Example: Selector Strategies
 
-How to pick the right locator for each scenario in CoPilot Commander. Order of preference: `getByRole` > `getByLabel` > `getByPlaceholder` > `getByText` > `getByTestId` > CSS > XPath.
+How to pick the right locator for each scenario in ClearPath. Order of preference: `getByRole` > `getByLabel` > `getByPlaceholder` > `getByText` > `getByTestId` > CSS > XPath.
 
 ## Quick decision tree
 
@@ -287,4 +287,4 @@ await page.getByRole('button', { name: 'Save' }).click();
 | `<details>`/`<summary>` | group |
 | `<svg>` (decorative) | (none — use `[role="img"]` if focusable) |
 
-For ARIA-tabbed UI: `role="tab"`, `role="tabpanel"`, `role="tablist"`. CoPilot Commander Configure tabs use `role="tab"` correctly.
+For ARIA-tabbed UI: `role="tab"`, `role="tabpanel"`, `role="tablist"`. ClearPath Configure tabs use `role="tab"` correctly.

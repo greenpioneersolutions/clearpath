@@ -1,4 +1,4 @@
-# Unit Test Plan — CoPilot Commander
+# Unit Test Plan — ClearPathAI
 
 **Date started:** April 9, 2026  
 **Goal:** Reach ~80–90% coverage on complex modules, 100% on pure utilities.  

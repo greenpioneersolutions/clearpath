@@ -4,7 +4,7 @@ description: 4-backend support landed — 'copilot-cli' | 'copilot-sdk' | 'claud
 type: project
 ---
 
-CoPilot Commander now supports 4 backends, not 2. Terminology:
+ClearPath now supports 4 backends, not 2. Terminology:
 - `BackendId` = `'copilot-cli' | 'copilot-sdk' | 'claude-cli' | 'claude-sdk'`
 - provider = `'copilot' | 'claude'` — use `providerOf(id)` to narrow
 - transport = `'cli' | 'sdk'` — use `transportOf(id)`

@@ -323,7 +323,7 @@ npx playwright test e2e/sessions.pw.spec.ts:42       # specific line
 npx playwright test 'sessions/*'                  # regex against full path
 ```
 
-## Suite organization conventions for CoPilot Commander
+## Suite organization conventions for ClearPath
 
 | File | Tests in scope |
 |------|---------------|

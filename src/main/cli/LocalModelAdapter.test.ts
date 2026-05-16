@@ -4,6 +4,16 @@ import https from 'https'
 import { EventEmitter } from 'events'
 import { LocalModelAdapter } from './LocalModelAdapter'
 import type { SessionOptions } from './types'
+import { tokenCounter } from '../tokenization/TokenCounter'
+
+// Replace tokenCounter.count with a deterministic char-length-based stub so
+// the Anthropic cache-eligibility tests don't depend on the real tokenizer.
+// Done as a spy on the imported singleton (not vi.mock) because setup-coverage
+// pre-loads modules before vi.mock factories can intercept — see
+// agent-memory feedback_test_mocking_pattern.md.
+beforeEach(() => {
+  vi.spyOn(tokenCounter, 'count').mockImplementation((text: string) => text.length)
+})
 
 // ─── Helper type for spying on private methods ────────────────────────────────
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -445,11 +455,12 @@ describe('LocalModelAdapter', () => {
       })
 
       expect(output).toContain('Hello from Ollama')
-      // streamChat(model, isLmStudio, messages)
+      // streamChat(model, route, messages, options)
       expect(streamSpy).toHaveBeenCalledWith(
         'llama3',
-        false, // not LM Studio
+        'ollama',
         expect.arrayContaining([{ role: 'user', content: 'Say hello' }]),
+        expect.anything(),
       )
     })
 
@@ -471,8 +482,9 @@ describe('LocalModelAdapter', () => {
       expect(output).toContain('Hello from LM Studio')
       expect(streamSpy).toHaveBeenCalledWith(
         'TheBloke/Llama-2-13B-GGUF',
-        true, // is LM Studio
+        'lmstudio',
         expect.any(Array),
+        expect.anything(),
       )
     })
 
@@ -492,8 +504,9 @@ describe('LocalModelAdapter', () => {
 
       expect(streamSpy).toHaveBeenCalledWith(
         'llama3',
-        false,
+        'ollama',
         expect.any(Array),
+        expect.anything(),
       )
     })
 
@@ -580,23 +593,33 @@ describe('LocalModelAdapter', () => {
   // ═══════════════════════════════════════════════════════════════════════════
 
   describe('streamChat routing', () => {
-    it('routes to chatOllama when isLmStudio is false', async () => {
+    it('routes to chatOllama when route is "ollama"', async () => {
       const ollamaSpy = vi.spyOn(adapter as AnyAdapter, 'chatOllama').mockResolvedValue('ollama response')
       const lmSpy = vi.spyOn(adapter as AnyAdapter, 'chatLmStudio').mockResolvedValue('lm response')
 
-      const result = await (adapter as AnyAdapter).streamChat('llama3', false, [])
+      const result = await (adapter as AnyAdapter).streamChat('llama3', 'ollama', [])
       expect(result).toBe('ollama response')
       expect(ollamaSpy).toHaveBeenCalledWith('llama3', [])
       expect(lmSpy).not.toHaveBeenCalled()
     })
 
-    it('routes to chatLmStudio when isLmStudio is true', async () => {
+    it('routes to chatLmStudio when route is "lmstudio"', async () => {
       const ollamaSpy = vi.spyOn(adapter as AnyAdapter, 'chatOllama').mockResolvedValue('ollama response')
       const lmSpy = vi.spyOn(adapter as AnyAdapter, 'chatLmStudio').mockResolvedValue('lm response')
 
-      const result = await (adapter as AnyAdapter).streamChat('org/model', true, [])
+      const result = await (adapter as AnyAdapter).streamChat('org/model', 'lmstudio', [])
       expect(result).toBe('lm response')
       expect(lmSpy).toHaveBeenCalledWith('org/model', [])
+      expect(ollamaSpy).not.toHaveBeenCalled()
+    })
+
+    it('routes to chatAnthropic when route is "anthropic"', async () => {
+      const anthropicSpy = vi.spyOn(adapter as AnyAdapter, 'chatAnthropic').mockResolvedValue('claude response')
+      const ollamaSpy = vi.spyOn(adapter as AnyAdapter, 'chatOllama').mockResolvedValue('ollama response')
+
+      const result = await (adapter as AnyAdapter).streamChat('claude-sonnet-4-5', 'anthropic', [])
+      expect(result).toBe('claude response')
+      expect(anthropicSpy).toHaveBeenCalled()
       expect(ollamaSpy).not.toHaveBeenCalled()
     })
   })
@@ -1162,6 +1185,288 @@ describe('LocalModelAdapter', () => {
         const result = await (adapter as AnyAdapter).httpPost('http://localhost:11434/api/chat', '{}')
         expect(result).toBe('{"message":{"content":"hello"}}')
       })
+    })
+  })
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Token Coach Phase 3 — Anthropic direct-API + cache_control injection
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  describe('Anthropic cache_control injection (Phase 3)', () => {
+    const ORIGINAL_API_KEY = process.env.ANTHROPIC_API_KEY
+
+    beforeEach(() => {
+      process.env.ANTHROPIC_API_KEY = 'test-key'
+    })
+
+    afterEach(() => {
+      if (ORIGINAL_API_KEY === undefined) delete process.env.ANTHROPIC_API_KEY
+      else process.env.ANTHROPIC_API_KEY = ORIGINAL_API_KEY
+    })
+
+    function setupHttpPostSpy(adapter: LocalModelAdapter, response: string): ReturnType<typeof vi.spyOn> {
+      // Capture the request body so we can assert on cache_control presence.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return vi.spyOn(adapter as any, 'httpPost').mockResolvedValue(response)
+    }
+
+    it('detects Anthropic models and routes them to chatAnthropic', async () => {
+      const adapter = new LocalModelAdapter()
+      const chatAnthropicSpy = vi.spyOn(adapter as AnyAdapter, 'chatAnthropic')
+        .mockResolvedValue('hello')
+
+      adapter.startSession({
+        cli: 'copilot',
+        mode: 'prompt',
+        prompt: 'hi there',
+        model: 'claude-sonnet-4-5',
+      })
+
+      await vi.waitFor(() => {
+        expect(chatAnthropicSpy).toHaveBeenCalled()
+      })
+    })
+
+    it('does NOT inject cache_control when policy is disabled', async () => {
+      const adapter = new LocalModelAdapter()
+      adapter.setCachePolicy({ enabled: false, ttl: 'ephemeral' })
+
+      const apiResponse = JSON.stringify({
+        content: [{ type: 'text', text: 'response' }],
+        usage: { input_tokens: 100, output_tokens: 50 },
+      })
+      const httpPostSpy = setupHttpPostSpy(adapter, apiResponse)
+
+      // Big agent prompt that would otherwise qualify for caching.
+      const bigAgentPrompt = 'A'.repeat(5000)
+      await (adapter as AnyAdapter).chatAnthropic(
+        'claude-sonnet-4-5',
+        [{ role: 'user', content: 'hi' }],
+        {
+          promptSlices: { userText: 'hi', agentPrompt: bigAgentPrompt },
+        },
+      )
+
+      // The body sent should NOT include cache_control.
+      const calls = httpPostSpy.mock.calls
+      expect(calls.length).toBe(1)
+      const body = JSON.parse(calls[0][1] as string)
+      // System is just a string (no cache_control content-block form).
+      expect(typeof body.system).toBe('string')
+      expect(JSON.stringify(body)).not.toContain('cache_control')
+    })
+
+    it('does NOT inject cache_control when prefix is below the per-model minimum', async () => {
+      const adapter = new LocalModelAdapter()
+      adapter.setCachePolicy({ enabled: true, ttl: 'ephemeral' })
+
+      const apiResponse = JSON.stringify({
+        content: [{ type: 'text', text: 'r' }],
+        usage: {},
+      })
+      const httpPostSpy = setupHttpPostSpy(adapter, apiResponse)
+
+      // 500 chars ≈ 500 tokens (mocked counter); below Sonnet's 1024 minimum.
+      const smallAgentPrompt = 'A'.repeat(500)
+      await (adapter as AnyAdapter).chatAnthropic(
+        'claude-sonnet-4-5',
+        [{ role: 'user', content: 'hi' }],
+        {
+          promptSlices: { userText: 'hi', agentPrompt: smallAgentPrompt },
+        },
+      )
+
+      const body = JSON.parse(httpPostSpy.mock.calls[0][1] as string)
+      expect(JSON.stringify(body)).not.toContain('cache_control')
+    })
+
+    it('DOES inject cache_control when Anthropic model + policy enabled + prefix above minimum', async () => {
+      const adapter = new LocalModelAdapter()
+      adapter.setCachePolicy({ enabled: true, ttl: 'ephemeral' })
+
+      const apiResponse = JSON.stringify({
+        content: [{ type: 'text', text: 'r' }],
+        usage: {
+          cache_read_input_tokens: 800,
+          cache_creation_input_tokens: 200,
+        },
+      })
+      const httpPostSpy = setupHttpPostSpy(adapter, apiResponse)
+
+      // 2000 chars ≈ 2000 tokens — above Sonnet's 1024 minimum.
+      const bigAgentPrompt = 'A'.repeat(2000)
+      await (adapter as AnyAdapter).chatAnthropic(
+        'claude-sonnet-4-5',
+        [{ role: 'user', content: 'hi' }],
+        {
+          promptSlices: { userText: 'hi', agentPrompt: bigAgentPrompt },
+        },
+      )
+
+      const body = JSON.parse(httpPostSpy.mock.calls[0][1] as string)
+      // system must be a content-block array with cache_control on the last block.
+      expect(Array.isArray(body.system)).toBe(true)
+      expect(body.system).toHaveLength(1)
+      expect(body.system[0].cache_control).toEqual({ type: 'ephemeral' })
+      expect(body.system[0].text).toBe(bigAgentPrompt)
+    })
+
+    it('uses the 4096-token minimum for Opus 4.5 (does NOT inject at 2000 tokens)', async () => {
+      const adapter = new LocalModelAdapter()
+      adapter.setCachePolicy({ enabled: true, ttl: 'ephemeral' })
+
+      const apiResponse = JSON.stringify({ content: [], usage: {} })
+      const httpPostSpy = setupHttpPostSpy(adapter, apiResponse)
+
+      const prefix = 'A'.repeat(2000) // 2000 tokens — below 4096 for Opus 4.5
+      await (adapter as AnyAdapter).chatAnthropic(
+        'claude-opus-4-5',
+        [{ role: 'user', content: 'hi' }],
+        { promptSlices: { userText: 'hi', agentPrompt: prefix } },
+      )
+
+      const body = JSON.parse(httpPostSpy.mock.calls[0][1] as string)
+      expect(JSON.stringify(body)).not.toContain('cache_control')
+    })
+
+    it('uses the 4096-token minimum for Opus 4.5 (DOES inject at 5000 tokens)', async () => {
+      const adapter = new LocalModelAdapter()
+      adapter.setCachePolicy({ enabled: true, ttl: 'ephemeral' })
+
+      const apiResponse = JSON.stringify({ content: [], usage: {} })
+      const httpPostSpy = setupHttpPostSpy(adapter, apiResponse)
+
+      const prefix = 'A'.repeat(5000)
+      await (adapter as AnyAdapter).chatAnthropic(
+        'claude-opus-4-5',
+        [{ role: 'user', content: 'hi' }],
+        { promptSlices: { userText: 'hi', agentPrompt: prefix } },
+      )
+
+      const body = JSON.parse(httpPostSpy.mock.calls[0][1] as string)
+      expect(Array.isArray(body.system)).toBe(true)
+      expect(body.system[0].cache_control).toEqual({ type: 'ephemeral' })
+    })
+
+    it('captures cache_read / cache_creation token counts from the API response', async () => {
+      const adapter = new LocalModelAdapter()
+      adapter.setCachePolicy({ enabled: true, ttl: 'ephemeral' })
+
+      const apiResponse = JSON.stringify({
+        content: [{ type: 'text', text: 'ok' }],
+        usage: {
+          input_tokens: 1500,
+          output_tokens: 30,
+          cache_read_input_tokens: 1234,
+          cache_creation_input_tokens: 500,
+        },
+      })
+      setupHttpPostSpy(adapter, apiResponse)
+
+      await (adapter as AnyAdapter).chatAnthropic(
+        'claude-sonnet-4-5',
+        [{ role: 'user', content: 'hi' }],
+        { promptSlices: { userText: 'hi', agentPrompt: 'A'.repeat(2000) } },
+      )
+
+      const usage = adapter.getLastCacheUsage()
+      expect(usage.cachedInputTokens).toBe(1234)
+      expect(usage.cacheCreationTokens).toBe(500)
+      expect(usage.cacheInjected).toBe(true)
+    })
+
+    it('resets cache usage to 0/0 on every startSession (no leak across turns)', async () => {
+      const adapter = new LocalModelAdapter()
+      adapter.setCachePolicy({ enabled: true, ttl: 'ephemeral' })
+
+      // Manually plant stale stats — simulating a previous Anthropic turn.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ;(adapter as any).lastCacheUsage = { cachedInputTokens: 9999, cacheCreationTokens: 888, cacheInjected: true }
+
+      // Now start a session pointed at Ollama (non-Anthropic).
+      vi.spyOn(adapter as AnyAdapter, 'streamChat').mockResolvedValue('ok')
+      adapter.startSession({
+        cli: 'copilot',
+        mode: 'prompt',
+        prompt: 'hello',
+        model: 'llama3',
+      })
+
+      // The session start should have reset the cache usage immediately.
+      const usage = adapter.getLastCacheUsage()
+      expect(usage.cachedInputTokens).toBe(0)
+      expect(usage.cacheCreationTokens).toBe(0)
+      expect(usage.cacheInjected).toBe(false)
+    })
+
+    it('throws when ANTHROPIC_API_KEY is missing', async () => {
+      delete process.env.ANTHROPIC_API_KEY
+      const adapter = new LocalModelAdapter()
+
+      await expect(
+        (adapter as AnyAdapter).chatAnthropic('claude-sonnet-4-5', [{ role: 'user', content: 'hi' }]),
+      ).rejects.toThrow(/ANTHROPIC_API_KEY/)
+    })
+
+    it('sends the api-key + anthropic-version headers', async () => {
+      const adapter = new LocalModelAdapter()
+      adapter.setCachePolicy({ enabled: false, ttl: 'ephemeral' })
+
+      const apiResponse = JSON.stringify({ content: [{ type: 'text', text: 'ok' }], usage: {} })
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const httpPostSpy = vi.spyOn(adapter as any, 'httpPost').mockResolvedValue(apiResponse)
+
+      await (adapter as AnyAdapter).chatAnthropic(
+        'claude-sonnet-4-5',
+        [{ role: 'user', content: 'hi' }],
+      )
+
+      const call = httpPostSpy.mock.calls[0]
+      const url = call[0] as string
+      const extraHeaders = call[2] as Record<string, string>
+      expect(url).toContain('api.anthropic.com')
+      expect(extraHeaders['x-api-key']).toBe('test-key')
+      expect(extraHeaders['anthropic-version']).toBe('2023-06-01')
+    })
+
+    it('parses Anthropic text content blocks into a single string', async () => {
+      const adapter = new LocalModelAdapter()
+      adapter.setCachePolicy({ enabled: false, ttl: 'ephemeral' })
+
+      const apiResponse = JSON.stringify({
+        content: [
+          { type: 'text', text: 'Hello ' },
+          { type: 'text', text: 'world.' },
+          // Non-text blocks (e.g. tool_use) should be ignored.
+          { type: 'tool_use', id: 'x' },
+        ],
+        usage: {},
+      })
+      setupHttpPostSpy(adapter, apiResponse)
+
+      const result = await (adapter as AnyAdapter).chatAnthropic(
+        'claude-sonnet-4-5',
+        [{ role: 'user', content: 'hi' }],
+      )
+      expect(result).toBe('Hello world.')
+    })
+
+    it('reports cacheInjected:false and a reason when caching is skipped', async () => {
+      const adapter = new LocalModelAdapter()
+      adapter.setCachePolicy({ enabled: false, ttl: 'ephemeral' })
+
+      const apiResponse = JSON.stringify({ content: [], usage: {} })
+      setupHttpPostSpy(adapter, apiResponse)
+
+      await (adapter as AnyAdapter).chatAnthropic(
+        'claude-sonnet-4-5',
+        [{ role: 'user', content: 'hi' }],
+        { promptSlices: { userText: 'hi', agentPrompt: 'A'.repeat(2000) } },
+      )
+
+      const usage = adapter.getLastCacheUsage()
+      expect(usage.cacheInjected).toBe(false)
+      expect(usage.reason).toContain('disabled')
     })
   })
 })

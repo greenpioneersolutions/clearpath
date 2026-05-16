@@ -67,6 +67,7 @@ const FLAG_GROUPS: FlagGroup[] = [
     label: 'Session Features',
     flags: [
       { key: 'showNotes', label: 'Notes', description: 'Save reference material — meeting takeaways, recurring prompts, decisions — and attach them to new sessions for context.', learnPathId: 'notes' },
+      { key: 'showTokenMeter', label: 'Context Meter', description: 'Live token count + per-slice breakdown chip in the chat input. Helps you see how much your prompt costs before you send.' },
       { key: 'showUseContext', label: 'Use Context', description: 'Memory/agent/skill context in wizard' },
       { key: 'showAgentSelection', label: 'Agent Selection', description: 'Pick agents per session' },
       { key: 'showCostTracking', label: 'Cost Tracking', description: 'Per-turn cost estimates' },
@@ -93,6 +94,9 @@ const FLAG_GROUPS: FlagGroup[] = [
       { key: 'showBackstageExplorer', label: 'Backstage Explorer', description: 'Backstage entity browser experimental page.' },
       { key: 'showMcpServers', label: 'MCP Servers', description: 'MCP server catalog, registry, secrets, and sync (under Connect).' },
       { key: 'showExtensions', label: 'Extensions Manager', description: 'Install / enable / manage extensions (under Connect). Already-installed extensions still load when this is off.' },
+      { key: 'showPromptCache', label: 'Prompt cache breakpoints', description: 'Inject Anthropic prompt-cache breakpoints on direct-API turns. Stable-prefix discipline benefits CLI passthroughs always; this flag only adds explicit breakpoints.' },
+      { key: 'showModelRouting', label: 'Model routing', description: 'Per-prompt difficulty classifier picks trivial / normal / hard and routes to the cheapest model that fits. Chip above the chat input lets you override per turn.' },
+      { key: 'showEfficiencyInsights', label: 'Efficiency insights', description: 'Insights → Efficiency tab plus pre-flight cost warnings, 70%-context soft-compact nudge, and a "Fresh start" button on active sessions. Shows where tokens go and surfaces real-data savings suggestions.' },
     ],
   },
   {

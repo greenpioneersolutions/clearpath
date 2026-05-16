@@ -19,6 +19,8 @@ interface Props {
   onResumeSession: (sessionId: string, cli: BackendId, name?: string) => void
   /** Click handler for the "See more →" link — typically opens the SessionManager modal. */
   onSeeMore: () => void
+  /** Optional override for how many recent sessions to show. Defaults to 5. */
+  limit?: number
 }
 
 function timeAgo(ms: number): string {
@@ -49,7 +51,7 @@ function CliBadge({ cli }: { cli: BackendId }): JSX.Element {
   )
 }
 
-export default function RecentSessionsCard({ onResumeSession, onSeeMore }: Props): JSX.Element {
+export default function RecentSessionsCard({ onResumeSession, onSeeMore, limit }: Props): JSX.Element {
   const [rows, setRows] = useState<PersistedSessionRow[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -68,7 +70,7 @@ export default function RecentSessionsCard({ onResumeSession, onSeeMore }: Props
   const recent = [...rows]
     .filter((s) => s.status !== 'running' && !s.archived)
     .sort((a, b) => (b.endedAt ?? b.startedAt) - (a.endedAt ?? a.startedAt))
-    .slice(0, 5)
+    .slice(0, limit ?? 5)
 
   return (
     <section

@@ -18,9 +18,11 @@ This document walks through everything an enterprise team needs to know — from
 - [Deployment Options](#deployment-options)
 - [Authentication & Identity](#authentication--identity)
 - [Policy Framework](#policy-framework)
+- [Knowledge & Context Management](#knowledge--context-management)
 - [Cost Governance](#cost-governance)
 - [Team Onboarding](#team-onboarding)
 - [Integration Points](#integration-points)
+- [Extension System](#extension-system)
 - [Local AI Models (Air-Gapped)](#local-ai-models-air-gapped)
 - [Customization & Branding](#customization--branding)
 - [Support & Community](#support--community)
@@ -50,7 +52,9 @@ ClearPathAI solves this by wrapping the CLI tools your organization has already 
 │                   Desktop Application                     │
 │                                                           │
 │  ┌─────────────────────────────────────────────────────┐ │
-│  │  React UI (4 screens: Home, Work, Insights, Config) │ │
+│  │  React UI — sidebar: Home · Sessions · Notes ·      │ │
+│  │  Insights · Connect · Settings (plus Learn, Clear   │ │
+│  │  Memory, and PR Scores when feature-flagged on)     │ │
 │  └───────────────────────┬─────────────────────────────┘ │
 │                          │ IPC (process-local only)       │
 │  ┌───────────────────────┴─────────────────────────────┐ │
@@ -60,8 +64,12 @@ ClearPathAI solves this by wrapping the CLI tools your organization has already 
 │  │  │ Manager   │ │ Engine   │ │ Audit Logger       │ │ │
 │  │  └───────────┘ └──────────┘ └────────────────────┘ │ │
 │  │  ┌───────────┐ ┌──────────┐ ┌────────────────────┐ │ │
-│  │  │ Cost      │ │ Auth     │ │ Notification       │ │ │
-│  │  │ Tracker   │ │ Manager  │ │ Manager            │ │ │
+│  │  │ MCP       │ │ Auth     │ │ Notification       │ │ │
+│  │  │ Manager   │ │ Manager  │ │ Manager            │ │ │
+│  │  └───────────┘ └──────────┘ └────────────────────┘ │ │
+│  │  ┌───────────┐ ┌──────────┐ ┌────────────────────┐ │ │
+│  │  │ Extension │ │ Notes /  │ │ ClearMemory        │ │ │
+│  │  │ Sidecar   │ │ Memory   │ │ Service (opt-in)   │ │ │
 │  │  └───────────┘ └──────────┘ └────────────────────┘ │ │
 │  └──────────────────────────────────────────────────────┘ │
 │              │                    │                        │
@@ -139,7 +147,9 @@ ClearPathAI is designed as a **single-user desktop application**. There is no bu
 - Restrict app installation to approved users via your software distribution system (Jamf, SCCM, Intune)
 - For stricter controls, fork the repository and gate sensitive operations behind additional authentication checks
 
-Multi-user RBAC is on the roadmap for a future version but is not available in the current release.
+### Roadmap
+
+Multi-user RBAC, SSO integration (Okta, Azure AD), SOC 2 Type II attestation, and standardized managed-deployment patterns are under consideration as part of an enterprise go-to-market motion currently in board review. They are not in the current release. The full enterprise-readiness gap analysis is enumerated in the project's business requirements document at [docs/business-requirements.md](docs/business-requirements.md) §9 ("Risks and Open Questions"). Organizations evaluating ClearPathAI for large-scale deployment today should plan around the single-user model described above; future versions may close these gaps depending on the GTM motion's outcome.
 
 ---
 
@@ -320,33 +330,61 @@ For enforced policies (ones that users cannot override), include them in a pre-c
 
 ---
 
+## Knowledge & Context Management
+
+ClearPathAI ships three layers of persistent context that let users build durable knowledge assets out of their AI work, rather than throwing it away at the end of every session. All three are local-first — nothing is transmitted outside the user's machine.
+
+### Notes
+
+Notes is a top-level sidebar surface (peer of Sessions) for capturing meeting takeaways, conversation summaries, reference material, outcomes, and ideas. Notes have categories, tags, pinning, search, and file attachments. They can be attached to a new session in advance via "Use in next session →" so the AI receives them as framed context.
+
+**Security and compliance properties:**
+- Notes are stored locally in `clear-path-notes.json` via electron-store, encrypted at rest with a machine-derived key.
+- The in-chat audit-trail chips on user message bubbles show **titles only**; full note bodies never reach the rendered DOM. This is enforced in `noteHandlers.ts` and verified by automated tests.
+- When attached to a prompt, notes are framed in an XML-escaped envelope (`<notes count="N"><note title="..." …>{body}</note></notes>`). The AI is instructed to cite notes by title, so internal note IDs never leak into responses.
+- Notes are never re-transmitted on subsequent turns within a session — context is sent once at session start, reducing token cost.
+
+Notes are gated behind the `showNotes` feature flag (on by default). Organizations that want to disable user-managed notes for compliance reasons can ship a build with the flag off.
+
+### ClearMemory (opt-in cross-session memory)
+
+ClearMemory is an optional integration with the [clearmemory](https://github.com/greenpioneersolutions/clearmemory) Rust memory engine. When enabled, it provides semantic cross-session memory the AI can reference automatically.
+
+**Security and compliance properties:**
+- **Default off.** Gated behind the `showClearMemory` feature flag (default `false`).
+- **Local-only.** The engine runs on `127.0.0.1:8080` (HTTP) and `127.0.0.1:9700` (MCP). No external network connections.
+- **Token isolation.** The bearer token used to authenticate against the local engine lives in the main process and never reaches the renderer.
+- **Path safety.** Import paths are validated through tilde expansion → sensitive-system-path check → root-jail enforcement (home, cwd, tmpdir). Memory IDs are validated to reject `..`, `/`, `\0`, whitespace, and >256 characters before URL encoding.
+- **Restore guard.** Backup restore requires the user to type the word `RESTORE` to confirm.
+- **MCP merge, don't clobber.** When enabling ClearMemory, the integration writes a `clearmemory` entry into `~/.claude/mcp.json` and `~/.copilot/mcp-config.json` atomically, preserving other entries and top-level keys.
+
+Organizations evaluating ClearMemory should treat it as a per-user opt-in feature. It is not currently designed for centralized org-wide memory management.
+
+### Knowledge Base
+
+The Knowledge Base auto-generates structured documentation about a project (architecture overview, directory structure, key modules, data models, API surface, etc.) into `.clear-path/knowledge-base/` in the project root. Generated content is plain markdown, version-controllable, and editable. The AI can be configured to reference Knowledge Base sections as session context — letting non-engineering team members ask questions about a codebase without needing to explain it from scratch.
+
+---
+
 ## Cost Governance
 
-AI usage costs money. ClearPathAI tracks costs and provides governance tools so there are no surprises.
+AI usage costs money. ClearPathAI's cost-governance surface is currently mid-redesign — the original Insights "Budget & Limits" UI was removed in v1.10.0 pending a redesign aligned with the new consumption-pricing models being rolled out by Anthropic and OpenAI. The backend (`costHandlers.ts`, `clear-path-cost.json` electron-store) remains in place and continues to collect data; the user-facing dashboards and budget alerts are slated for restoration in a follow-up release.
 
-### Cost Tracking
+What is in place today:
 
-- **Per-turn cost estimation**: Every AI response includes a cost estimate based on token counts and model pricing
-- **Session cost rollup**: Total cost per session, visible in session history
-- **Daily/weekly/monthly aggregation**: Charts and summaries in the Insights Analytics tab
-- **Model-level breakdown**: See which AI models are driving costs
+### Session Limits
 
-### Budget Controls
+- **Max-turns cap per session** (`Settings → Session Limits`) — prevents a single session from running away. Useful for scheduled and automated tasks.
 
-| Control | How It Works |
-|---------|-------------|
-| Daily budget | Set a daily spending cap. Alert at configurable thresholds (e.g., 75%, 90%). Optional auto-pause at limit. |
-| Weekly budget | Rolling 7-day spending cap with the same alert and auto-pause options. |
-| Monthly budget | Calendar month cap for budgeting alignment. |
-| Per-session budget | Cap individual session spending (useful for automated/scheduled tasks). |
+### Cost Telemetry (Backend)
 
-### Cost Reports
+- `CLIManager.estimateCostFromOutput()` continues to estimate per-turn cost based on token counts and model pricing.
+- Per-session cost records are persisted to `clear-path-cost.json` (max 10,000 records).
+- The data is available via IPC (`cost:by-session`, `cost:by-model`, `cost:by-agent`, `cost:daily-spend`) for organizations that want to build their own reporting on top.
 
-Export cost data for:
-- Finance team budget reconciliation
-- Department chargeback calculations
-- ROI analysis (cost vs. estimated time savings)
-- Trend analysis and forecasting
+### Roadmap
+
+Per-user budgets, threshold alerts, auto-pause, and finance-friendly cost reports are explicit deliverables of the enterprise GTM motion described in [docs/business-requirements.md](docs/business-requirements.md) §6 ("Token Economics — The ROI Engine"). Restoring the cost UI is a prerequisite for production-grade cost governance under the consumption-pricing pricing models now being rolled out by the major AI providers.
 
 ---
 
@@ -391,22 +429,23 @@ Content is written for non-technical users — no jargon, business analogies thr
 
 ### Built-in Integrations
 
-ClearPathAI supports connecting to external project management and development tools:
+ClearPathAI supports connecting to external project management, observability, and development tools through the Connect page:
 
 | Platform | Capabilities |
 |----------|-------------|
 | **GitHub** | Issues, pull requests, repository data — reference directly in AI sessions |
-| **Jira** | Tickets, sprints, project data — pull into sessions for context |
-| **Confluence** | Documentation — provide as context to AI |
+| **Atlassian (Jira / Confluence)** | Tickets, sprints, project data, documentation — pull into sessions for context |
 | **ServiceNow** | Incidents, requests — workflow automation |
+| **Backstage** | Service catalog, relationships, ownership — surface platform context |
+| **Datadog** | Metrics, monitors, incidents — investigate alerts with AI assistance |
+| **PowerBI** | Reports, datasets, dashboards — pull business context into sessions |
+| **Splunk** | Log searches, alerts — diagnostic context for AI investigation |
+
+Credentials for every integration are stored via the OS keychain (macOS Keychain, Windows DPAPI, Linux libsecret) using Electron's `safeStorage`. Tokens never appear in plaintext outside the main process. Corporate-proxy SSL inspection is supported — all integration HTTP calls use Electron's `net.fetch` (which trusts the system certificate store) rather than Node's built-in `fetch`.
 
 ### MCP Server Extensions
 
-For custom integrations, ClearPathAI supports MCP (Model Context Protocol) servers:
-- Connect to internal databases, APIs, or services
-- Provide custom tools to the AI
-- The same permission system governs MCP tools
-- Configure per-session or globally
+For custom integrations, ClearPathAI supports MCP (Model Context Protocol) servers managed through the **Connect → MCP Servers** tab. ClearPath owns the registry of configured servers and syncs it to the native CLI config files (`~/.copilot/mcp-config.json`, `~/.claude/mcp-config.json`, and project-level variants) so the underlying CLIs see the same servers ClearPath does. A bundled catalog ships 10 curated servers (filesystem, GitHub, Postgres, SQLite, Slack, Brave Search, Puppeteer, Fetch, Google Drive, Memory). Custom servers can be added with explicit command/args, with shell-injection validation. Server secrets are stored in the OS keychain, never in the registry file. Per-server test-connection invokes a real MCP `initialize` JSON-RPC before saving.
 
 ### Webhook Notifications
 
@@ -414,6 +453,53 @@ Send notifications to external systems:
 - Slack webhook integration
 - Generic JSON webhook (works with any endpoint)
 - Configurable per notification type
+
+---
+
+## Extension System
+
+ClearPathAI ships an extension framework that lets organizations add custom functionality without forking the codebase. Two bundled extensions (PR Scores, Efficiency Coach) demonstrate the pattern; user-installed extensions can be developed against the published SDK and distributed as signed packages.
+
+### Architecture
+
+| Component | Responsibility |
+|---|---|
+| **Extension Sidecar** | Each extension's main-process logic runs in an isolated child process (`ExtensionSidecarManager`). A misbehaving extension cannot crash the host app; infinite loops are killed via timeout; an auto-disable triggers after 3 errors. |
+| **Sandboxed iframes** | Extension UI renders inside permission-gated iframes. The host app's DOM, raw tokens, and other extensions' data are unreachable from extension code. |
+| **MessageChannel SDK** | Communication between extensions and the host uses structured `MessageChannel` envelopes — no direct API access. |
+| **Permission Model** | Extensions declare required permissions in their manifest (`clearpath-extension.json`). Permissions are granted at install time and individually revocable. |
+| **Encrypted Storage** | Each extension gets up to 50 MB of per-extension encrypted persistent storage, isolated from other extensions and from the host. |
+| **Dynamic IPC Channels** | Extension IPC channels are loaded at preload init and refreshed on install/uninstall/enable/disable — newly installed extensions work without an app restart. |
+
+### What Extensions Can Do
+
+- Render React-based UI pages, panels, and dashboard widgets
+- Access GitHub repos, PRs, and issues through a secure proxy (tokens never leave the main process)
+- Store up to 50 MB of encrypted persistent data per extension
+- Send notifications to the user
+- Make HTTP requests to declared domains
+- Register custom IPC handlers for backend logic
+- Contribute sidebar navigation entries, Insights tabs, and context providers (data that auto-attaches to AI sessions)
+
+### What Extensions Cannot Do
+
+- Access raw API tokens or credentials
+- Make undeclared network requests
+- Read or modify the host app's DOM
+- Access other extensions' data
+- Crash the host app (errors are contained)
+
+### Installation and Distribution
+
+Extensions are managed in **Connect → Extensions**. Users can install from `.clear.ext` or `.zip` archives via the UI. Each install triggers manifest validation, permission review, and registration. Bundled extensions auto-enable with their declared permissions; user-installed extensions start disabled until permissions are explicitly granted.
+
+For enterprise distribution, organizations can:
+1. Package custom extensions with `clearpath-package-extension` (CLI tool included in the SDK).
+2. Sign the resulting `.clear.ext` archive with internal code signing.
+3. Distribute via internal share or alongside the app build.
+4. Pre-install bundled extensions in a forked build for zero-touch deployment.
+
+See [docs/extensions.md](docs/extensions.md) for the full Extension Developer Guide and SDK reference.
 
 ---
 

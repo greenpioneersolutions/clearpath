@@ -253,6 +253,31 @@
       "experimental": false,
       "enabled": true,
       "addedIn": "1.8.0"
+    },
+
+    "showTokenMeter": {
+      "description": "Live context meter chip in the chat input — shows token count, per-slice breakdown, and % of model context window.",
+      "experimental": false,
+      "enabled": true,
+      "addedIn": "1.14.0"
+    },
+    "showPromptCache": {
+      "description": "Inject Anthropic prompt-cache breakpoints on direct-API turns (LocalModelAdapter). Stable-prefix discipline benefits CLI passthroughs always; this flag only controls the explicit-breakpoint injection.",
+      "experimental": true,
+      "enabled": false,
+      "addedIn": "1.14.0"
+    },
+    "showModelRouting": {
+      "description": "Auto-route prompts to cheaper models when the request is simple. A pure-heuristic classifier picks trivial/normal/hard per turn; the chip above the chat input shows the decision and lets you override.",
+      "experimental": true,
+      "enabled": false,
+      "addedIn": "1.14.0"
+    },
+    "showEfficiencyInsights": {
+      "description": "Token Coach surface: Insights → Efficiency tab, pre-flight cost warnings, 70% context-window soft-compact nudge, and 'Fresh start' button on the session header. Requires real cost-record data from prior sessions to surface meaningful suggestions.",
+      "experimental": true,
+      "enabled": false,
+      "addedIn": "1.14.0"
     }
   }
 }

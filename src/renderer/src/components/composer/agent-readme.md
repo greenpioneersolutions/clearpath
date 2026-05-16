@@ -1,7 +1,7 @@
 # Composer — Multi-step AI workflow builder
 
 ## Purpose
-Enables users to create, configure, and execute multi-step AI workflows with support for templates, parallel execution, cost estimation, and session targeting. Powers the CoPilot Commander's workflow composition interface.
+Enables users to create, configure, and execute multi-step AI workflows with support for templates, parallel execution, cost estimation, and session targeting. Powers the ClearPath's workflow composition interface.
 
 ## Files
 | File | Description | Key Exports / Functions |

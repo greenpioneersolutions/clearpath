@@ -72,7 +72,14 @@ export interface PromptSuggestion {
   displayText: string
   targetAgentId: string
   followUpQuestions: string[]
-  category: 'spotlight' | 'default'
+  /**
+   * - `spotlight`: featured on the Home hub / TryAnExampleModal "Recommended" group.
+   * - `default`: shown in the TryAnExampleModal "More" group once the user has had
+   *   their first interaction.
+   * - `launchpad-spotlight`: cold-start example chips on the Sessions launchpad
+   *   (QuickStartCard). Filtered out of Home / TryAnExampleModal surfaces.
+   */
+  category: 'spotlight' | 'default' | 'launchpad-spotlight'
   displayOrder: number
 }
 

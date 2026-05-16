@@ -1,13 +1,13 @@
 import { useState, useEffect, useRef, useMemo, type ReactNode } from 'react'
 import type { BackendId, BackendProvider, BackendTransport } from '../../../../shared/backends'
 import { providerOf, transportOf } from '../../../../shared/backends'
-import type { AgentDef, AgentListResult, AuthState, ProviderAuthState } from '../../types/ipc'
+import type { AgentDef, AgentListResult } from '../../types/ipc'
+import type { PromptSuggestion } from '../../types/starter-pack'
 import { MODEL_TIERS } from '../../data/modelTiers'
-
-interface InstallStatus {
-  copilot: boolean
-  claude: boolean
-}
+import { useAuthStatus } from '../../hooks/useAuthStatus'
+import { LAUNCHPAD_COPY } from '../../copy/launchpad'
+import AttachmentChipToolbar, { type AttachmentChip } from './AttachmentChipToolbar'
+import AttachmentPopover from './AttachmentPopover'
 
 interface ProviderReadiness {
   cli: boolean
@@ -16,6 +16,11 @@ interface ProviderReadiness {
 
 type ReadinessMap = Record<BackendProvider, ProviderReadiness>
 
+/**
+ * Pre-load default — assume CLI is available so the UI doesn't flash "not
+ * connected" during the first auth probe. Once the hook reports `loaded`,
+ * this is replaced with the real values.
+ */
 const EMPTY_READINESS: ReadinessMap = {
   copilot: { cli: true, sdk: false },
   claude:  { cli: true, sdk: false },
@@ -26,21 +31,37 @@ const PROVIDERS: ReadonlyArray<{ id: BackendProvider; label: string }> = [
   { id: 'claude',  label: 'Claude' },
 ]
 
-const TRANSPORTS: ReadonlyArray<{ id: BackendTransport; label: string }> = [
-  { id: 'cli', label: 'CLI' },
-  { id: 'sdk', label: 'SDK' },
-]
-
 export type QuickStartPermissionMode = 'default' | 'plan' | 'acceptEdits' | 'bypassPermissions'
 
-const PERMISSION_MODES: ReadonlyArray<{ value: QuickStartPermissionMode; label: string }> = [
-  { value: 'default', label: 'Default' },
-  { value: 'plan', label: 'Plan' },
-  { value: 'acceptEdits', label: 'Accept edits' },
-  { value: 'bypassPermissions', label: 'Bypass permissions' },
+/**
+ * `value` strings flow unchanged to the `--permission-mode` flag in
+ * `ClaudeCodeAdapter.buildArgs` — DO NOT rename them. Only the `label` /
+ * `hint` are user-visible. See [Slice PR 1, change #3] for the rename
+ * rationale: the previous CLI-jargon labels ("Bypass permissions") were
+ * intimidating to non-technical users.
+ */
+const PERMISSION_MODES: ReadonlyArray<{ value: QuickStartPermissionMode; label: string; hint: string }> = [
+  { value: 'default',           label: 'Ask me before changes',         hint: LAUNCHPAD_COPY.quickStart.permissionHints.default },
+  { value: 'plan',              label: "Just plan, don't change anything", hint: LAUNCHPAD_COPY.quickStart.permissionHints.plan },
+  { value: 'acceptEdits',       label: 'Auto-approve file edits',       hint: LAUNCHPAD_COPY.quickStart.permissionHints.acceptEdits },
+  { value: 'bypassPermissions', label: 'Full autonomy (advanced)',      hint: LAUNCHPAD_COPY.quickStart.permissionHints.bypassPermissions },
 ]
 
 const ADVANCED_KEY = 'quickStartAdvanced'
+/**
+ * One-shot localStorage flag: once the user has submitted their first prompt
+ * via QuickStartCard, the cold-start example chips never render again — even
+ * after a reload. The chips only have value to first-time users.
+ */
+const FIRST_PROMPT_KEY = 'quickStartFirstPromptSent'
+
+/** Hardcoded safety net used when the starter-pack IPC errors out or returns
+ *  nothing. Keeps the UI helpful even when main-process state is wedged. */
+const FALLBACK_EXAMPLE_PROMPTS: ReadonlyArray<string> = [
+  "Explain this project like I'm new",
+  'Summarize what changed this week',
+  'Draft a status update for my team',
+]
 
 interface AdvancedState {
   agent: string
@@ -124,19 +145,15 @@ interface Props {
     attachedAgent?: { id: string; name: string }
     attachedSkills?: Array<{ id: string; name: string }>
     attachedNotes?: Array<{ id: string; title: string }>
+    /**
+     * `true` when the user explicitly picked "No agent (default)" in the
+     * Add-context popover. Forwarded to `cli:start-session` so the main
+     * process skips its stored-active-agent fallback.
+     */
+    noAgent?: boolean
   }) => void
   /** Initial CLI selection (typically the user's last-used backend). */
   defaultCli?: BackendId
-}
-
-function isProviderAuthState(v: unknown): v is ProviderAuthState {
-  if (!v || typeof v !== 'object') return false
-  const o = v as Record<string, unknown>
-  return typeof o.cli === 'object' && o.cli !== null && typeof o.sdk === 'object' && o.sdk !== null
-}
-
-function isReady(s: { installed?: boolean; authenticated?: boolean } | undefined): boolean {
-  return Boolean(s && s.installed && s.authenticated)
 }
 
 /**
@@ -201,14 +218,47 @@ function SectionPicker({
 export default function QuickStartCard({ onSubmit, defaultCli }: Props): JSX.Element {
   const [prompt, setPrompt] = useState('')
   const [provider, setProvider] = useState<BackendProvider>(() => providerOf(defaultCli ?? 'copilot-cli'))
+  // Transport state stays internal — the user-visible Connection picker was
+  // removed from this surface (PR 1, change #2). Transport is derived from
+  // `defaultCli` (which Work.tsx fills from the user's last-used backend) and
+  // CLI-vs-SDK is chosen in Configure → Backends.
   const [transport, setTransport] = useState<BackendTransport>(() => transportOf(defaultCli ?? 'copilot-cli'))
   const [model, setModel] = useState('')
-  const [readiness, setReadiness] = useState<ReadinessMap>(EMPTY_READINESS)
-  const [advancedOpen, setAdvancedOpen] = useState(false)
+  // PR 3 swapped the "+ Add context" disclosure panel for a chip toolbar:
+  // each attachment type is its own pill button that opens a focused popover
+  // anchored beneath it. Only one popover may be open at a time — opening one
+  // closes the others — so we just track the id of the currently open chip.
+  // `null` means "all popovers closed".
+  const [openChipId, setOpenChipId] = useState<string | null>(null)
+  // Customize (permission mode + additional dirs) remains a session-level
+  // disclosure separate from per-attachment context. PR 1 already split it
+  // out — PR 3 doesn't touch it.
+  const [customizeOpen, setCustomizeOpen] = useState(false)
   const [advanced, setAdvanced] = useState<AdvancedState>(loadAdvanced)
+  // Tracks whether the user has explicitly interacted with the agent picker
+  // (either by clicking "No agent (default)" or by picking a real agent) so
+  // we can distinguish that from "user never opened the popover". Without
+  // this, `advanced.agent === ''` is ambiguous — could mean either, and the
+  // server-side default-agent fallback overrides the user's explicit "none"
+  // pick. Reset whenever a real agent is selected (which is itself explicit).
+  const [agentTouched, setAgentTouched] = useState(false)
   const [agents, setAgents] = useState<AgentDef[]>([])
   const [skills, setSkills] = useState<SkillRow[]>([])
   const [notes, setNotes] = useState<NoteRow[]>([])
+  const [exampleChips, setExampleChips] = useState<string[]>(() => [...FALLBACK_EXAMPLE_PROMPTS])
+  // Initialized from localStorage so a returning user who already submitted at
+  // least once never sees the chips again, even on a fresh mount.
+  const [firstPromptSent, setFirstPromptSent] = useState<boolean>(() => {
+    try {
+      return window.localStorage.getItem(FIRST_PROMPT_KEY) === '1'
+    } catch {
+      return false
+    }
+  })
+  // Provider-pill popover state: when only one provider is ready we collapse
+  // the <select> into a "via Copilot · change" pill. Clicking the pill opens
+  // a small popover with the same options so power users can still switch.
+  const [providerPopoverOpen, setProviderPopoverOpen] = useState(false)
   // Per-session multi-select state. These do NOT mutate global skill or note
   // state — they only mark what gets attached to the next session.
   const [selectedSkillIds, setSelectedSkillIds] = useState<Set<string>>(new Set())
@@ -218,43 +268,29 @@ export default function QuickStartCard({ onSubmit, defaultCli }: Props): JSX.Ele
   const [skillSearch, setSkillSearch] = useState('')
   const [noteSearch, setNoteSearch] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  // Per-chip refs for popover anchoring + click-outside detection. The
+  // AttachmentPopover uses the anchor ref to skip closing when the click
+  // originates from the chip itself (the toolbar already handles that toggle).
+  const agentChipRef = useRef<HTMLButtonElement>(null)
+  const skillChipRef = useRef<HTMLButtonElement>(null)
+  const noteChipRef  = useRef<HTMLButtonElement>(null)
 
-  // Pull readiness from auth:get-status (preferred — splits CLI vs SDK), then
-  // fall back to cli:check-installed for the CLI-only signal. Both may fail
-  // (best-effort) — we leave optimistic defaults so the user can still try.
-  useEffect(() => {
-    void (async () => {
-      let auth: AuthState | null = null
-      try {
-        auth = await window.electronAPI.invoke('auth:get-status') as AuthState | null
-      } catch {
-        auth = null
-      }
-
-      const next: ReadinessMap = { copilot: { cli: false, sdk: false }, claude: { cli: false, sdk: false } }
-
-      if (auth && isProviderAuthState(auth.copilot) && isProviderAuthState(auth.claude)) {
-        next.copilot = { cli: isReady(auth.copilot.cli), sdk: isReady(auth.copilot.sdk) }
-        next.claude  = { cli: isReady(auth.claude.cli),  sdk: isReady(auth.claude.sdk)  }
-      } else {
-        try {
-          const status = await window.electronAPI.invoke('cli:check-installed') as InstallStatus | null
-          if (status && typeof status === 'object') {
-            next.copilot.cli = !!status.copilot
-            next.claude.cli  = !!status.claude
-          } else {
-            next.copilot.cli = true
-            next.claude.cli  = true
-          }
-        } catch {
-          next.copilot.cli = true
-          next.claude.cli  = true
-        }
-      }
-
-      setReadiness(next)
-    })()
-  }, [])
+  // Readiness comes from the shared useAuthStatus hook so the sessions
+  // launchpad chip and the sidebar dot can never disagree. Before the first
+  // probe completes (`loaded === false`), fall back to optimistic defaults so
+  // the user doesn't see a transient "not connected" flash.
+  const authStatus = useAuthStatus()
+  const readiness: ReadinessMap = useMemo(() => {
+    if (!authStatus.loaded) return EMPTY_READINESS
+    const ready = (p: { cli: { installed: boolean; authenticated: boolean }; sdk: { installed: boolean; authenticated: boolean } }) => ({
+      cli: p.cli.installed && p.cli.authenticated,
+      sdk: p.sdk.installed && p.sdk.authenticated,
+    })
+    return {
+      copilot: ready(authStatus.copilot),
+      claude:  ready(authStatus.claude),
+    }
+  }, [authStatus])
 
   // Agents and skills are scoped to the active provider; notes are global.
   useEffect(() => {
@@ -336,14 +372,50 @@ export default function QuickStartCard({ onSubmit, defaultCli }: Props): JSX.Ele
     return () => { cancelled = true }
   }, [])
 
+  // Cold-start example chips. We only fetch when the chips would actually
+  // render (first-prompt flag unset) so we don't pay for an IPC roundtrip
+  // on every Sessions visit for returning users. Errors / empty responses
+  // fall back to the hardcoded safety net so the UI is never empty.
+  useEffect(() => {
+    if (firstPromptSent) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const list = await window.electronAPI.invoke('starter-pack:get-all-prompts') as PromptSuggestion[] | null
+        if (cancelled) return
+        const launchpad = (Array.isArray(list) ? list : [])
+          .filter((p) => p.category === 'launchpad-spotlight')
+          .sort((a, b) => a.displayOrder - b.displayOrder)
+          .map((p) => p.displayText)
+        if (launchpad.length > 0) {
+          setExampleChips(launchpad)
+        }
+        // else: keep FALLBACK_EXAMPLE_PROMPTS from initial state.
+      } catch {
+        // Keep the fallback chips — UI must never go empty.
+      }
+    })()
+    return () => { cancelled = true }
+  }, [firstPromptSent])
+
   // If the currently selected transport isn't ready but the other is, switch
   // to the ready one so the user doesn't submit into a dead backend.
+  //
+  // GUARD: only run after auth has actually been probed. Before `loaded`,
+  // `readiness` reflects the optimistic `EMPTY_READINESS` default which says
+  // `sdk: false` for both providers — without this guard, an explicit
+  // `defaultCli` of e.g. `copilot-sdk` would be silently overwritten to
+  // `copilot-cli` during the first render pass and never recover, because
+  // once we settle on a "ready" transport the effect's early-return keeps us
+  // there. Pre-PR-1 this was masked by the visible Connection picker letting
+  // the user re-pick SDK; now we have to be honest about transport state.
   useEffect(() => {
+    if (!authStatus.loaded) return
     const r = readiness[provider]
     if (r[transport]) return
     if (transport === 'sdk' && r.cli) setTransport('cli')
     else if (transport === 'cli' && r.sdk) setTransport('sdk')
-  }, [provider, transport, readiness])
+  }, [provider, transport, readiness, authStatus.loaded])
 
   // Clear any saved model id that doesn't exist in the new provider's tier
   // list. Same reason as the agent guard above: a controlled <select> with no
@@ -375,8 +447,20 @@ export default function QuickStartCard({ onSubmit, defaultCli }: Props): JSX.Ele
 
   const cli: BackendId = `${provider}-${transport}` as BackendId
 
-  const showConnectionPicker = readiness[provider].cli && readiness[provider].sdk
   const modelTiers = useMemo(() => MODEL_TIERS[provider] ?? [], [provider])
+  // True when ≥2 providers have at least one transport ready. In that case we
+  // keep the <select> so the user can switch; otherwise we collapse to a pill.
+  const readyProviderCount = useMemo(
+    () => PROVIDERS.filter((p) => readiness[p.id].cli || readiness[p.id].sdk).length,
+    [readiness],
+  )
+  const showProviderSelect = readyProviderCount >= 2
+
+  // Show the cold-start chips only on a truly empty input AND before the user
+  // has ever submitted from this surface. Both conditions are intentional —
+  // we want chips to "feel" like part of the empty state, not a hint that
+  // reappears every time the user clears their text.
+  const showExampleChips = !firstPromptSent && trimmed.length === 0 && exampleChips.length > 0
 
   const handleSubmit = () => {
     if (!canSubmit) return
@@ -393,6 +477,18 @@ export default function QuickStartCard({ onSubmit, defaultCli }: Props): JSX.Ele
     const agentDef = advanced.agent ? agents.find((a) => a.id === advanced.agent) : undefined
     const attachedAgent = agentDef ? { id: agentDef.id, name: agentDef.name } : undefined
 
+    // Persist the one-shot flag BEFORE invoking onSubmit so a renderer crash
+    // mid-submit still hides chips on the next mount — the user has clearly
+    // moved past the "I need an example" stage.
+    if (!firstPromptSent) {
+      try {
+        window.localStorage.setItem(FIRST_PROMPT_KEY, '1')
+      } catch {
+        // localStorage unavailable — best effort
+      }
+      setFirstPromptSent(true)
+    }
+
     onSubmit({
       prompt: trimmed,
       cli,
@@ -403,6 +499,26 @@ export default function QuickStartCard({ onSubmit, defaultCli }: Props): JSX.Ele
       attachedAgent,
       attachedSkills: attachedSkills.length > 0 ? attachedSkills : undefined,
       attachedNotes: attachedNotes.length > 0 ? attachedNotes : undefined,
+      // Only signal explicit "no agent" when the user actually engaged the
+      // picker. A user who never opened it gets the server's default-resolution.
+      noAgent: agentTouched && !advanced.agent ? true : undefined,
+    })
+  }
+
+  const handleExampleChipClick = (text: string) => {
+    setPrompt(text)
+    // Focus + move cursor to end so the user can immediately tweak the prompt
+    // (e.g., add "for the auth module" to "Explain this project like I'm new").
+    requestAnimationFrame(() => {
+      const ta = textareaRef.current
+      if (!ta) return
+      ta.focus()
+      const len = text.length
+      try {
+        ta.setSelectionRange(len, len)
+      } catch {
+        // setSelectionRange can throw on detached textareas in tests — ignore.
+      }
     })
   }
 
@@ -446,9 +562,9 @@ export default function QuickStartCard({ onSubmit, defaultCli }: Props): JSX.Ele
       }}
     >
       <div className="mb-4">
-        <h2 className="text-white text-lg font-semibold">Start something new</h2>
+        <h2 className="text-white text-lg font-semibold">{LAUNCHPAD_COPY.quickStart.title}</h2>
         <p className="text-gray-400 text-sm mt-0.5">
-          Describe a task and we&apos;ll spin up a chat with your AI agent.
+          {LAUNCHPAD_COPY.quickStart.subtitle}
         </p>
       </div>
 
@@ -459,10 +575,32 @@ export default function QuickStartCard({ onSubmit, defaultCli }: Props): JSX.Ele
         value={prompt}
         onChange={(e) => setPrompt(e.target.value)}
         onKeyDown={handleKeyDown}
-        placeholder="What do you want to do? Describe a task and we'll start a new chat."
+        placeholder={LAUNCHPAD_COPY.quickStart.placeholder}
         rows={3}
         className="w-full resize-none bg-gray-900/60 border border-gray-700 rounded-xl px-4 py-3 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors"
       />
+
+      {showExampleChips && (
+        <div
+          data-testid="quick-start-example-chips"
+          className="mt-3 flex flex-wrap gap-2"
+          aria-label="Example prompts to get started"
+        >
+          <span className="text-[11px] text-gray-500 self-center mr-1">Try:</span>
+          {exampleChips.map((text) => (
+            <button
+              key={text}
+              type="button"
+              data-testid="quick-start-example-chip"
+              onClick={() => handleExampleChipClick(text)}
+              className="inline-flex items-center px-3 py-1 rounded-full text-xs text-violet-100 border border-violet-700/50 bg-violet-900/30 hover:bg-violet-900/50 hover:border-violet-500 transition-colors"
+              style={{ borderColor: 'rgba(127,119,221,0.4)' }}
+            >
+              {text}
+            </button>
+          ))}
+        </div>
+      )}
 
       {(advanced.agent || selectedSkillIds.size > 0 || selectedNoteIds.size > 0) && (
         <div data-testid="quick-start-refs" className="mt-2 flex flex-wrap gap-2">
@@ -476,7 +614,7 @@ export default function QuickStartCard({ onSubmit, defaultCli }: Props): JSX.Ele
                 <button
                   type="button"
                   aria-label={`Remove agent ${a.name}`}
-                  onClick={() => setAdvanced((s) => ({ ...s, agent: '' }))}
+                  onClick={() => { setAgentTouched(true); setAdvanced((s) => ({ ...s, agent: '' })) }}
                   className="text-violet-300 hover:text-white"
                 >×</button>
               </span>
@@ -528,49 +666,113 @@ export default function QuickStartCard({ onSubmit, defaultCli }: Props): JSX.Ele
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
           </svg>
-          New Chat
+          {LAUNCHPAD_COPY.quickStart.submitLabel}
         </button>
 
-        <label className="flex items-center gap-2">
-          <span className="text-xs text-gray-400">Provider</span>
-          <select
-            data-testid="quick-start-provider"
-            aria-label="Provider"
-            value={provider}
-            onChange={(e) => setProvider(e.target.value as BackendProvider)}
-            className="bg-gray-900/80 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          >
-            {PROVIDERS.map((p) => {
-              const disabled = isProviderDisabled(p.id)
-              return (
-                <option
-                  key={p.id}
-                  value={p.id}
-                  disabled={disabled}
-                  title={disabled ? `${p.label} is not connected — set it up in Configure → Authentication` : undefined}
-                >
-                  {p.label}{disabled ? ' (not connected)' : ''}
-                </option>
-              )
-            })}
-          </select>
-        </label>
-
-        {showConnectionPicker && (
+        {showProviderSelect ? (
           <label className="flex items-center gap-2">
-            <span className="text-xs text-gray-400">Connection</span>
+            <span className="text-xs text-gray-400">Provider</span>
             <select
-              data-testid="quick-start-connection"
-              aria-label="Connection"
-              value={transport}
-              onChange={(e) => setTransport(e.target.value as BackendTransport)}
+              data-testid="quick-start-provider"
+              aria-label="Provider"
+              value={provider}
+              onChange={(e) => setProvider(e.target.value as BackendProvider)}
               className="bg-gray-900/80 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
             >
-              {TRANSPORTS.map((t) => (
-                <option key={t.id} value={t.id}>{t.label}</option>
-              ))}
+              {PROVIDERS.map((p) => {
+                const disabled = isProviderDisabled(p.id)
+                // Distinguish "not installed" from "installed but not signed in"
+                // so the user knows whether they need to install or just log in.
+                const providerInfo = authStatus[p.id]
+                const installedSomewhere = providerInfo.cli.installed || providerInfo.sdk.installed
+                const suffix = !disabled
+                  ? ''
+                  : installedSomewhere
+                    ? ' (sign in needed)'
+                    : ' (not installed)'
+                const tooltip = !disabled
+                  ? undefined
+                  : installedSomewhere
+                    ? `${p.label} is installed — sign in from Configure → Authentication to connect.`
+                    : `${p.label} is not installed — install it from Configure → Authentication.`
+                return (
+                  <option
+                    key={p.id}
+                    value={p.id}
+                    disabled={disabled}
+                    title={tooltip}
+                  >
+                    {p.label}{suffix}
+                  </option>
+                )
+              })}
             </select>
           </label>
+        ) : (
+          // Single-provider pill. When only one provider is ready, hide the
+          // <select> entirely and show a compact "via X · change" status pill.
+          // Clicking opens a small popover with the same options for users
+          // who later want to switch (e.g., after authenticating Claude).
+          <div className="relative">
+            <button
+              type="button"
+              data-testid="quick-start-provider-pill"
+              aria-label={`Provider ${provider}. Click to change.`}
+              aria-expanded={providerPopoverOpen}
+              aria-haspopup="menu"
+              onClick={() => setProviderPopoverOpen((v) => !v)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs text-gray-300 border border-gray-700 bg-gray-900/60 hover:bg-gray-900/80 hover:border-gray-600 transition-colors"
+            >
+              <span className="text-gray-500">via</span>
+              <span className="font-medium text-gray-100">
+                {PROVIDERS.find((p) => p.id === provider)?.label ?? provider}
+              </span>
+              <span className="text-gray-500">·</span>
+              <span className="text-violet-300">change</span>
+            </button>
+            {providerPopoverOpen && (
+              <div
+                role="menu"
+                data-testid="quick-start-provider-popover"
+                className="absolute left-0 top-full mt-1 z-20 min-w-[180px] rounded-lg border border-gray-700 bg-gray-900 shadow-xl p-1"
+              >
+                {PROVIDERS.map((p) => {
+                  const disabled = isProviderDisabled(p.id)
+                  const providerInfo = authStatus[p.id]
+                  const installedSomewhere = providerInfo.cli.installed || providerInfo.sdk.installed
+                  const suffix = !disabled
+                    ? ''
+                    : installedSomewhere
+                      ? ' (sign in needed)'
+                      : ' (not installed)'
+                  const isCurrent = p.id === provider
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={isCurrent}
+                      disabled={disabled}
+                      onClick={() => {
+                        if (disabled) return
+                        setProvider(p.id)
+                        setProviderPopoverOpen(false)
+                      }}
+                      className={`w-full text-left px-2.5 py-1.5 rounded-md text-xs transition-colors ${
+                        isCurrent
+                          ? 'bg-violet-900/40 text-violet-100'
+                          : disabled
+                            ? 'text-gray-600 cursor-not-allowed'
+                            : 'text-gray-200 hover:bg-gray-800'
+                      }`}
+                    >
+                      {p.label}{suffix}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
         )}
 
         <label className="flex items-center gap-2">
@@ -594,177 +796,251 @@ export default function QuickStartCard({ onSubmit, defaultCli }: Props): JSX.Ele
         </label>
       </div>
 
+      {/*
+        PR 3: the stacked "+ Add context" disclosure was replaced with a chip
+        toolbar (one chip per attachment type) that opens a focused popover
+        anchored to the clicked chip. Same SectionPicker inside the popover,
+        ~80% less visual weight at rest.
+
+        The Customize disclosure (permission mode + additional dirs) is
+        session-level (one selection per chat), not per-attachment — it stays
+        as a separate disclosure exactly as PR 1 shipped it.
+      */}
+      <AttachmentChipToolbar
+        openChipId={openChipId}
+        onChipClick={(id) => setOpenChipId((curr) => (curr === id ? null : id))}
+        chips={[
+          {
+            id: 'agent',
+            label: LAUNCHPAD_COPY.quickStart.chips.agent,
+            accent: 'violet',
+            count: advanced.agent ? 1 : 0,
+            buttonRef: agentChipRef,
+            ariaControls: 'quick-start-agent-popover',
+            popover: (
+              <AttachmentPopover
+                id="quick-start-agent-popover"
+                open={openChipId === 'agent'}
+                anchorRef={agentChipRef}
+                onClose={() => setOpenChipId(null)}
+                title={LAUNCHPAD_COPY.quickStart.popovers.agentTitle}
+              >
+                <SectionPicker
+                  label="Agent"
+                  hint={LAUNCHPAD_COPY.quickStart.hints.agent}
+                  search={agentSearch}
+                  onSearch={setAgentSearch}
+                  count={advanced.agent ? 1 : 0}
+                  placeholder="Search agents…"
+                  empty="No agents available for this provider."
+                  testId="quick-start-agent-picker"
+                >
+                  <button
+                    type="button"
+                    onClick={() => { setAgentTouched(true); setAdvanced((a) => ({ ...a, agent: '' })) }}
+                    aria-pressed={!advanced.agent}
+                    className={`w-full text-left px-2.5 py-1.5 rounded-md text-xs transition-colors ${
+                      !advanced.agent
+                        ? 'bg-violet-900/30 text-violet-200 border border-violet-700'
+                        : 'text-gray-400 border border-transparent hover:bg-gray-800'
+                    }`}
+                  >
+                    No agent (default)
+                  </button>
+                  {agents
+                    .filter((a) => !agentSearch || a.name.toLowerCase().includes(agentSearch.toLowerCase()))
+                    .map((a) => {
+                      const on = advanced.agent === a.id
+                      return (
+                        <button
+                          key={a.id}
+                          type="button"
+                          onClick={() => { setAgentTouched(true); setAdvanced((s) => ({ ...s, agent: on ? '' : a.id })) }}
+                          aria-pressed={on}
+                          title={a.description || a.name}
+                          className={`w-full text-left px-2.5 py-1.5 rounded-md text-xs transition-colors ${
+                            on
+                              ? 'bg-violet-900/30 text-violet-200 border border-violet-700'
+                              : 'text-gray-200 border border-transparent hover:bg-gray-800'
+                          }`}
+                        >
+                          <span className="font-medium">{a.name}</span>
+                          {a.description && <span className="block text-[10px] text-gray-500 truncate">{a.description}</span>}
+                        </button>
+                      )
+                    })}
+                </SectionPicker>
+              </AttachmentPopover>
+            ),
+          },
+          {
+            id: 'skill',
+            label: LAUNCHPAD_COPY.quickStart.chips.skill,
+            accent: 'indigo',
+            count: selectedSkillIds.size,
+            buttonRef: skillChipRef,
+            ariaControls: 'quick-start-skill-popover',
+            popover: (
+              <AttachmentPopover
+                id="quick-start-skill-popover"
+                open={openChipId === 'skill'}
+                anchorRef={skillChipRef}
+                onClose={() => setOpenChipId(null)}
+                title={LAUNCHPAD_COPY.quickStart.popovers.skillTitle}
+              >
+                <SectionPicker
+                  label="Skills"
+                  hint={LAUNCHPAD_COPY.quickStart.hints.skills}
+                  search={skillSearch}
+                  onSearch={setSkillSearch}
+                  count={selectedSkillIds.size}
+                  placeholder="Search skills…"
+                  empty="No skills available for this provider. Add one in Configure → Skills."
+                  testId="quick-start-skill-picker"
+                >
+                  {skills
+                    .filter((s) => !skillSearch || s.name.toLowerCase().includes(skillSearch.toLowerCase()))
+                    .map((s) => {
+                      const on = selectedSkillIds.has(s.id)
+                      return (
+                        <button
+                          key={s.id}
+                          type="button"
+                          onClick={() => toggleSkillSelection(s.id)}
+                          aria-pressed={on}
+                          title={s.description || s.name}
+                          className={`w-full text-left px-2.5 py-1.5 rounded-md text-xs transition-colors flex items-center gap-2 ${
+                            on
+                              ? 'bg-indigo-900/30 text-indigo-200 border border-indigo-700'
+                              : 'text-gray-200 border border-transparent hover:bg-gray-800'
+                          }`}
+                        >
+                          <span
+                            className={`w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 ${
+                              on ? 'bg-indigo-600 border-indigo-600' : 'border-gray-600'
+                            }`}
+                          >
+                            {on && (
+                              <svg className="w-2 h-2 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                              </svg>
+                            )}
+                          </span>
+                          <span className="flex-1 truncate">
+                            <span className="font-medium">{s.name}</span>
+                            {s.description && <span className="block text-[10px] text-gray-500 truncate">{s.description}</span>}
+                          </span>
+                        </button>
+                      )
+                    })}
+                </SectionPicker>
+              </AttachmentPopover>
+            ),
+          },
+          {
+            id: 'note',
+            label: LAUNCHPAD_COPY.quickStart.chips.note,
+            accent: 'teal',
+            count: selectedNoteIds.size,
+            buttonRef: noteChipRef,
+            ariaControls: 'quick-start-note-popover',
+            popover: (
+              <AttachmentPopover
+                id="quick-start-note-popover"
+                open={openChipId === 'note'}
+                anchorRef={noteChipRef}
+                onClose={() => setOpenChipId(null)}
+                title={LAUNCHPAD_COPY.quickStart.popovers.noteTitle}
+              >
+                <SectionPicker
+                  label="Notes"
+                  hint={LAUNCHPAD_COPY.quickStart.hints.notes}
+                  search={noteSearch}
+                  onSearch={setNoteSearch}
+                  count={selectedNoteIds.size}
+                  placeholder="Search notes…"
+                  empty="No notes yet. Add one on the Notes page."
+                  testId="quick-start-note-picker"
+                >
+                  {notes
+                    .filter((n) => {
+                      if (!noteSearch) return true
+                      const q = noteSearch.toLowerCase()
+                      return (
+                        n.title.toLowerCase().includes(q) ||
+                        n.tags.some((t) => t.toLowerCase().includes(q)) ||
+                        n.category.toLowerCase().includes(q)
+                      )
+                    })
+                    .map((n) => {
+                      const on = selectedNoteIds.has(n.id)
+                      return (
+                        <button
+                          key={n.id}
+                          type="button"
+                          onClick={() => toggleNoteSelection(n.id)}
+                          aria-pressed={on}
+                          className={`w-full text-left px-2.5 py-1.5 rounded-md text-xs transition-colors flex items-center gap-2 ${
+                            on
+                              ? 'bg-teal-900/30 text-teal-200 border border-teal-700'
+                              : 'text-gray-200 border border-transparent hover:bg-gray-800'
+                          }`}
+                        >
+                          <span
+                            className={`w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 ${
+                              on ? 'bg-teal-600 border-teal-600' : 'border-gray-600'
+                            }`}
+                          >
+                            {on && (
+                              <svg className="w-2 h-2 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                              </svg>
+                            )}
+                          </span>
+                          <span className="flex-1 truncate">
+                            {n.pinned && <span aria-hidden className="mr-1">📌</span>}
+                            <span className="font-medium">{n.title}</span>
+                            <span className="text-[10px] text-gray-500 ml-1.5">{n.category}</span>
+                          </span>
+                        </button>
+                      )
+                    })}
+                </SectionPicker>
+              </AttachmentPopover>
+            ),
+          },
+          {
+            id: 'files',
+            label: LAUNCHPAD_COPY.quickStart.chips.files,
+            accent: 'gray',
+            disabled: true,
+            tooltip: LAUNCHPAD_COPY.quickStart.chips.filesTooltip,
+          },
+        ]}
+      />
+
       <div className="mt-4">
         <button
           type="button"
-          data-testid="quick-start-advanced-toggle"
-          onClick={() => setAdvancedOpen((v) => !v)}
-          aria-expanded={advancedOpen}
-          aria-controls="quick-start-advanced"
+          data-testid="quick-start-customize-toggle"
+          onClick={() => setCustomizeOpen((v) => !v)}
+          aria-expanded={customizeOpen}
+          aria-controls="quick-start-customize"
           className="text-xs text-gray-400 hover:text-gray-200 transition-colors flex items-center gap-1"
         >
-          Advanced {advancedOpen ? '▴' : '▾'}
+          {LAUNCHPAD_COPY.quickStart.customizeLabel} {customizeOpen ? '▴' : '▾'}
         </button>
+      </div>
 
-        {advancedOpen && (
+      {customizeOpen && (() => {
+        const currentMode = PERMISSION_MODES.find((m) => m.value === advanced.permissionMode)
+        return (
           <div
-            id="quick-start-advanced"
-            data-testid="quick-start-advanced"
-            className="mt-3 p-4 rounded-lg border border-gray-800 bg-gray-900/30 space-y-5"
+            id="quick-start-customize"
+            data-testid="quick-start-customize"
+            className="mt-3 p-4 rounded-lg border border-gray-800 bg-gray-900/30"
           >
-            {/* ── Agent (single-select) ────────────────────────────────────── */}
-            <SectionPicker
-              label="Agent"
-              hint="Pick a persona — only one runs per chat."
-              search={agentSearch}
-              onSearch={setAgentSearch}
-              count={advanced.agent ? 1 : 0}
-              placeholder="Search agents…"
-              empty="No agents available for this provider."
-              testId="quick-start-agent-picker"
-            >
-              <button
-                type="button"
-                onClick={() => setAdvanced((a) => ({ ...a, agent: '' }))}
-                aria-pressed={!advanced.agent}
-                className={`w-full text-left px-2.5 py-1.5 rounded-md text-xs transition-colors ${
-                  !advanced.agent
-                    ? 'bg-violet-900/30 text-violet-200 border border-violet-700'
-                    : 'text-gray-400 border border-transparent hover:bg-gray-800'
-                }`}
-              >
-                No agent (default)
-              </button>
-              {agents
-                .filter((a) => !agentSearch || a.name.toLowerCase().includes(agentSearch.toLowerCase()))
-                .map((a) => {
-                  const on = advanced.agent === a.id
-                  return (
-                    <button
-                      key={a.id}
-                      type="button"
-                      onClick={() => setAdvanced((s) => ({ ...s, agent: on ? '' : a.id }))}
-                      aria-pressed={on}
-                      title={a.description || a.name}
-                      className={`w-full text-left px-2.5 py-1.5 rounded-md text-xs transition-colors ${
-                        on
-                          ? 'bg-violet-900/30 text-violet-200 border border-violet-700'
-                          : 'text-gray-200 border border-transparent hover:bg-gray-800'
-                      }`}
-                    >
-                      <span className="font-medium">{a.name}</span>
-                      {a.description && <span className="block text-[10px] text-gray-500 truncate">{a.description}</span>}
-                    </button>
-                  )
-                })}
-            </SectionPicker>
-
-            {/* ── Skills (multi-select) ────────────────────────────────────── */}
-            <SectionPicker
-              label="Skills"
-              hint="Tag this chat with skills the AI should use. Per-chat — does not change global skill settings."
-              search={skillSearch}
-              onSearch={setSkillSearch}
-              count={selectedSkillIds.size}
-              placeholder="Search skills…"
-              empty="No skills available for this provider. Add one in Configure → Skills."
-              testId="quick-start-skill-picker"
-            >
-              {skills
-                .filter((s) => !skillSearch || s.name.toLowerCase().includes(skillSearch.toLowerCase()))
-                .map((s) => {
-                  const on = selectedSkillIds.has(s.id)
-                  return (
-                    <button
-                      key={s.id}
-                      type="button"
-                      onClick={() => toggleSkillSelection(s.id)}
-                      aria-pressed={on}
-                      title={s.description || s.name}
-                      className={`w-full text-left px-2.5 py-1.5 rounded-md text-xs transition-colors flex items-center gap-2 ${
-                        on
-                          ? 'bg-indigo-900/30 text-indigo-200 border border-indigo-700'
-                          : 'text-gray-200 border border-transparent hover:bg-gray-800'
-                      }`}
-                    >
-                      <span
-                        className={`w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 ${
-                          on ? 'bg-indigo-600 border-indigo-600' : 'border-gray-600'
-                        }`}
-                      >
-                        {on && (
-                          <svg className="w-2 h-2 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                          </svg>
-                        )}
-                      </span>
-                      <span className="flex-1 truncate">
-                        <span className="font-medium">{s.name}</span>
-                        {s.description && <span className="block text-[10px] text-gray-500 truncate">{s.description}</span>}
-                      </span>
-                    </button>
-                  )
-                })}
-            </SectionPicker>
-
-            {/* ── Notes (multi-select) ─────────────────────────────────────── */}
-            <SectionPicker
-              label="Notes"
-              hint="Attach saved notes as reference context. Body goes to the AI; only titles show in chat."
-              search={noteSearch}
-              onSearch={setNoteSearch}
-              count={selectedNoteIds.size}
-              placeholder="Search notes…"
-              empty="No notes yet. Add one on the Notes page."
-              testId="quick-start-note-picker"
-            >
-              {notes
-                .filter((n) => {
-                  if (!noteSearch) return true
-                  const q = noteSearch.toLowerCase()
-                  return (
-                    n.title.toLowerCase().includes(q) ||
-                    n.tags.some((t) => t.toLowerCase().includes(q)) ||
-                    n.category.toLowerCase().includes(q)
-                  )
-                })
-                .map((n) => {
-                  const on = selectedNoteIds.has(n.id)
-                  return (
-                    <button
-                      key={n.id}
-                      type="button"
-                      onClick={() => toggleNoteSelection(n.id)}
-                      aria-pressed={on}
-                      className={`w-full text-left px-2.5 py-1.5 rounded-md text-xs transition-colors flex items-center gap-2 ${
-                        on
-                          ? 'bg-teal-900/30 text-teal-200 border border-teal-700'
-                          : 'text-gray-200 border border-transparent hover:bg-gray-800'
-                      }`}
-                    >
-                      <span
-                        className={`w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 ${
-                          on ? 'bg-teal-600 border-teal-600' : 'border-gray-600'
-                        }`}
-                      >
-                        {on && (
-                          <svg className="w-2 h-2 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                          </svg>
-                        )}
-                      </span>
-                      <span className="flex-1 truncate">
-                        {n.pinned && <span aria-hidden className="mr-1">📌</span>}
-                        <span className="font-medium">{n.title}</span>
-                        <span className="text-[10px] text-gray-500 ml-1.5">{n.category}</span>
-                      </span>
-                    </button>
-                  )
-                })}
-            </SectionPicker>
-
-            {/* ── Permissions + dirs (bottom row) ──────────────────────────── */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-gray-800">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <label className="flex flex-col gap-1">
                 <span className="text-[11px] uppercase tracking-wide text-gray-500">Permission mode</span>
                 <select
@@ -778,6 +1054,20 @@ export default function QuickStartCard({ onSubmit, defaultCli }: Props): JSX.Ele
                     <option key={m.value} value={m.value}>{m.label}</option>
                   ))}
                 </select>
+                {/*
+                  Per-mode hint sits directly under the select so the user
+                  always sees the consequence of their pick. The value is
+                  unchanged (still flows to --permission-mode); only the
+                  label is plain-English.
+                */}
+                {currentMode && (
+                  <p
+                    data-testid="quick-start-permission-mode-hint"
+                    className="text-[11px] text-gray-500 mt-1"
+                  >
+                    {currentMode.hint}
+                  </p>
+                )}
               </label>
 
               <label className="flex flex-col gap-1">
@@ -793,13 +1083,9 @@ export default function QuickStartCard({ onSubmit, defaultCli }: Props): JSX.Ele
                 />
               </label>
             </div>
-
-            {/* Templates and file attachments are intentionally out of scope for
-                the current iteration — they'll come back as a dedicated feature
-                later once the core context-attach flow stabilizes. */}
           </div>
-        )}
-      </div>
+        )
+      })()}
     </section>
   )
 }

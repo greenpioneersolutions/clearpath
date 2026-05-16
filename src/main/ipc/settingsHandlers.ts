@@ -9,6 +9,8 @@ import { setCustomEnvVars, setEnvVarEntries } from '../utils/shellEnv'
 import { storeSecret, retrieveSecret, hasSecret, getSecretPreview, deleteSecret, listSecretKeys } from '../utils/credentialStore'
 import { getStoreEncryptionKey } from '../utils/storeEncryption'
 import { log } from '../utils/logger'
+import { DEFAULT_CACHE_POLICY, type CachePolicy, type CacheTtl } from '../tokenization/cachePolicy'
+import { DEFAULT_ROUTING_RULES, type RoutingRules } from '../routing/RoutingRules'
 
 // ── Settings schema ──────────────────────────────────────────────────────────
 
@@ -30,6 +32,25 @@ interface AppSettings {
   verbose: boolean
   envVars: Record<string, string>
   envVarEntries?: EnvVarEntry[]
+  /**
+   * Token Coach Phase 3 — prompt-cache policy. Read by LocalModelAdapter
+   * (and any future direct-API adapter) to decide whether to inject
+   * `cache_control` markers on Anthropic-pointed requests. CLI passthroughs
+   * (Copilot / Claude Code) do not consult this — they handle their own
+   * caching internally — but the stable-prefix discipline implemented by
+   * `prefixOrderMiddleware` still benefits them.
+   *
+   * Optional on read for backward compat with stores written before Phase 3.
+   * The getter falls back to `DEFAULT_CACHE_POLICY` (disabled / ephemeral).
+   */
+  cachePolicy?: CachePolicy
+  /**
+   * Token Coach Phase 4 — per-CLI routing rules. Read by `routingMiddleware`
+   * via CLIManager's `getRoutingRules` getter. The rules are off by default
+   * (opt-in via `showModelRouting` flag + the toggle in Configure → Routing).
+   * Optional on read for backward compat with stores written before Phase 4.
+   */
+  routingRules?: RoutingRules
 }
 
 interface ConfigProfile {
@@ -54,6 +75,12 @@ const DEFAULT_SETTINGS: AppSettings = {
   maxTurns: null,
   verbose: false,
   envVars: {},
+  cachePolicy: { ...DEFAULT_CACHE_POLICY },
+  routingRules: {
+    enabled: DEFAULT_ROUTING_RULES.enabled,
+    copilot: { ...DEFAULT_ROUTING_RULES.copilot },
+    claude: { ...DEFAULT_ROUTING_RULES.claude },
+  },
 }
 
 const store = new Store<SettingsStoreSchema>({
@@ -228,6 +255,64 @@ function rebuildSpawnEnv(settings: AppSettings): void {
   setEnvVarEntries(entries.map(e => ({ key: e.key, scope: e.scope })))
 }
 
+/**
+ * Optional listeners notified when the cache policy changes — used by
+ * CLIManager + LocalModelAdapter to update their in-memory copies without
+ * each having to re-read settings on every turn.
+ */
+const cachePolicyListeners = new Set<(policy: CachePolicy) => void>()
+
+/**
+ * Subscribe to cache-policy changes. Returns an unsubscribe function. Listener
+ * is invoked synchronously on subscribe with the current policy so the caller
+ * doesn't need a separate `getCurrentCachePolicy()` call.
+ */
+export function onCachePolicyChange(listener: (policy: CachePolicy) => void): () => void {
+  cachePolicyListeners.add(listener)
+  // Fire immediately with the stored policy so subscribers initialize correctly.
+  listener(store.get('settings').cachePolicy ?? { ...DEFAULT_CACHE_POLICY })
+  return () => cachePolicyListeners.delete(listener)
+}
+
+/**
+ * Same fan-out pattern as cache-policy, but for routing rules. CLIManager
+ * subscribes once at boot so the routing middleware always reads the live
+ * rules via its `getRules` getter without an extra IPC round-trip per turn.
+ */
+const routingRulesListeners = new Set<(rules: RoutingRules) => void>()
+
+function readRoutingRules(): RoutingRules {
+  const stored = store.get('settings').routingRules
+  if (!stored) {
+    return {
+      enabled: DEFAULT_ROUTING_RULES.enabled,
+      copilot: { ...DEFAULT_ROUTING_RULES.copilot },
+      claude: { ...DEFAULT_ROUTING_RULES.claude },
+    }
+  }
+  // Defensively backfill missing tiers — protects against hand-edited JSON
+  // or stores written before a tier was added.
+  return {
+    enabled: typeof stored.enabled === 'boolean' ? stored.enabled : DEFAULT_ROUTING_RULES.enabled,
+    copilot: {
+      trivial: stored.copilot?.trivial ?? DEFAULT_ROUTING_RULES.copilot.trivial,
+      normal: stored.copilot?.normal ?? DEFAULT_ROUTING_RULES.copilot.normal,
+      hard: stored.copilot?.hard ?? DEFAULT_ROUTING_RULES.copilot.hard,
+    },
+    claude: {
+      trivial: stored.claude?.trivial ?? DEFAULT_ROUTING_RULES.claude.trivial,
+      normal: stored.claude?.normal ?? DEFAULT_ROUTING_RULES.claude.normal,
+      hard: stored.claude?.hard ?? DEFAULT_ROUTING_RULES.claude.hard,
+    },
+  }
+}
+
+export function onRoutingRulesChange(listener: (rules: RoutingRules) => void): () => void {
+  routingRulesListeners.add(listener)
+  listener(readRoutingRules())
+  return () => routingRulesListeners.delete(listener)
+}
+
 export function registerSettingsHandlers(ipcMain: IpcMain): void {
   // Load stored env vars into spawn environment on startup
   const initialSettings = store.get('settings')
@@ -296,6 +381,69 @@ export function registerSettingsHandlers(ipcMain: IpcMain): void {
     settings.verbose = args.verbose
     store.set('settings', settings)
     return settings
+  })
+
+  // ── Cache policy (Token Coach Phase 3) ─────────────────────────────────────
+  // Read by CLIManager + LocalModelAdapter to decide whether to inject
+  // `cache_control` on Anthropic-pointed direct-API requests. Stable-prefix
+  // discipline runs independent of this flag — it always applies — so
+  // disabling here only turns off the explicit-breakpoint injection.
+
+  ipcMain.handle('settings:get-cache-policy', (): CachePolicy => {
+    const settings = store.get('settings')
+    return settings.cachePolicy ?? { ...DEFAULT_CACHE_POLICY }
+  })
+
+  ipcMain.handle('settings:set-cache-policy', (_e, args: { enabled?: boolean; ttl?: CacheTtl }) => {
+    const settings = store.get('settings')
+    const current = settings.cachePolicy ?? { ...DEFAULT_CACHE_POLICY }
+    const next: CachePolicy = {
+      enabled: typeof args.enabled === 'boolean' ? args.enabled : current.enabled,
+      ttl: args.ttl === 'ephemeral' || args.ttl === '1h' ? args.ttl : current.ttl,
+    }
+    settings.cachePolicy = next
+    store.set('settings', settings)
+    // Fan out to in-memory subscribers (CLIManager + LocalModelAdapter).
+    for (const listener of cachePolicyListeners) {
+      try { listener(next) } catch (err) {
+        log.warn('[settings] cache-policy listener threw: %s', err instanceof Error ? err.message : String(err))
+      }
+    }
+    return next
+  })
+
+  // ── Routing rules (Token Coach Phase 4) ───────────────────────────────────
+  // Read by CLIManager's routing middleware. Rules apply only when their
+  // `enabled` field is true AND the `showModelRouting` feature flag is on
+  // (the chip + settings page are flag-gated; the middleware reads only its
+  // own `enabled` flag because the flag-gating happens UI-side).
+
+  ipcMain.handle('settings:get-routing-rules', (): RoutingRules => readRoutingRules())
+
+  ipcMain.handle('settings:set-routing-rules', (_e, args: Partial<RoutingRules>) => {
+    const settings = store.get('settings')
+    const current = readRoutingRules()
+    const next: RoutingRules = {
+      enabled: typeof args.enabled === 'boolean' ? args.enabled : current.enabled,
+      copilot: {
+        trivial: args.copilot?.trivial ?? current.copilot.trivial,
+        normal: args.copilot?.normal ?? current.copilot.normal,
+        hard: args.copilot?.hard ?? current.copilot.hard,
+      },
+      claude: {
+        trivial: args.claude?.trivial ?? current.claude.trivial,
+        normal: args.claude?.normal ?? current.claude.normal,
+        hard: args.claude?.hard ?? current.claude.hard,
+      },
+    }
+    settings.routingRules = next
+    store.set('settings', settings)
+    for (const listener of routingRulesListeners) {
+      try { listener(next) } catch (err) {
+        log.warn('[settings] routing-rules listener threw: %s', err instanceof Error ? err.message : String(err))
+      }
+    }
+    return next
   })
 
   // ── Env vars (dynamic system) ───────────────────────────────────────────────

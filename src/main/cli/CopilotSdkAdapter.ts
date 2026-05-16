@@ -147,7 +147,7 @@ export class CopilotSdkAdapter implements ICLIAdapter {
         id: 1,
         method: 'initialize',
         params: {
-          clientName: 'CoPilot Commander',
+          clientName: 'ClearPath',
           clientVersion: '1.9.0',
           workingDirectory: options.workingDirectory,
         },

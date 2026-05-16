@@ -23,7 +23,7 @@ use: {
 | `'retain-on-first-failure'` | Captured always; retained on first failure |
 | `'retain-on-failure-and-retries'` | Combination |
 
-For CoPilot Commander CI, `'on-first-retry'` gives you traces for flaky tests without paying the capture cost on every successful run.
+For ClearPath CI, `'on-first-retry'` gives you traces for flaky tests without paying the capture cost on every successful run.
 
 CLI override:
 ```bash

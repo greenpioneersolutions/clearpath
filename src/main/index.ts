@@ -23,8 +23,14 @@ import { featureFlagEvents, readCurrentFlags, type FlagChangeEvent } from './ipc
 import { registerToolHandlers } from './ipc/toolHandlers'
 import { registerMcpHandlers } from './ipc/mcpHandlers'
 import { registerSubAgentHandlers } from './ipc/subAgentHandlers'
-import { registerSettingsHandlers } from './ipc/settingsHandlers'
+import { registerSettingsHandlers, onCachePolicyChange, onRoutingRulesChange } from './ipc/settingsHandlers'
+import { registerRoutingHandlers } from './ipc/routingHandlers'
 import { registerCostHandlers } from './ipc/costHandlers'
+import { registerEfficiencyHandlers } from './ipc/efficiencyHandlers'
+import { registerPricingHandlers } from './ipc/pricingHandlers'
+import { PricingService } from './pricing/PricingService'
+import { tokenCounter } from './tokenization/TokenCounter'
+import { registerTokenizerHandlers } from './ipc/tokenizerHandlers'
 import { registerTemplateHandlers } from './ipc/templateHandlers'
 import { registerTeamHandlers } from './ipc/teamHandlers'
 import { registerOnboardingHandlers } from './ipc/onboardingHandlers'
@@ -39,7 +45,8 @@ import { registerSchedulerHandlers } from './ipc/schedulerHandlers'
 import { SchedulerService } from './scheduler/SchedulerService'
 import { registerKnowledgeBaseHandlers } from './ipc/knowledgeBaseHandlers'
 import { registerDashboardHandlers } from './ipc/dashboardHandlers'
-import { registerLocalModelHandlers } from './ipc/localModelHandlers'
+import { registerLocalModelHandlers, localModelAdapter } from './ipc/localModelHandlers'
+import { retrieveSecret } from './utils/credentialStore'
 import { registerWorkflowHandlers } from './ipc/workflowHandlers'
 import { registerLearnHandlers } from './ipc/learnHandlers'
 import { registerSkillHandlers } from './ipc/skillHandlers'
@@ -111,6 +118,10 @@ const authManager = new AuthManager(getWebContents)
 const agentManager = new AgentManager()
 const pluginManager = new PluginManager()
 const notificationManager = new NotificationManager(getWebContents)
+const pricingService = new PricingService()
+// CLIManager uses pricingService.getEffectiveTable() for every cost record so
+// user overrides (and the optional remote-sync layer) take effect immediately.
+cliManager.setPricingService(pricingService)
 const schedulerService = new SchedulerService(cliManager, notificationManager)
 const extensionRegistry = new ExtensionRegistry()
 const extensionStoreFactory = new ExtensionStoreFactory()
@@ -127,6 +138,11 @@ const { syncService: mcpSyncService } = registerMcpHandlers(ipcMain, { workingDi
 registerSubAgentHandlers(ipcMain, cliManager)
 registerSettingsHandlers(ipcMain)
 registerCostHandlers(ipcMain, notificationManager)
+// Token Coach Phase 5 — Insights "Efficiency" tab IPC. Reads from the same
+// cost + session stores, no new persistence.
+registerEfficiencyHandlers(ipcMain)
+registerPricingHandlers(ipcMain, pricingService, getWebContents)
+registerTokenizerHandlers(ipcMain)
 registerTemplateHandlers(ipcMain)
 registerTeamHandlers(ipcMain)
 registerOnboardingHandlers(ipcMain)
@@ -140,6 +156,26 @@ registerSchedulerHandlers(ipcMain, schedulerService)
 registerKnowledgeBaseHandlers(ipcMain, cliManager)
 registerDashboardHandlers(ipcMain)
 registerLocalModelHandlers(ipcMain)
+
+// Token Coach Phase 3 — propagate cache policy to CLIManager + LocalModelAdapter
+// so direct-API turns inject cache_control when the user has it enabled.
+// `onCachePolicyChange` fires once synchronously with the current stored value,
+// then again on every `settings:set-cache-policy` IPC call.
+onCachePolicyChange((policy) => {
+  cliManager.setCachePolicy(policy)
+  localModelAdapter.setCachePolicy(policy)
+})
+
+// Token Coach Phase 4 — propagate routing rules to CLIManager so the routing
+// middleware reads through the latest stored values. Fan-out fires once
+// synchronously with the stored rules on subscribe.
+onRoutingRulesChange((rules) => {
+  cliManager.setRoutingRules(rules)
+})
+
+// `routing:classify` IPC — renderer's ModelRoutingChip calls this debounced
+// while the user types so its preview matches what the pipeline will decide.
+registerRoutingHandlers(ipcMain, { getRules: () => cliManager.getRoutingRules() })
 registerWorkflowHandlers(ipcMain)
 registerLearnHandlers(ipcMain)
 registerSkillHandlers(ipcMain)
@@ -163,9 +199,6 @@ registerExtensionHandlers(ipcMain, extensionRegistry, extensionMainLoader, exten
 registerContextSourceHandlers(ipcMain, extensionRegistry)
 
 // Register host handlers that extensions can call through ctx.invoke()
-import { retrieveSecret } from './utils/credentialStore'
-import { localModelAdapter } from './ipc/localModelHandlers'
-
 extensionMainLoader.registerHostHandler('integration:get-github-token', async () => {
   const token = retrieveSecret('github-token')
   if (!token) throw new Error('GitHub token not configured')
@@ -371,9 +404,11 @@ extensionMainLoader.registerHostHandler('skills:get', async (args: unknown) => {
 
 // ── Extension Host Handlers: Context Estimation ──────────────────────────────
 extensionMainLoader.registerHostHandler('context:estimate-tokens', async (args: unknown) => {
-  const { text } = args as { text: string }
-  const tokens = Math.ceil(text.length / 4)
-  return { tokens, method: 'heuristic' as const }
+  const { text, model } = args as { text: string; model?: string }
+  // Use the real tokenizer when we know the family; heuristic-fall-through is
+  // built into TokenCounter so unknown models still return a reasonable value.
+  const tokens = tokenCounter.count(text, model ?? 'unknown')
+  return { tokens, method: 'tokenizer' as const }
 })
 
 // ── Extension Host Handlers: Notifications ───────────────────────────────────

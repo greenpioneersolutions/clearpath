@@ -70,4 +70,4 @@ Renders the Configure page and all its sub-sections. Handles saving and loading 
 8. Sets environment variables (API keys, tokens) encrypted via keychain
 9. Toggles feature flags to hide/show tabs and sections
 
-Powers the entire **Configure page**, which is the user's hub for personalizing CoPilot Commander before running Copilot or Claude Code sessions.
+Powers the entire **Configure page**, which is the user's hub for personalizing ClearPath before running Copilot or Claude Code sessions.

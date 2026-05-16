@@ -1,15 +1,15 @@
-# CoPilot Commander — Agent Navigation Guide
+# ClearPathAI — Agent Navigation Guide
 
 ## Project Overview
 
-CoPilot Commander (version 1.7.0) is a desktop GUI wrapper around GitHub Copilot CLI and Claude Code CLI, built with Electron, React, and TypeScript. It provides non-technical users with a polished graphical interface to interact with AI coding agents without touching the terminal. The app spawns, manages, and parses CLI processes, streams output to the UI, persists sessions, tracks costs, enforces compliance policies, and orchestrates multi-agent workflows with handoffs, sub-agents, and scheduled automation.
+ClearPathAI (version 1.13.0) is a desktop GUI wrapper around GitHub Copilot CLI and Claude Code CLI, built with Electron, React, and TypeScript. It provides non-technical users with a polished graphical interface to interact with AI coding agents without touching the terminal. The app spawns, manages, and parses CLI processes, streams output to the UI, persists sessions and notes, enforces compliance policies, manages MCP servers, hosts a sandboxed extension system, and orchestrates multi-agent workflows with handoffs, sub-agents, and scheduled automation. Optional cross-session memory is available via the opt-in ClearMemory integration.
 
 ## Tech Stack
 
 - **Electron 39.8.6** — Two-process desktop app (main + renderer)
 - **React 18.3.1** — GUI framework for renderer
 - **TypeScript 5.5.4** — Type-safe codebase
-- **Tailwind CSS 3.4.10** — Utility-first styling (dark theme default)
+- **Tailwind CSS 3.4.10** — Utility-first styling with light/dark mode and white-label theming
 - **electron-store 8.2.0** — Encrypted local data persistence
 - **electron-updater 6.8.3** — Auto-update mechanism with GitHub Releases
 - **node-cron 4.2.1** — Scheduled job execution
@@ -49,20 +49,28 @@ The app uses Electron's standard two-process architecture:
 |------|---------|--------------|
 | `src/main/` | Electron app initialization, window creation, singletons, IPC registration, security CSP, auto-updater | [agent-readme.md](src/main/agent-readme.md) |
 | `src/main/auth/` | Auth status checking, login flows for Copilot and Claude | [agent-readme.md](src/main/auth/agent-readme.md) |
-| `src/main/cli/` | CLI session management, adapters (Copilot/Claude/Local), cost tracking, audit logging | [agent-readme.md](src/main/cli/agent-readme.md) |
-| `src/main/ipc/` | 34+ handler registration modules for IPC channels | [agent-readme.md](src/main/ipc/agent-readme.md) |
+| `src/main/cli/` | CLI session management, adapters (Copilot/Claude/Local), cost telemetry (backend, UI removed in 1.10.0), audit logging | [agent-readme.md](src/main/cli/agent-readme.md) |
+| `src/main/ipc/` | 40 handler registration modules for IPC channels | [agent-readme.md](src/main/ipc/agent-readme.md) |
 | `src/main/agents/` | Agent discovery, CRUD, profile management from user files | [agent-readme.md](src/main/agents/agent-readme.md) |
+| `src/main/auth/` | Auth status checking, install-from-app, login flows | (no subdir readme) |
+| `src/main/clearmemory/` | Opt-in ClearMemory engine integration (default-off, 127.0.0.1 HTTP + MCP, auto-restart) | (no subdir readme) |
+| `src/main/extensions/` | Extension framework: manifest validation, permissions, sidecar lifecycle, sandboxed storage | (no subdir readme) |
+| `src/main/integrations/` | External integrations (GitHub, Atlassian, ServiceNow, Backstage, Datadog, PowerBI, Splunk) with `electronFetch` for corporate proxy SSL | (no subdir readme) |
+| `src/main/mcp/` | MCP server registry, sync to native CLI configs, catalog, secrets vault | (no subdir readme) |
 | `src/main/notifications/` | Multi-channel notification delivery, preferences, history | [agent-readme.md](src/main/notifications/agent-readme.md) |
+| `src/main/plugins/` | CLI plugin auto-discovery and management for Copilot and Claude | (no subdir readme) |
+| `src/main/pricing/` | Model pricing tables for cost estimation | (no subdir readme) |
 | `src/main/scheduler/` | Cron-based scheduled job execution with sub-agent spawning | [agent-readme.md](src/main/scheduler/agent-readme.md) |
 | `src/main/starter-pack/` | Pre-built agents, skills, memories, prompts, handoff system | [agent-readme.md](src/main/starter-pack/agent-readme.md) |
-| `src/main/utils/` | Credential storage, logging, path security, rate limiting, shell env, encryption | [agent-readme.md](src/main/utils/agent-readme.md) |
+| `src/main/tokenization/` | Token-count estimation utilities | (no subdir readme) |
+| `src/main/utils/` | Credential storage, logging, path security, rate limiting, shell env, encryption, `electronFetch` for proxy-safe HTTP | [agent-readme.md](src/main/utils/agent-readme.md) |
 
 ### Renderer Process (`src/renderer/src/`)
 
 | Path | Purpose | Agent README |
 |------|---------|--------------|
 | `src/preload/` | IPC context bridge, channel whitelisting | [agent-readme.md](src/preload/agent-readme.md) |
-| `src/renderer/src/pages/` | 23 page-level React components (Work, Sessions, Agents, Dashboard, etc.) | [agent-readme.md](src/renderer/src/pages/agent-readme.md) |
+| `src/renderer/src/pages/` | 32 page-level React components (Sessions, Notes, Insights, Connect, Settings, Learn, ClearMemory, PR Scores, etc.) | [agent-readme.md](src/renderer/src/pages/agent-readme.md) |
 | `src/renderer/src/contexts/` | Global state providers (Accessibility, Branding, FeatureFlags) | [agent-readme.md](src/renderer/src/contexts/agent-readme.md) |
 | `src/renderer/src/hooks/` | Custom React hooks (useFocusTrap, useKeyboardShortcuts) | [agent-readme.md](src/renderer/src/hooks/agent-readme.md) |
 | `src/renderer/src/types/` | Shared TypeScript definitions | [agent-readme.md](src/renderer/src/types/agent-readme.md) |
@@ -70,7 +78,7 @@ The app uses Electron's standard two-process architecture:
 | `src/renderer/src/components/tools/` | MCP servers, tool permissions, permission handling | [agent-readme.md](src/renderer/src/components/tools/agent-readme.md) |
 | `src/renderer/src/components/memory/` | Notes, config files, context usage tracking | [agent-readme.md](src/renderer/src/components/memory/agent-readme.md) |
 | `src/renderer/src/components/composer/` | Multi-step workflow builder | [agent-readme.md](src/renderer/src/components/composer/agent-readme.md) |
-| `src/renderer/src/components/cost/` | Budget alerts, cost charts, analytics | [agent-readme.md](src/renderer/src/components/cost/agent-readme.md) |
+| `src/renderer/src/components/cost/` | Budget alerts, cost charts, analytics (UI removed from app in v1.10.0; components retained for future restoration) | [agent-readme.md](src/renderer/src/components/cost/agent-readme.md) |
 | `src/renderer/src/components/wizard/` | Session creation and configuration wizards | [agent-readme.md](src/renderer/src/components/wizard/agent-readme.md) |
 | `src/renderer/src/components/shared/` | Reusable foundational components | [agent-readme.md](src/renderer/src/components/shared/agent-readme.md) |
 | `src/renderer/src/components/integrations/` | GitHub API integration panel | [agent-readme.md](src/renderer/src/components/integrations/agent-readme.md) |

@@ -25,4 +25,4 @@ Provides a UI panel for authenticated GitHub integration, allowing users to brow
 - **Formatting helpers**: `timeAgo()` utility converts ISO dates to relative format (e.g., "5m ago")
 
 ## Business Context
-Powers the GitHub integration feature of CoPilot Commander, enabling users to surface GitHub project context (open PRs, issues, recent changes) without leaving the app. Particularly useful for AI-assisted code review and issue triage workflows.
+Powers the GitHub integration feature of ClearPath, enabling users to surface GitHub project context (open PRs, issues, recent changes) without leaving the app. Particularly useful for AI-assisted code review and issue triage workflows.

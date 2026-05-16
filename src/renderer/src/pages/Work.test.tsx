@@ -691,7 +691,7 @@ describe('Work', () => {
     })
   })
 
-  it('sends a slash command via CommandInput', async () => {
+  it('intercepts /clear and calls session:reset after confirm (does NOT forward to CLI)', async () => {
     mockInvoke.mockImplementation((channel: string) => {
       if (channel === 'cli:list-sessions') return Promise.resolve([
         { sessionId: 'slash-sess', cli: 'copilot', name: 'Slash Test', status: 'running', startedAt: Date.now() },
@@ -702,17 +702,83 @@ describe('Work', () => {
       if (channel === 'starter-pack:get-prompts') return Promise.resolve([])
       return Promise.resolve(null)
     })
-    renderWork({ sessionId: 'slash-sess' })
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    try {
+      renderWork({ sessionId: 'slash-sess' })
+      await waitFor(() => screen.getByLabelText('Message input'))
+
+      const input = screen.getByLabelText('Message input')
+      fireEvent.change(input, { target: { value: '/clear' } })
+      fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' })
+
+      await waitFor(() => {
+        expect(mockInvoke).toHaveBeenCalledWith('session:reset', { sessionId: 'slash-sess' })
+      })
+      // The headless-incompatible /clear must NOT be piped to the CLI as a prompt.
+      const slashForwards = mockInvoke.mock.calls.filter(
+        ([ch, payload]) => ch === 'cli:send-slash-command' &&
+          (payload as { command?: string } | undefined)?.command === '/clear',
+      )
+      expect(slashForwards).toHaveLength(0)
+    } finally {
+      confirmSpy.mockRestore()
+    }
+  })
+
+  it('switches model via /model <name> by calling session:update-model (no turn fires)', async () => {
+    mockInvoke.mockImplementation((channel: string) => {
+      if (channel === 'cli:list-sessions') return Promise.resolve([
+        { sessionId: 'model-sess', cli: 'copilot', name: 'Model Test', status: 'running', startedAt: Date.now() },
+      ])
+      if (channel === 'cli:get-persisted-sessions') return Promise.resolve([])
+      if (channel === 'cli:get-message-log') return Promise.resolve([])
+      if (channel === 'wizard:get-state') return Promise.resolve({ hasCompletedWizard: true })
+      if (channel === 'starter-pack:get-prompts') return Promise.resolve([])
+      return Promise.resolve(null)
+    })
+    renderWork({ sessionId: 'model-sess' })
     await waitFor(() => screen.getByLabelText('Message input'))
 
     const input = screen.getByLabelText('Message input')
-    // /clear is in SELF_CONTAINED — typing it and pressing Enter triggers the slash command
-    fireEvent.change(input, { target: { value: '/clear' } })
+    fireEvent.change(input, { target: { value: '/model gpt-5' } })
     fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' })
 
     await waitFor(() => {
-      expect(mockInvoke).toHaveBeenCalledWith('cli:send-slash-command', expect.objectContaining({ command: '/clear' }))
+      expect(mockInvoke).toHaveBeenCalledWith('session:update-model', { sessionId: 'model-sess', model: 'gpt-5' })
     })
+    // Critically: the /model command must NOT also fire a turn or a slash send.
+    const slashForwards = mockInvoke.mock.calls.filter(([ch]) => ch === 'cli:send-slash-command')
+    const inputSends = mockInvoke.mock.calls.filter(([ch]) => ch === 'cli:send-input')
+    expect(slashForwards).toHaveLength(0)
+    expect(inputSends).toHaveLength(0)
+  })
+
+  it('intercepts /compact and shows an explainer status (no IPC call)', async () => {
+    mockInvoke.mockImplementation((channel: string) => {
+      if (channel === 'cli:list-sessions') return Promise.resolve([
+        { sessionId: 'compact-sess', cli: 'copilot', name: 'Compact Test', status: 'running', startedAt: Date.now() },
+      ])
+      if (channel === 'cli:get-persisted-sessions') return Promise.resolve([])
+      if (channel === 'cli:get-message-log') return Promise.resolve([])
+      if (channel === 'wizard:get-state') return Promise.resolve({ hasCompletedWizard: true })
+      if (channel === 'starter-pack:get-prompts') return Promise.resolve([])
+      return Promise.resolve(null)
+    })
+    renderWork({ sessionId: 'compact-sess' })
+    await waitFor(() => screen.getByLabelText('Message input'))
+
+    const before = mockInvoke.mock.calls.length
+    const input = screen.getByLabelText('Message input')
+    fireEvent.change(input, { target: { value: '/compact' } })
+    fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' })
+
+    // Give the dispatcher a microtask to settle, then assert no IPC was issued.
+    await new Promise((r) => setTimeout(r, 10))
+    const newCalls = mockInvoke.mock.calls.slice(before)
+    const ipcSpam = newCalls.filter(([ch]) =>
+      ch === 'cli:send-slash-command' || ch === 'cli:send-input' || ch === 'session:reset' || ch === 'session:update-model',
+    )
+    expect(ipcSpam).toHaveLength(0)
   })
 
   it('delegates &prompt to subagent:spawn', async () => {
@@ -1168,6 +1234,56 @@ describe('Work', () => {
     await waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledWith('cli:start-session', expect.objectContaining({
         prompt: 'Quick task from home',
+      }))
+    })
+    unmount()
+    localCleanup()
+  })
+
+  it('threads quickPromptCli, quickPromptModel, and quickPromptAgent into cli:start-session', async () => {
+    const { render: localRender, cleanup: localCleanup } = await import('@testing-library/react')
+    const { MemoryRouter: LocalRouter } = await import('react-router-dom')
+    const WorkPage = (await import('./Work')).default
+    const { unmount } = localRender(
+      <LocalRouter
+        initialEntries={[{
+          pathname: '/work',
+          state: {
+            quickPrompt: 'Plan my week',
+            quickPromptCli: 'claude-cli',
+            quickPromptModel: 'sonnet',
+            quickPromptAgent: 'agent-7',
+          },
+        }]}
+      >
+        <WorkPage />
+      </LocalRouter>
+    )
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith('cli:start-session', expect.objectContaining({
+        prompt: 'Plan my week',
+        cli: 'claude-cli',
+        model: 'sonnet',
+        agent: 'agent-7',
+      }))
+    })
+    unmount()
+    localCleanup()
+  })
+
+  it('falls back to copilot-cli when quickPromptCli is absent from location state', async () => {
+    const { render: localRender, cleanup: localCleanup } = await import('@testing-library/react')
+    const { MemoryRouter: LocalRouter } = await import('react-router-dom')
+    const WorkPage = (await import('./Work')).default
+    const { unmount } = localRender(
+      <LocalRouter initialEntries={[{ pathname: '/work', state: { quickPrompt: 'Bare prompt' } }]}>
+        <WorkPage />
+      </LocalRouter>
+    )
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith('cli:start-session', expect.objectContaining({
+        prompt: 'Bare prompt',
+        cli: 'copilot-cli',
       }))
     })
     unmount()

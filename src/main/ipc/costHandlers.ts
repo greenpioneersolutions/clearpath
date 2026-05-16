@@ -19,6 +19,18 @@ interface CostRecord {
   estimatedCostUsd: number
   promptCount: number
   timestamp: number
+  // ── Token Coach Phase 1: per-slice breakdown ────────────────────────────────
+  // All fields are optional so legacy records keep working. Where present,
+  // they sum to `inputTokens` (or are <= inputTokens when only some slices
+  // were captured). Phase 3 hydrates the cache fields; until then they stay 0
+  // or undefined.
+  userPromptTokens?: number
+  injectedContextTokens?: number
+  agentPromptTokens?: number
+  notesTokens?: number
+  contextSourcesTokens?: number
+  cachedInputTokens?: number
+  cacheCreationTokens?: number
 }
 
 interface BudgetConfig {
@@ -298,6 +310,40 @@ export function registerCostHandlers(ipcMain: IpcMain, notificationManager?: Not
     store.set('records', [])
     store.set('firedAlerts', {})
     return { success: true }
+  })
+
+  // ── Per-session per-slice breakdown (Token Coach Phase 1) ─────────────────
+  // Aggregates all cost records for `sessionId` and sums each new slice field.
+  // Records missing a slice contribute 0 for that slice — backward-compatible
+  // with legacy rows that predate Phase 1. Consumed by Phase 2's context-meter
+  // popover and Phase 5's Efficiency tab.
+
+  ipcMain.handle('cost:turn-breakdown', (_e, args: { sessionId: string }) => {
+    const records = store.get('records').filter((r) => r.sessionId === args.sessionId)
+    const out = {
+      userPromptTokens: 0,
+      injectedContextTokens: 0,
+      agentPromptTokens: 0,
+      notesTokens: 0,
+      contextSourcesTokens: 0,
+      cachedInputTokens: 0,
+      cacheCreationTokens: 0,
+      outputTokens: 0,
+      totalTokens: 0,
+      turnCount: records.length,
+    }
+    for (const r of records) {
+      out.userPromptTokens      += r.userPromptTokens      ?? 0
+      out.injectedContextTokens += r.injectedContextTokens ?? 0
+      out.agentPromptTokens     += r.agentPromptTokens     ?? 0
+      out.notesTokens           += r.notesTokens           ?? 0
+      out.contextSourcesTokens  += r.contextSourcesTokens  ?? 0
+      out.cachedInputTokens     += r.cachedInputTokens     ?? 0
+      out.cacheCreationTokens   += r.cacheCreationTokens   ?? 0
+      out.outputTokens          += r.outputTokens          ?? 0
+      out.totalTokens           += r.totalTokens           ?? 0
+    }
+    return out
   })
 
   // ── Display mode (tokens vs monetary) ─────────────────────────────────────

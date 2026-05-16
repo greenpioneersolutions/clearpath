@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen } from '@testing-library/react'
+import { render, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import { MemoryRouter } from 'react-router-dom'
 
@@ -15,50 +15,46 @@ beforeEach(() => {
   mockInvoke.mockReset()
   mockOn.mockReset().mockReturnValue(vi.fn())
   mockInvoke.mockImplementation((channel: string) => {
-    if (channel === 'cli:get-persisted-sessions') return Promise.resolve([])
-    if (channel === 'session-history:list') return Promise.resolve([])
-    if (channel === 'branding:get') return Promise.resolve(null)
-    if (channel === 'feature-flags:get') return Promise.resolve(null)
-    if (channel === 'starter-pack:get-progress') return Promise.resolve(null)
     if (channel === 'setup-wizard:is-complete') return Promise.resolve({ complete: true })
-    if (channel === 'notes:list') return Promise.resolve([])
+    if (channel === 'cli:get-persisted-sessions') return Promise.resolve([])
     if (channel === 'agent:list') return Promise.resolve({ copilot: [], claude: [] })
+    if (channel === 'starter-pack:get-all-prompts') return Promise.resolve([])
     if (channel === 'app:get-cwd') return Promise.resolve('/test')
-    if (channel === 'skills:list') return Promise.resolve([])
+    if (channel === 'auth:get-status') return Promise.resolve({
+      copilot: { cli: { installed: false, authenticated: false }, sdk: { installed: false, authenticated: false } },
+      claude:  { cli: { installed: false, authenticated: false }, sdk: { installed: false, authenticated: false } },
+    })
     return Promise.resolve(null)
   })
 })
 
+// Mock the feature-flag context so the wrapper picks HomeHub by default and
+// CustomDashboard only when we override.
+let mockFlags = { showHomeHub: true } as Record<string, boolean>
+vi.mock('../contexts/FeatureFlagContext', () => ({
+  useFeatureFlags: () => ({ flags: mockFlags }),
+}))
+
 import Home from './Home'
 
-describe('Home', () => {
-  it('renders without crashing', () => {
-    render(<MemoryRouter><Home /></MemoryRouter>)
-    expect(document.querySelector('h1')).toBeTruthy()
+describe('Home wrapper', () => {
+  beforeEach(() => { mockFlags = { showHomeHub: true } })
+
+  it('renders without crashing', async () => {
+    const { container } = render(<MemoryRouter><Home /></MemoryRouter>)
+    await waitFor(() => {
+      expect(container.querySelector('h1')).toBeTruthy()
+    })
   })
 
-  it('renders quick prompt input', () => {
-    render(<MemoryRouter><Home /></MemoryRouter>)
-    expect(screen.getByPlaceholderText(/What do you need help with/)).toBeInTheDocument()
+  it('renders HomeHub when showHomeHub flag is on', async () => {
+    const { findByPlaceholderText } = render(<MemoryRouter><Home /></MemoryRouter>)
+    // Mode B of HomeHub renders the quick-prompt input.
+    expect(await findByPlaceholderText(/What do you need help with/i)).toBeInTheDocument()
   })
 
-  it('renders action cards', () => {
-    render(<MemoryRouter><Home /></MemoryRouter>)
-    expect(screen.getByText('Ask a question or get guidance')).toBeInTheDocument()
-    expect(screen.getByText('Write or do something')).toBeInTheDocument()
-    expect(screen.getByText('Explore what I can do')).toBeInTheDocument()
-    expect(screen.getByText('Customize my setup')).toBeInTheDocument()
-  })
-
-  it('renders context building section', () => {
-    render(<MemoryRouter><Home /></MemoryRouter>)
-    expect(screen.getByText('Make the AI work smarter for you')).toBeInTheDocument()
-  })
-
-  it('renders memory, agent, and skill shortcuts', () => {
-    render(<MemoryRouter><Home /></MemoryRouter>)
-    expect(screen.getByText('Add a memory')).toBeInTheDocument()
-    expect(screen.getByText('Create an agent')).toBeInTheDocument()
-    expect(screen.getByText('Build a skill')).toBeInTheDocument()
-  })
+  // The CustomDashboard fallback (flag off) cannot be exercised here:
+  // FeatureFlagContext is eager-loaded by setup-coverage.ts, so the vi.mock
+  // above doesn't intercept it. The same caveat is documented for Notes —
+  // CLAUDE.md Slice 28. The fallback is exercised manually.
 })

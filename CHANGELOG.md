@@ -2,6 +2,93 @@
 
 All notable changes to ClearPathAI will be documented in this file.
 
+## [Unreleased]
+
+## [1.14.0] - 2026-05-16
+
+### Added
+- **Sessions launchpad redesign for non-technical users** — Driven by demo feedback that the launchpad was overwhelming at first glance and that high-value capabilities (Agents, Skills, Notes) were hidden behind a discouraging "Advanced" label
+  - **Attachment chip toolbar + popover pattern** replaces the stacked picker panel — `+ Agent · + Skill · + Note · + Files (soon)` chips each open a focused single-purpose popover, only one open at a time, ESC and click-outside close, focus trap on open. Selected items render as colored chips above the input
+  - **"Advanced" split into "+ Add context" + "⚙ Customize"** — the old disclosure was the wrong frame for first-class capabilities
+  - **Plain-English permission modes** with risk hints ("Ask me before changes" / "Just plan, don't change anything" / "Auto-approve file edits" / "Full autonomy (advanced)"). Underlying flag values (`default`, `plan`, `acceptEdits`, `bypassPermissions`) preserved so the `--permission-mode` flag still flows correctly
+  - **Provider chooser collapses** to a "via Copilot · change" pill when only one provider is connected; full select returns when both are ready. Connection (CLI vs SDK) picker removed from this surface — transport derives from the user's most recent backend with a CLI fallback
+  - **Cold-start example prompts** below an empty input ("Explain this project like I'm new" / "Summarize what changed this week" / "Draft a status update for my team") hide permanently after first submit. Sourced from a new `launchpad-spotlight` starter-pack category with a hardcoded fallback when the IPC fails
+  - **Two-column hero row** — QuickStart (60%) + new "Pick up where you left off" card (40%) so returning users see continue-and-start-fresh as equal-weight peers. The new `PickUpWhereYouLeftOffCard` composes `ActiveSessionsCard` + a top-3 trimmed `RecentSessionsCard` with a merged "No work yet" empty state when both are empty. Workflows + NotesDiscovery move below the hero; falls back to single-column stack under the `lg` breakpoint
+  - **Centralized launchpad copy** at `src/renderer/src/copy/launchpad.ts` (`LAUNCHPAD_COPY`); tests assert against the constants
+  - New components: `PickUpWhereYouLeftOffCard`, `AttachmentChipToolbar`, `AttachmentPopover`. `RecentSessionsCard` gains an optional `limit` prop
+  - Shared `useAuthStatus` hook centralizes provider readiness from `auth:get-status` with a `cli:check-installed` fallback. Used by both the launchpad and the new Home quick-start bar
+- **Token Coach initiative (phases 1-2)** — In-core wedge that measures and reshapes outbound requests before they leave the process, driven by the June 2026 shift to consumption-based pricing on every wrapped CLI (Copilot June 1, Anthropic June 15). New middleware pipeline (`src/main/cli/middleware/`), tokenization service, pricing service, routing service, and IPC handlers (`tokenizerHandlers`, `pricingHandlers`, `routingHandlers`, `efficiencyHandlers`)
+  - **`showTokenMeter` (default ON)** — Live context meter chip in the chat input with per-slice breakdown and % of model context window. Components: `ContextMeterChip`, `ContextMeterPopover`
+  - **`showPromptCache` (experimental, off)** — Anthropic prompt-cache breakpoint injection on direct-API turns (`LocalModelAdapter` pointed at Anthropic). Stable-prefix discipline benefits CLI passthroughs always; this flag controls explicit breakpoint injection only
+  - **`showModelRouting` (experimental, off)** — Heuristic difficulty classifier with per-turn model selection. `ModelRoutingChip` above the chat input shows the routing decision and lets you override; `Settings → Routing` tab for tuning
+  - **`showEfficiencyInsights` (experimental, off)** — `Insights → Efficiency` tab, pre-flight cost warnings (`PreflightWarning`, `PreflightWarningStack`), and a 70% context-window soft-compact nudge (`CompactNudge`)
+  - New `PricingContext`, `slashCommandDispatcher`, and a `Settings → Routing` tab
+- **Bulk session archive** — Multi-select sessions in the Session Manager and archive them in one action
+- **Better agent testing flow** — Improved test harness and patterns for agent definitions, enforcing a consistent flow for adding and verifying new agents
+- **Playwright e2e suite** — New end-to-end test suite using Playwright with comprehensive documentation. Run via `npm run e2e`
+- **Home quick-start bar** — `HomeQuickStartBar` on the Home page with `HomeOptionsPopover` for backend/model selection and a `TryAnExampleModal` for starter prompts (recommended + more, sourced from the same starter-pack IPC). The Home page never gates on setup completion — first-time users land on the full surface and can try the input, browse examples, and explore Learn before deciding to set anything up. When the setup probe confirms setup isn't done, a small non-blocking "Let's get you set up" nudge appears at the top of the home alongside (not in place of) the rest of the surface
+- **Connections page** — Consolidated `/connections` route as a dedicated page with its own test suite (was previously a redirect into `/connect?tab=mcp`)
+- **`FEATURE_FLAGS.md` documentation** — Documents the `features.json` data model, build-time tree-shaking pipeline, generated `featureFlags.generated.ts` module, runtime layer with `clampToCompiledIn` safety rail, and the `CLEARPATH_FLAGS_LOCKED` / `CLEARPATH_E2E_EXPERIMENTAL` env vars. Supersedes `FEATURES.md` (removed)
+- **Token-coach project memory** — `.claude/agent-memory/core-developer/project_token_coach.md` + `project_middleware_pipeline.md` capture the multi-phase plan and CLI caveats for future agent runs
+
+### Changed
+- **Retired WebdriverIO** — All e2e tests migrated to Playwright. WebdriverIO suite and dependencies removed
+- **Onboarding wizard** updates aligned with the new Home + launchpad flow
+- **Sidebar** updated to reflect the consolidated Connections page and any new Token-Coach-gated surfaces
+- **Agent readme docs** synced across `composer/`, `integrations/`, `settings/`, `team/`, `templates/`, and `voice/` component subtrees
+
+### Removed
+- `FEATURES.md` — superseded by `FEATURE_FLAGS.md`
+
+### Fixed
+- **Main process boot crash from runtime `require()` of `./ipc/localModelHandlers`** — Token Coach Phase 3 wired its cache-policy listener through a `require()` inside a block scope to "avoid pulling localModelAdapter into the type-only graph above," but electron-vite's Rollup bundler couldn't statically resolve that path, so the production bundle emitted a literal `require('./ipc/localModelHandlers')` against a `dist/main/ipc/` directory that doesn't exist. Replaced with a top-level static import of `localModelAdapter` and collapsed the lazy block. Also moved two stray mid-file imports (`retrieveSecret`, `localModelAdapter`) to the top of the module
+- **Context meter chip stuck at 0% mid-session** — `ContextMeterChip` was only counting tokens in the current draft input, so the meter dropped to 0% the moment a prompt was sent. Added a `priorSessionTokens` prop sourced from `sessionTokens` in `Work.tsx` (cumulative `totalTokens` from `cost:list` per session) and threaded through `ChatInputArea`. The chip's headline number and percent now include conversation history; the popover surfaces history on its own row (and as an amber segment in the stacked bar) so the totals reconcile with the chip
+- **Default agent silently overrode the user's explicit "no agent" pick** — `cli:start-session` always fell back to the user's stored active agent when `options.agent` was undefined, with no way for the renderer to express "user explicitly picked (none)". A user who turned off all agents on the Home quick-start bar (or in the launchpad Add-context popover) would still arrive at the session with their default agent re-attached. Added a `noAgent: boolean` field to `SessionOptions`. The main process now skips the stored-default fallback when `noAgent === true`. `HomeQuickStartBar` and `QuickStartCard` track an `agentTouched` boolean and only send `noAgent: true` when the user explicitly engaged the picker AND chose nothing — so "user never opened the popover" still falls back to the server default. State flows Home → `navigate(state.quickPromptNoAgent)` → `pendingQuickPrompt` → `startSession` → `cli:start-session`. Launchpad flows QuickStartCard → `onQuickStart({ noAgent })` → `startSession`
+
+## [1.13.0] - 2026-04-27
+
+### Added
+- **Notes (top-level surface)** — New top-level sidebar entry as a peer of Sessions: Home · Sessions · **Notes** · Insights · Connect · Settings. Three-pane layout (filters · note cards · editor drawer) with categories (meeting, conversation, reference, outcome, idea, custom), pinning, tags, search, and file attachments. "Use in next session →" hands off pre-selected notes to a new chat. In-chat audit-trail chips on user bubbles show compact pills for attached agents (violet), skills (indigo), and notes (teal) — names and titles only; note bodies never reach the rendered DOM. AI context framing via `notes:get-bundle-for-prompt` prepends an XML-escaped, title-cited bundle the model can reference without UUIDs leaking. New "Capture context with Notes" 5-lesson learning path under Learn. Gated behind `showNotes` flag (default on)
+- **Work page launchpad redesign** — Redesigned the Sessions landing as a launchpad with clear paths to start new sessions, continue recent work, or pick from suggested patterns. Cleaner visual hierarchy for session history
+- **Notes discovery card** — Renders on the Sessions launchpad when `showNotes` is on, the user has zero notes, and at least one completed session — encourages first-time use. Dismissal persists in `localStorage`
+
+### Changed
+- **Sessions Advanced panel redesign** — Stacked sections in the new-session Advanced panel, each with a search box: Agent (single-select), Skills (per-session multi-select), Notes (per-session multi-select), Permission mode, and Additional directories. The skill picker no longer mutates the global skill registry (previously caused a "selected but can't deselect" twitch). Templates dropdown, Attach Files button, and the legacy "Memories" config-files picker were removed from this surface — they will return as dedicated features
+
+## [1.12.0] - 2026-04-27
+
+### Added
+- **Centralized feature-flag system** — `features.json` is now the single source of truth for every base-app feature flag (38 flags, both base and experimental). A Node generator (`scripts/generate-feature-flags.mjs`) emits `src/shared/featureFlags.generated.ts` which both main and renderer processes import for the `FeatureFlags` type and `BUILD_FLAGS` defaults. The Vite config exposes the same data as a `__FEATURES__` define literal, so experimental gating becomes a static boolean at build time and Rollup tree-shakes disabled experimental code out of the production bundle. Setting `CLEARPATH_E2E_EXPERIMENTAL=1` at build time forces every experimental flag on (used by the experimental-feature e2e crawl). `predev` / `prebuild` / `pretest` hooks regenerate the TS module so it never drifts from `features.json`
+- **Feature-flag dev/preview workflows** — New scripts `dev:preview` (`CLEARPATH_FLAGS_LOCKED=1`), `dev:experimental` (`CLEARPATH_E2E_EXPERIMENTAL=1`), `build:locked`, `build:experimental`, `preview:locked`, and `preview:experimental` for inspecting builds at exactly the flag state shipped users would see
+
+### Changed
+- **Feature-flag duplication removed** — `featureFlagHandlers.ts` and `FeatureFlagContext.tsx` no longer duplicate the `FeatureFlags` interface and `DEFAULTS` constant; both now consume the generated module. Settings UI greys out and disables toggles for experimental flags that are stripped from the current bundle
+
+## [1.11.0] - 2026-04-26
+
+### Added
+- **Screenshot baseline harness** — Added `npm run screenshots` to capture baseline images across every page and major modal of the application. Used for visual regression tracking and design review before larger UX changes
+
+## [1.10.0] - 2026-04-25
+
+### Added
+- **MCP Server Management (Connect → MCP Servers)** — Dedicated tab for managing Model Context Protocol servers. ClearPath-owned registry (`clear-path-mcps.json`) syncs to `~/.copilot/mcp-config.json`, `~/.claude/mcp-config.json`, and project-level variants. Bundled curated catalog of 10 servers (filesystem, GitHub, Postgres, SQLite, Slack, Brave Search, Puppeteer, Fetch, Google Drive, Memory). Per-server test-connection using MCP `initialize` JSON-RPC with 5-second timeout. External-changes detection on window focus with adopt/overwrite banner when native CLI files are edited outside ClearPath. First-run migration imports pre-existing native MCP files as `source: 'imported'`. Seven end-to-end integration tests against a real filesystem
+- **MCP Secrets Vault** — Server credentials stored via OS keychain (Electron `safeStorage`) with graceful `unsafeMode` plaintext fallback when the keychain is unavailable (e.g., Linux without libsecret). Rendered CLI files contain plaintext only at sync time; the central registry never persists raw tokens — only `secretRefs` pointing to vault keys
+- **ClearMemory integration (opt-in, default off)** — Optional cross-session memory engine integration with [greenpioneersolutions/clearmemory](https://github.com/greenpioneersolutions/clearmemory). Lifecycle owned by the main process (`ClearMemoryService` with EventEmitter, 3× auto-restart with backoff, init-progress events). HTTP API pinned to `127.0.0.1:8080`; bearer token never leaves the main process. 8-tab UI (Browse, Tags, Streams, Import, Reflect, Status, Config, Backup) gated behind `showClearMemory` feature flag. 33 IPC channels with `Result<T>` envelope (no throws to renderer). MCP auto-registration merges a `clearmemory` entry into `~/.claude/mcp.json` and `~/.copilot/mcp-config.json` without clobbering existing entries
+- **Git LFS and Husky hooks** — Repository now uses Git LFS for binary assets. Husky pre-commit and pre-push hooks run lint and typecheck before push
+- **Cloud-agent definition** — Added `.github/agents/core-developer-copilot.agent.md` for use with GitHub Copilot's cloud-agent feature
+- **`file-bug` Claude skill** — Reviews local bug files, verifies reproducibility, and files them as GitHub issues with proper labeling and tracking metadata
+
+### Changed
+- **Connect page consolidation** — Moved Environment Variables, Plugins, and Webhooks off Settings/Configure into the Connect page as sub-tabs. New tab order: Integrations, Extensions, MCP Servers, Environment, Plugins, Webhooks. The standalone `/connections` route now redirects to `/connect?tab=mcp`
+- **Insights simplification** — Removed all cost UI from the application surface: `BudgetAlerts`, `CostCharts`, `CostExport`, the cost-summary dashboard widget, and dollar-bearing usage badges in chat. Merged Analytics and UsageAnalytics into a single Activity view. Renamed Settings "Budget & Limits" to "Session Limits" (max-turns only). The cost backend (`costHandlers.ts`, `clear-path-cost.json` store) remains in place but dormant — slated for restoration in a follow-up release once the UX direction is settled
+- **Work page UX** — Removed the confusing styled `<select>` session dropdown from the top bar. Added a read-only breadcrumb (Session · CLI · Model) with a gear button for session settings. Zero-click "+ New" launches a session immediately with user defaults. The former `NewSessionModal` is repurposed as `SessionSettingsModal` with `create`/`edit` modes; edit mode locks CLI and working directory but allows Model and Name changes mid-session. Welcome screen: removed Quick Starts, added a single "Start a session" CTA and a compact Recent list
+
+### Fixed
+- **Low-contrast code blocks in chat** — Code-block text now uses light grey with a purple left border for readability against dark backgrounds
+- **Invisible table row separators** — Table borders now render correctly in chat markdown output
+- **Streaming message grouping** — Replaced 2-second timestamp window with turn-ID grouping so slow streaming turns stay as one bubble. `CLIManager` now generates and threads `turnId` through every message
+
 ## [1.9.0] - 2026-04-14
 
 ### Added

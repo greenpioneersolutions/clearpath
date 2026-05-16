@@ -1,6 +1,6 @@
 # Project Conventions
 
-CoPilot Commander-specific helpers, route table, sidebar labels, and the multi-config pattern.
+ClearPath-specific helpers, route table, sidebar labels, and the multi-config pattern.
 
 ## Tech stack
 
@@ -197,7 +197,7 @@ Visual baselines live at `e2e/screenshots/baseline/<name>.png`, tracked via Git 
 
 ## CLI commands the app spawns (mock these in e2e!)
 
-CoPilot Commander spawns real `copilot` and `claude` CLI processes via `CLIManager`. **For e2e tests these MUST be stubbed** — otherwise tests need internet and real credentials.
+ClearPath spawns real `copilot` and `claude` CLI processes via `CLIManager`. **For e2e tests these MUST be stubbed** — otherwise tests need internet and real credentials.
 
 Two approaches:
 1. **Proposed (not yet implemented):** an env var like `CLEARPATH_E2E_FAKE_CLI=1` could gate `CLIManager.startSession` to use a fake adapter that emits scripted output. As of this writing, no such flag is wired in `src/`.

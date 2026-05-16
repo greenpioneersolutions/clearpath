@@ -1,6 +1,6 @@
 # Example: `e2e/fixtures.ts`
 
-Complete fixture file for CoPilot Commander. One Electron app per worker, fresh Page per test, plus optional helpers for hermetic state and console error collection.
+Complete fixture file for ClearPath. One Electron app per worker, fresh Page per test, plus optional helpers for hermetic state and console error collection.
 
 ```ts
 // e2e/fixtures.ts

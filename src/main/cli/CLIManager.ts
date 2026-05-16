@@ -7,8 +7,21 @@ import type { ActiveSession, SubAgentProcess, SubAgentInfo, SubAgentStatus, ICLI
 import { CopilotAdapter } from './CopilotAdapter'
 import { ClaudeCodeAdapter } from './ClaudeCodeAdapter'
 import { PluginManager } from '../plugins/PluginManager'
+import { estimateCost, DEFAULT_PRICING_TABLE } from '../../shared/pricing'
+import type { PricingService } from '../pricing/PricingService'
 import type { BackendId } from '../../shared/backends'
 import { isBackendId, migrateLegacyBackendId, providerOf } from '../../shared/backends'
+import type { PromptSlices } from '../../shared/tokenization/types'
+import { tokenCounter } from '../tokenization/TokenCounter'
+import { buildPipeline, runPipeline, type MiddlewareContext, type Middleware } from './middleware'
+import {
+  DEFAULT_CACHE_POLICY,
+  isAnthropicModel,
+  minPrefixTokensFor,
+  type CachePolicy,
+} from '../tokenization/cachePolicy'
+import { DEFAULT_ROUTING_RULES, type RoutingRules } from '../routing/RoutingRules'
+import type { Difficulty } from '../routing/DifficultyClassifier'
 import Store from 'electron-store'
 
 export type NotifyCallback = (args: {
@@ -27,6 +40,24 @@ export type CostRecordCallback = (args: {
   sessionId: string; sessionName: string; cli: BackendId
   model: string; agent?: string; inputTokens: number; outputTokens: number
   totalTokens: number; estimatedCostUsd: number; promptCount: number; timestamp: number
+  // Token Coach Phase 1: per-slice breakdown. All optional — undefined when
+  // the renderer didn't ship slices for this turn.
+  userPromptTokens?: number
+  injectedContextTokens?: number
+  agentPromptTokens?: number
+  notesTokens?: number
+  contextSourcesTokens?: number
+  cachedInputTokens?: number
+  cacheCreationTokens?: number
+  // Token Coach Phase 4 — routing decision for this turn.
+  // `routedModel` is the model the routing middleware picked (may equal
+  // the original session model when routing was disabled or already on-tier).
+  // `userOverride` is true when the user clicked the override chip; this
+  // lets Phase 5's Insights page count overrides and suggest threshold tweaks.
+  // `routedDifficulty` carries the classifier verdict for distribution charts.
+  routedModel?: string
+  userOverride?: boolean
+  routedDifficulty?: 'trivial' | 'normal' | 'hard'
 }) => void
 
 // Persistent stores for session data that survives app restart
@@ -97,6 +128,40 @@ export class CLIManager {
   private onCostRecord: CostRecordCallback | null = null
   private onAudit: AuditCallback | null = null
   private onExtensionEvent: ((event: string, data: unknown) => Promise<void>) | null = null
+  /**
+   * Token Coach Phase 3 — cache policy used by direct-API adapters (today:
+   * LocalModelAdapter when pointed at Anthropic). Defaults to the safe
+   * disabled policy; the IPC layer pushes the user's stored policy in at
+   * boot via `setCachePolicy`. CLI passthroughs ignore this — their caching
+   * lives inside the CLI binary.
+   */
+  private cachePolicy: CachePolicy = { ...DEFAULT_CACHE_POLICY }
+  /**
+   * Token Coach Phase 4 — per-CLI routing rules. Same fan-out shape as
+   * cachePolicy: settings layer pushes the stored rules in at boot via
+   * `setRoutingRules`, and the routing middleware reads through this
+   * field on every turn via the closure-captured getter we hand to
+   * `buildPipeline`.
+   */
+  private routingRules: RoutingRules = {
+    enabled: DEFAULT_ROUTING_RULES.enabled,
+    copilot: { ...DEFAULT_ROUTING_RULES.copilot },
+    claude: { ...DEFAULT_ROUTING_RULES.claude },
+  }
+  /**
+   * The composed middleware pipeline. Built once in the constructor with a
+   * closure-captured `getRules` so the routing middleware always reads the
+   * live rules (no extra IPC roundtrip per turn).
+   */
+  private readonly pipeline: Middleware[]
+  /**
+   * Optional injection. When set, cost estimation pulls from the live merged
+   * defaults+remote+overrides table so users who override pricing in Cost
+   * Settings see their effective rates applied. When unset, the shared module's
+   * hardcoded defaults are used — keeps existing tests and constructor call
+   * sites that don't supply the service running.
+   */
+  private pricingService: PricingService | null = null
 
   constructor(getWebContents: () => WebContents | null) {
     this.getWebContents = getWebContents
@@ -107,6 +172,19 @@ export class CLIManager {
       ['claude-cli',  this.claude],
       ['claude-sdk',  null],  // populated in phase 2
     ])
+
+    // Build the pipeline ONCE. The routing middleware reads through
+    // `this.routingRules` on every turn via the getter closure, so updates
+    // from `setRoutingRules` take effect on the next turn without rebuilding.
+    // The Phase 5 warning middleware reads the live pricing table the same
+    // way (via the PricingService when wired, or shared defaults otherwise).
+    this.pipeline = buildPipeline({
+      routing: { getRules: () => this.routingRules },
+      warning: {
+        getPricingTable: () =>
+          this.pricingService?.getEffectiveTable() ?? DEFAULT_PRICING_TABLE,
+      },
+    })
 
     // One-time migration: rewrite legacy `cli: 'copilot' | 'claude'` to new BackendId
     // shape on any persisted sessions. Idempotent — runs every boot but is a no-op
@@ -314,6 +392,42 @@ export class CLIManager {
     this.onNotify = cb
   }
 
+  /**
+   * Update the cache policy. Called from the settings IPC layer on boot and
+   * whenever the user toggles the policy in Settings. Defensively copies the
+   * input so external mutation doesn't reach our state.
+   */
+  setCachePolicy(policy: CachePolicy): void {
+    this.cachePolicy = { ...policy }
+  }
+
+  /** Read the active cache policy. Exposed for tests + the IPC echo path. */
+  getCachePolicy(): CachePolicy {
+    return { ...this.cachePolicy }
+  }
+
+  /**
+   * Update the routing rules. Called from the settings IPC fan-out (boot +
+   * every `settings:set-routing-rules`). Defensively copies so external
+   * mutation doesn't reach the pipeline closure.
+   */
+  setRoutingRules(rules: RoutingRules): void {
+    this.routingRules = {
+      enabled: rules.enabled,
+      copilot: { ...rules.copilot },
+      claude: { ...rules.claude },
+    }
+  }
+
+  /** Read the active routing rules. Exposed for tests + the IPC echo path. */
+  getRoutingRules(): RoutingRules {
+    return {
+      enabled: this.routingRules.enabled,
+      copilot: { ...this.routingRules.copilot },
+      claude: { ...this.routingRules.claude },
+    }
+  }
+
   /** Register a callback for cost recording on each completed turn. */
   setCostRecordCallback(cb: CostRecordCallback): void {
     this.onCostRecord = cb
@@ -327,6 +441,15 @@ export class CLIManager {
   /** Register a callback for broadcasting extension lifecycle events. */
   setExtensionEventCallback(cb: (event: string, data: unknown) => Promise<void>): void {
     this.onExtensionEvent = cb
+  }
+
+  /**
+   * Inject the PricingService so cost estimation honors user overrides and
+   * remote-sync layers. Optional — without it, the shared module's defaults
+   * are used (which is what unit tests rely on).
+   */
+  setPricingService(service: PricingService): void {
+    this.pricingService = service
   }
 
   /** Log a prompt to the audit trail (hashed, not plaintext). */
@@ -352,33 +475,74 @@ export class CLIManager {
     })
   }
 
-  /** Estimate tokens from output byte count (rough: 1 token ≈ 4 chars). */
+  /**
+   * Tokenize each captured slice independently and emit a CostRecord with
+   * per-slice attribution. When no slices were captured (e.g. legacy call path),
+   * the entire prompt is attributed to `userPromptTokens` and slice fields stay
+   * undefined so the record looks like the pre–Token Coach shape.
+   *
+   * Output tokens come from re-tokenizing the assistant's stdout. For CLIs we
+   * only see the rendered text, so this is an approximation — Phase 3 will
+   * upgrade direct-API paths to use the provider's reported usage tokens.
+   */
   private estimateCostFromOutput(
-    sessionId: string, session: ActiveSession, outputBytes: number, inputPrompt?: string
+    sessionId: string,
+    session: ActiveSession,
+    outputBytes: number,
+    inputPrompt?: string,
+    slices?: PromptSlices,
+    rawOutput?: string,
+    cacheUsage?: { cachedInputTokens: number; cacheCreationTokens: number },
+    routing?: { routedModel: string; userOverride: boolean; difficulty: Difficulty },
   ): void {
     if (!this.onCostRecord) return
-    const inputChars = inputPrompt?.length ?? 50
-    const inputTokens = Math.ceil(inputChars / 4)
-    const outputTokens = Math.ceil(outputBytes / 4)
-    const totalTokens = inputTokens + outputTokens
-    const model = session.originalOptions.model ?? (providerOf(session.info.cli) === 'copilot' ? 'gpt-5-mini' : 'sonnet')
+    // Phase 4 — when routing fired, the turn's actual API call went to the
+    // routed model. Use that for token-cost math; otherwise fall back to the
+    // session's stored model. Either way the resolved `model` is what the
+    // cost record's primary `model` field carries.
+    const model = routing?.routedModel
+      ?? session.originalOptions.model
+      ?? (providerOf(session.info.cli) === 'copilot' ? 'gpt-5-mini' : 'sonnet')
 
-    // Rough pricing per 1M tokens (input, output)
-    const pricing: Record<string, [number, number]> = {
-      // Free Copilot models (cost tracked at $0 since included in plan)
-      'gpt-5-mini': [0.4, 1.6], 'gpt-4.1': [2, 8], 'gpt-4o': [2.5, 10],
-      // Anthropic
-      'claude-sonnet-4.5': [3, 15], 'claude-sonnet-4.6': [3, 15], 'claude-sonnet-4': [3, 15],
-      'claude-haiku-4.5': [1, 5], 'sonnet': [3, 15], 'haiku': [1, 5],
-      'claude-opus-4.5': [5, 25], 'claude-opus-4.6': [5, 25], 'opus': [5, 25],
-      // OpenAI
-      'gpt-5': [5, 15], 'gpt-5.1': [5, 15], 'gpt-5.1-codex': [5, 15],
-      'gpt-5.3-codex': [5, 15], 'gpt-5.4-mini': [0.4, 1.6],
-      // Google
-      'gemini-2.5-pro': [3.5, 10.5], 'gemini-3-pro': [3.5, 10.5], 'gemini-3-flash': [0.5, 1.5],
+    // Tokenize each slice. When `slices` is undefined we fall back to
+    // tokenizing the full prompt as one user blob.
+    let userPromptTokens: number | undefined
+    let agentPromptTokens: number | undefined
+    let notesTokens: number | undefined
+    let contextSourcesTokens: number | undefined
+    let injectedContextTokens: number | undefined
+    let inputTokens: number
+
+    if (slices) {
+      userPromptTokens     = tokenCounter.count(slices.userText, model)
+      agentPromptTokens    = slices.agentPrompt    ? tokenCounter.count(slices.agentPrompt,    model) : 0
+      notesTokens          = slices.notesFramed    ? tokenCounter.count(slices.notesFramed,    model) : 0
+      contextSourcesTokens = slices.contextSources ? tokenCounter.count(slices.contextSources, model) : 0
+      const fleetTokens    = slices.fleetPrefix    ? tokenCounter.count(slices.fleetPrefix,    model) : 0
+      injectedContextTokens = agentPromptTokens + notesTokens + contextSourcesTokens + fleetTokens
+      inputTokens = userPromptTokens + injectedContextTokens
+    } else {
+      const fullPrompt = inputPrompt ?? ''
+      inputTokens = fullPrompt ? tokenCounter.count(fullPrompt, model) : 0
+      // No slice info — attribute everything to userPromptTokens for legibility.
+      userPromptTokens = inputTokens
     }
-    const [inPrice, outPrice] = pricing[model] ?? [3, 15]
-    const cost = (inputTokens * inPrice + outputTokens * outPrice) / 1_000_000
+
+    const outputTokens = rawOutput
+      ? tokenCounter.count(rawOutput, model)
+      // Last-ditch fallback when we don't have the raw text — degrade to bytes/4.
+      : Math.ceil(outputBytes / 4)
+    const totalTokens = inputTokens + outputTokens
+
+    // Cost is computed from the effective pricing table — defaults + user
+    // overrides + optional remote-sync layer — when PricingService is injected.
+    // Falls back to the shared module defaults when it's not (unit tests).
+    const cost = estimateCost(
+      model,
+      inputTokens,
+      outputTokens,
+      this.pricingService?.getEffectiveTable(),
+    )
 
     this.onCostRecord({
       sessionId,
@@ -390,6 +554,25 @@ export class CLIManager {
       estimatedCostUsd: cost,
       promptCount: 1,
       timestamp: Date.now(),
+      // Slice fields — undefined when slices weren't provided so the row keeps
+      // the legacy shape on disk.
+      userPromptTokens,
+      injectedContextTokens,
+      agentPromptTokens,
+      notesTokens,
+      contextSourcesTokens,
+      // Token Coach Phase 3 — populated only when an adapter that owns its
+      // own API call reported real cache stats from the response. CLI
+      // passthroughs leave these undefined; the Insights UI distinguishes
+      // "0 cached tokens" from "no cache data" by the undefined sentinel.
+      cachedInputTokens: cacheUsage?.cachedInputTokens,
+      cacheCreationTokens: cacheUsage?.cacheCreationTokens,
+      // Token Coach Phase 4 — only populated when the routing middleware
+      // actually fired. Insights uses these to compute the routing
+      // distribution + count overrides per period.
+      routedModel: routing?.routedModel,
+      userOverride: routing?.userOverride,
+      routedDifficulty: routing?.difficulty,
     })
   }
 
@@ -450,7 +633,9 @@ export class CLIManager {
       turnCount: 0,
       processingTurn: false,
       turnOutputBytes: 0,
+      turnRawOutput: '',
       lastPrompt: options.displayPrompt?.trim() || options.prompt || '',
+      currentSlices: options.promptSlices,
       messageLog: [],
     }
 
@@ -493,18 +678,35 @@ export class CLIManager {
       name: session.info.name,
     })
 
-    // If an initial prompt was given, run the first turn immediately
-    // Send the FULL prompt (with agent context) to the CLI, not the display version
+    // If an initial prompt was given, run the first turn immediately.
+    // runTurn is now async (Phase 2 middleware pipeline) — we await it here so
+    // that by the time startSession returns, the adapter has already been
+    // invoked. Renderer callers always treat `cli:start-session` as
+    // fire-and-forget anyway, so the extra microtask isn't observable.
     if (options.prompt?.trim()) {
-      this.runTurn(sessionId, options.prompt.trim())
+      await this.runTurn(sessionId, options.prompt.trim())
     }
 
     return { sessionId }
   }
 
-  sendInput(sessionId: string, input: string, attachedNotes?: Array<{ id: string; title: string }>): void {
+  async sendInput(
+    sessionId: string,
+    input: string,
+    attachedNotes?: Array<{ id: string; title: string }>,
+    promptSlices?: PromptSlices,
+    userOverrideModel?: string,
+  ): Promise<void> {
     const session = this.sessions.get(sessionId)
     if (!session || session.info.status !== 'running') return
+
+    // Token Coach Phase 4 — per-turn user override. We stash it on
+    // `originalOptions.userOverrideModel` so `runTurn` reads it from the same
+    // place as a `cli:start-session`-supplied override. `runTurn` clears it
+    // after reading so it never persists across turns.
+    if (userOverrideModel) {
+      session.originalOptions = { ...session.originalOptions, userOverrideModel }
+    }
 
     if (session.processingTurn) {
       log.debug(`[CLIManager] turn in progress — ignoring input (${input.length} chars)`)
@@ -523,18 +725,75 @@ export class CLIManager {
     // If there's a deferred agent context (session started without a prompt),
     // prepend it to the first real user input so the AI gets the agent instructions.
     let actualInput = input
+    let effectiveSlices: PromptSlices | undefined = promptSlices
     if (session.originalOptions.agentContext && session.turnCount === 0) {
-      actualInput = `${session.originalOptions.agentContext}\n\n${input}`
+      const agentCtx = session.originalOptions.agentContext
+      actualInput = `${agentCtx}\n\n${input}`
+      // Reflect the prepended agent context on the slices we ship through to
+      // the cost record. If the caller already attributed an agentPrompt, the
+      // explicit value wins; otherwise we backfill from agentContext.
+      if (effectiveSlices) {
+        effectiveSlices = { ...effectiveSlices, agentPrompt: effectiveSlices.agentPrompt ?? agentCtx }
+      }
       // Clear it so it's not re-injected on subsequent turns
       session.originalOptions = { ...session.originalOptions, agentContext: undefined }
     }
 
-    this.runTurn(sessionId, actualInput)
+    // Stash the per-turn slices on the session so the cost path on turn-end
+    // can read them. Undefined = legacy fallback to single-slice attribution.
+    session.currentSlices = effectiveSlices
+    await this.runTurn(sessionId, actualInput)
   }
 
-  sendSlashCommand(sessionId: string, command: string): void {
+  async sendSlashCommand(sessionId: string, command: string): Promise<void> {
     // Slash commands go through the same turn mechanism
-    this.sendInput(sessionId, command)
+    await this.sendInput(sessionId, command)
+  }
+
+  /**
+   * Update the model used for future turns of a session. ClearPath spawns a
+   * fresh headless CLI per turn, so the CLI's own `/model` REPL command is
+   * unreachable — mutating `originalOptions.model` here is what makes the
+   * next `runTurn` spawn with `--model <new>`. Both adapters honor
+   * `options.model` in `buildArgs()` on every spawn (see CopilotAdapter.ts
+   * and ClaudeCodeAdapter.ts).
+   */
+  updateSessionModel(sessionId: string, model: string): void {
+    const session = this.sessions.get(sessionId)
+    if (!session) return
+    if (!model || typeof model !== 'string') return
+    session.originalOptions = { ...session.originalOptions, model }
+    this.auditSession(sessionId, 'model-changed', session.info.cli, { model })
+    this.persistSession(sessionId, session)
+  }
+
+  /**
+   * Reset a session's conversation: clear the renderer-visible log, drop the
+   * `--continue` chain so the next spawn starts a fresh underlying CLI
+   * session, and SIGTERM any in-flight child process. Used to implement
+   * `/clear` as a real action instead of letting it get echoed to the CLI as
+   * a prompt.
+   */
+  resetSession(sessionId: string): void {
+    const session = this.sessions.get(sessionId)
+    if (!session) return
+    if (session.process) {
+      session.process.kill('SIGTERM')
+      session.process = null
+    }
+    session.processingTurn = false
+    session.messageLog = []
+    session.turnCount = 0
+    // Drop both continue and resume so the next spawn starts a brand-new CLI
+    // session instead of stitching to whatever conversation the CLI had on
+    // disk for this cwd.
+    session.originalOptions = {
+      ...session.originalOptions,
+      continue: false,
+      resume: undefined,
+    }
+    this.auditSession(sessionId, 'cleared', session.info.cli)
+    this.persistSession(sessionId, session)
   }
 
   async stopSession(sessionId: string): Promise<void> {
@@ -584,42 +843,187 @@ export class CLIManager {
    * Conversation continuity is handled by the CLI itself via --continue, which
    * resumes the most-recently-closed session in the working directory.
    */
-  private runTurn(sessionId: string, input: string): void {
+  private async runTurn(sessionId: string, input: string): Promise<void> {
     const session = this.sessions.get(sessionId)
     if (!session || session.info.status !== 'running') return
+
+    // Allocate the turn id up front so `cli:prompt-shaped` can carry it —
+    // the renderer pairs that event to the user bubble by turn id.
+    const turnId = randomUUID()
+
+    // Run the pre-send middleware pipeline (Token Coach Phase 2). Normalize +
+    // lint the prompt, tokenize each slice, and emit `cli:prompt-shaped` with
+    // the post-lint breakdown so the renderer's context meter can update.
+    // Pipeline errors are swallowed inside runPipeline — we always proceed with
+    // *some* ctx, falling back to the original prompt if anything threw.
+    const model =
+      session.originalOptions.model ??
+      (providerOf(session.info.cli) === 'copilot' ? 'gpt-5-mini' : 'sonnet')
+    let promptForAdapter = input
+    // Per-turn user override of routing — set by the renderer via
+    // `userOverrideModel` on SessionOptions. We read it ONCE here and clear
+    // it so it doesn't carry to subsequent turns (overrides are per-turn).
+    const userOverride: { model: string } | undefined = session.originalOptions.userOverrideModel
+      ? { model: session.originalOptions.userOverrideModel }
+      : undefined
+    if (session.originalOptions.userOverrideModel) {
+      session.originalOptions = { ...session.originalOptions, userOverrideModel: undefined }
+    }
+    // Carry the routing decision forward even when the pipeline path errors
+    // out — initialize on the session before runPipeline so the cost-record
+    // path on turn-end still gets at least the userOverride flag.
+    session.currentRouting = undefined
+    let routedModelForSpawn: string | undefined
+    try {
+      const initialCtx: MiddlewareContext = {
+        sessionId,
+        cli: session.info.cli,
+        model,
+        prompt: input,
+        slices: session.currentSlices,
+        meta: {
+          turnIndex: session.turnCount,
+          isFirstTurn: session.turnCount === 0,
+        },
+        notes: [],
+        ...(userOverride ? { userOverride } : {}),
+      }
+      const finalCtx = await runPipeline(initialCtx, this.pipeline)
+      promptForAdapter = finalCtx.prompt
+      session.currentSlices = finalCtx.slices
+
+      // Token Coach Phase 4 — capture the routing decision on the session so
+      // (a) the spawn below uses the routed model, and (b) the cost-record
+      // path on turn-end can report routedModel + userOverride + difficulty.
+      if (finalCtx.routedModel) {
+        routedModelForSpawn = finalCtx.routedModel
+        session.currentRouting = {
+          routedModel: finalCtx.routedModel,
+          userOverride: !!finalCtx.userOverride,
+          // When userOverride is set the classifier didn't run — default the
+          // difficulty to "normal" so the cost row still has a sensible value.
+          difficulty: finalCtx.classification?.difficulty ?? 'normal',
+        }
+      }
+
+      // Token Coach Phase 3 — assemble the cacheStatus payload extension. The
+      // breakpoint comes from prefixOrderMiddleware (byte offset where the
+      // volatile user-text suffix starts). Eligibility is a function of the
+      // policy flag + the prefix's token count + per-model minimum.
+      //
+      // For CLI passthroughs (Copilot CLI / Claude Code CLI) we can't inject
+      // cache_control directly, but the stable-prefix discipline still helps —
+      // we report `eligible:false` with `reason:'cli-passthrough'` so the UI
+      // knows not to claim cache savings on those paths.
+      let cacheStatus: { breakpointTokens: number; eligible: boolean; reason?: string } | undefined
+      if (finalCtx.tokens) {
+        const breakpointTokens = (finalCtx.tokens.fleetPrefix ?? 0)
+          + (finalCtx.tokens.agentPrompt ?? 0)
+          + (finalCtx.tokens.notesFramed ?? 0)
+          + (finalCtx.tokens.contextSources ?? 0)
+
+        const isDirectApi = false // Phase 3: CLIManager only drives CLI adapters; LocalModelAdapter rides on its own IPC.
+        const isAnthropic = isAnthropicModel(model)
+        const meetsMin = breakpointTokens >= minPrefixTokensFor(model)
+
+        let eligible = false
+        let reason: string | undefined
+        if (!this.cachePolicy.enabled) {
+          reason = 'policy-disabled'
+        } else if (!isDirectApi) {
+          reason = 'cli-passthrough'
+        } else if (!isAnthropic) {
+          reason = 'non-anthropic-model'
+        } else if (!meetsMin) {
+          reason = `prefix-below-min (${breakpointTokens} < ${minPrefixTokensFor(model)})`
+        } else {
+          eligible = true
+        }
+
+        cacheStatus = { breakpointTokens, eligible, reason }
+      }
+
+      const wcShape = this.getWebContents()
+      if (wcShape && !wcShape.isDestroyed() && finalCtx.tokens) {
+        // Phase 4 routing payload — included only when the middleware
+        // actually made a decision. Renderer reads it to mark the override
+        // chip with the after-the-fact routing record (the live preview comes
+        // from the `routing:classify` IPC).
+        const routingPayload = finalCtx.routedModel
+          ? {
+              routedModel: finalCtx.routedModel,
+              userOverride: !!finalCtx.userOverride,
+              difficulty: finalCtx.classification?.difficulty ?? 'normal',
+              reasons: finalCtx.classification?.reasons ?? [],
+              confidence: finalCtx.classification?.confidence ?? 0,
+            }
+          : undefined
+        wcShape.send('cli:prompt-shaped', {
+          sessionId,
+          turnId,
+          tokens: finalCtx.tokens,
+          notes: finalCtx.notes,
+          // Optional — phases that don't compute it leave it off.
+          ...(cacheStatus ? { cacheStatus } : {}),
+          ...(routingPayload ? { routing: routingPayload } : {}),
+        })
+      }
+    } catch (err) {
+      // Defensive: runPipeline shouldn't throw, but if a callback above does
+      // (e.g. webContents.send threw because of a malformed payload) we'd
+      // rather log + send the un-rewritten prompt than break the turn.
+      log.warn('[CLIManager] middleware pipeline failed, sending original prompt: %s', err instanceof Error ? err.message : String(err))
+    }
+
+    // If the session was stopped while the pipeline was running, bail out
+    // before spawning the adapter — `await` above is the only suspension
+    // point in this method, so a stop() between then and here is observable.
+    const stillRunning = this.sessions.get(sessionId)
+    if (!stillRunning || stillRunning.info.status !== 'running') return
 
     const turnOptions: SessionOptions = {
       ...session.originalOptions,
       // Force headless mode so the CLI writes plain text to stdout
       mode: 'prompt',
-      prompt: input,
+      prompt: promptForAdapter,
       // After the first turn, always continue the session the CLI just created
       continue: session.turnCount > 0 ? true : session.originalOptions.continue,
       // Don't re-resume a named session on turn 2+ — let --continue handle it
       resume: session.turnCount === 0 ? session.originalOptions.resume : undefined,
+      // Token Coach Phase 4 — thread the routed model back into the spawn
+      // options so the adapter emits `--model <routed>` for this turn. The
+      // routing decision is per-turn — `session.originalOptions.model` stays
+      // unchanged so subsequent turns re-route fresh against the live rules.
+      // When routing didn't run (disabled or errored), `routedModelForSpawn`
+      // is undefined and the original session model wins, preserving today's
+      // behavior byte-for-byte for flag-off users.
+      ...(routedModelForSpawn ? { model: routedModelForSpawn } : {}),
     }
 
     // Log turn start — do NOT log prompt content or full args in production
-    log.info(`[CLIManager] runTurn #${session.turnCount} cli=${session.info.cli} inputLen=${input.length}`)
+    log.info(`[CLIManager] runTurn #${session.turnCount} cli=${session.info.cli} inputLen=${promptForAdapter.length}`)
     log.debug(`[CLIManager] args:`, session.adapter.buildArgs(turnOptions))
 
-    // Audit: prompt sent
-    this.auditPrompt(sessionId, session.info.cli, input)
+    // Audit: prompt sent (audited against the post-lint version, since that's
+    // what actually went out the wire).
+    this.auditPrompt(sessionId, session.info.cli, promptForAdapter)
 
     const proc = session.adapter.startSession(turnOptions)
     session.process = proc
     session.buffer = ''
     session.processingTurn = true
     session.turnOutputBytes = 0
-    session.lastPrompt = input
+    session.turnRawOutput = ''
+    // Persist the post-lint prompt so the cost path (and any audit reader)
+    // sees the same bytes the adapter actually received.
+    session.lastPrompt = promptForAdapter
     ;(session as ActiveSession & { turnStartedAt: number }).turnStartedAt = Date.now()
 
     log.info(`[CLIManager] spawned pid=${proc.pid ?? 'unknown'} for session ${sessionId.slice(0, 8)}`)
     log.debug(`[CLIManager] turn #${session.turnCount} started — waiting for CLI response...`)
 
-    // Assign a fresh turn id — threaded onto every output event for this
-    // turn so the renderer can group streaming fragments into one bubble.
-    const turnId = randomUUID()
+    // Threaded onto every output event for this turn so the renderer can
+    // group streaming fragments into one bubble.
     session.currentTurnId = turnId
 
     // Notify renderer a turn started
@@ -768,24 +1172,25 @@ export class CLIManager {
         this.updateSubAgentStatus(id, 'completed')
       }
 
-      // Record cost for completed sub-agents
+      // Record cost for completed sub-agents. Routed through the same
+      // estimateCost helper as primary turns so a single source of truth
+      // applies — no more `opus: [15, 75]` divergence with the main map.
       if (this.onCostRecord && code === 0) {
-        const outputBytes = subAgent.outputLog.reduce((sum, o) => sum + o.content.length, 0)
-        const inputChars = subAgent.info.prompt.length
-        const inputTokens = Math.ceil(inputChars / 4)
-        const outputTokens = Math.ceil(outputBytes / 4)
         const model = subAgent.info.model ?? (providerOf(subAgent.info.cli) === 'copilot' ? 'claude-sonnet-4.5' : 'sonnet')
-        const pricing: Record<string, [number, number]> = {
-          'claude-sonnet-4.5': [3, 15], 'sonnet': [3, 15], 'opus': [15, 75],
-          'haiku': [0.25, 1.25], 'gpt-5': [5, 15],
-        }
-        const [inP, outP] = pricing[model] ?? [3, 15]
+        const rawOutput = subAgent.outputLog.map((o) => o.content).join('\n')
+        const inputTokens = subAgent.info.prompt ? tokenCounter.count(subAgent.info.prompt, model) : 0
+        const outputTokens = rawOutput ? tokenCounter.count(rawOutput, model) : 0
         this.onCostRecord({
           sessionId: id, sessionName: subAgent.info.name,
           cli: subAgent.info.cli, model,
           agent: undefined, inputTokens, outputTokens,
           totalTokens: inputTokens + outputTokens,
-          estimatedCostUsd: (inputTokens * inP + outputTokens * outP) / 1_000_000,
+          estimatedCostUsd: estimateCost(
+            model,
+            inputTokens,
+            outputTokens,
+            this.pricingService?.getEffectiveTable(),
+          ),
           promptCount: 1, timestamp: Date.now(),
         })
       }
@@ -876,6 +1281,12 @@ export class CLIManager {
       log.debug(`[CLIManager:${session.info.cli}] stdout (${raw.length}b)`)
 
       session.turnOutputBytes += raw.length
+      // Accumulate raw output up to 256KB so we can tokenize the assistant
+      // response accurately at turn-end. Past that cap we drop further bytes
+      // and tokenization degrades to the bytes/4 heuristic on the overflow.
+      if ((session.turnRawOutput?.length ?? 0) < 256 * 1024) {
+        session.turnRawOutput = (session.turnRawOutput ?? '') + raw
+      }
       session.buffer += raw
       const lines = session.buffer.split(/\r\n|\r|\n/)
       session.buffer = lines.pop() ?? ''
@@ -1012,15 +1423,36 @@ export class CLIManager {
       } else {
         // Turn completed normally — session stays open for next input
         wc.send('cli:turn-end', { sessionId, turnId: endedTurnId })
-        // Record cost for this completed turn
-        this.estimateCostFromOutput(sessionId, session, session.turnOutputBytes, session.lastPrompt)
+        // Record cost for this completed turn — per-slice attribution when
+        // the renderer supplied slices, single-slice fallback otherwise.
+        // Cache usage (Phase 3) is forwarded only when an adapter reported it.
+        this.estimateCostFromOutput(
+          sessionId,
+          session,
+          session.turnOutputBytes,
+          session.lastPrompt,
+          session.currentSlices,
+          session.turnRawOutput,
+          session.currentCacheUsage,
+          session.currentRouting,
+        )
+        // Reset so the next turn doesn't inherit stale cache/routing numbers.
+        session.currentCacheUsage = undefined
+        session.currentRouting = undefined
       }
 
-      // Broadcast turn:ended to extensions with timing and token data
+      // Broadcast turn:ended to extensions with timing and token data.
+      // Use the real tokenizer for the model in play — bytes/4 was the old
+      // pre–Token Coach approximation.
       const turnStartedAt = (session as ActiveSession & { turnStartedAt?: number }).turnStartedAt
       const durationMs = turnStartedAt ? Date.now() - turnStartedAt : 0
-      const inputTokens = Math.ceil(session.lastPrompt.length / 4)
-      const outputTokens = Math.ceil(session.turnOutputBytes / 4)
+      const extModel = session.originalOptions.model ?? (providerOf(session.info.cli) === 'copilot' ? 'gpt-5-mini' : 'sonnet')
+      const inputTokens = session.lastPrompt
+        ? tokenCounter.count(session.lastPrompt, extModel)
+        : 0
+      const outputTokens = session.turnRawOutput
+        ? tokenCounter.count(session.turnRawOutput, extModel)
+        : Math.ceil(session.turnOutputBytes / 4)
       void this.onExtensionEvent?.('turn:ended', {
         sessionId,
         turnIndex: session.turnCount - 1,

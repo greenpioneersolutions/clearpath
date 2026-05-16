@@ -124,7 +124,7 @@ test('read DOM directly', async ({ page }) => {
 
 ## Pattern C — IPC round-trip via the preload bridge
 
-CoPilot Commander exposes IPC as `window.electronAPI.invoke(channel, args)`. The cleanest way is the helper:
+ClearPath exposes IPC as `window.electronAPI.invoke(channel, args)`. The cleanest way is the helper:
 
 ```ts
 import { invokeIPC } from './helpers/pw';

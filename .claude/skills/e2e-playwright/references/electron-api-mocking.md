@@ -261,7 +261,7 @@ await ctx.route('https://api.github.com/**', async (route) => {
 - **Privileged origins** — `file://` requests for app resources, `chrome-extension://` URLs, and some service-worker fetches can bypass `context.route`.
 - **Native modules** that bypass Chromium entirely (e.g. an Octokit instance running in main).
 
-For renderer fetches against `https://api.github.com/**` etc. — `context.route` is correct. For **CoPilot Commander main-process HTTP** (Copilot CLI auth probes, MCP catalog HTTP fetches), prefer the monkey-patch helper or stub the IPC handler that wraps the network call.
+For renderer fetches against `https://api.github.com/**` etc. — `context.route` is correct. For **ClearPath main-process HTTP** (Copilot CLI auth probes, MCP catalog HTTP fetches), prefer the monkey-patch helper or stub the IPC handler that wraps the network call.
 
 ### File input vs native dialog
 

@@ -130,7 +130,7 @@ const value = await page.evaluate((sel) => (document.querySelector(sel) as HTMLI
 
 ### Pattern B — IPC round-trip via `electronAPI.invoke`
 
-CoPilot Commander exposes IPC via `window.electronAPI.invoke(channel, args)` (preload bridge). To exercise an IPC handler from the renderer side:
+ClearPath exposes IPC via `window.electronAPI.invoke(channel, args)` (preload bridge). To exercise an IPC handler from the renderer side:
 
 ```ts
 const sessions = await page.evaluate(

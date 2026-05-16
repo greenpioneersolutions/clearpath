@@ -4,6 +4,7 @@ import NotificationBell from './notifications/NotificationBell'
 import { useFeatureFlags, type FeatureFlags } from '../contexts/FeatureFlagContext'
 import { useBranding } from '../contexts/BrandingContext'
 import { useExtensions } from '../hooks/useExtensions'
+import { useAuthStatus } from '../hooks/useAuthStatus'
 import ExtensionSlot from './extensions/ExtensionSlot'
 
 interface Workspace {
@@ -94,26 +95,27 @@ export default function Sidebar(): JSX.Element {
   const { enabledExtensions } = useExtensions()
   const [collapsed, setCollapsed] = useState(false)
   const [policyName, setPolicyName] = useState('Standard')
-  const [copilotOk, setCopilotOk] = useState(false)
-  const [claudeOk, setClaudeOk] = useState(false)
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [activeWsId, setActiveWsId] = useState<string | null>(null)
   const [learnPct, setLearnPct] = useState(0)
   const [learnDismissed, setLearnDismissed] = useState(false)
   const navigate = useNavigate()
   const location = useLocation()
+  // Auth status is sourced from the same hook the Sessions launchpad uses, so
+  // the sidebar dot and the launchpad chip can't disagree. "Green" means the
+  // CLI (or SDK) is installed AND authenticated — not just installed.
+  const authStatus = useAuthStatus()
+  const copilotOk = authStatus.copilot.ready
+  const claudeOk  = authStatus.claude.ready
 
   const refreshStatus = async () => {
-    const [policy, installed, wsList, wsActive, learnProgress] = await Promise.all([
+    const [policy, wsList, wsActive, learnProgress] = await Promise.all([
       window.electronAPI.invoke('policy:get-active') as Promise<{ presetName: string }>,
-      window.electronAPI.invoke('cli:check-installed') as Promise<{ copilot: boolean; claude: boolean }>,
       window.electronAPI.invoke('workspace:list') as Promise<Workspace[]>,
       window.electronAPI.invoke('workspace:get-active') as Promise<string | null>,
       window.electronAPI.invoke('learn:get-progress') as Promise<{ percentage: number; dismissed: boolean }>,
     ])
     setPolicyName(policy.presetName)
-    setCopilotOk(installed.copilot)
-    setClaudeOk(installed.claude)
     setWorkspaces(wsList)
     setActiveWsId(wsActive)
     setLearnPct(learnProgress.percentage)
@@ -225,7 +227,13 @@ export default function Sidebar(): JSX.Element {
               className={`flex-1 flex items-center justify-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium transition-colors ${
                 copilotOk ? 'bg-gray-700 text-white' : 'text-gray-500'
               }`}
-              title={copilotOk ? 'Copilot connected' : 'Copilot not found'}
+              title={
+                copilotOk
+                  ? 'Copilot connected'
+                  : authStatus.copilot.cli.installed
+                    ? 'Copilot installed — sign in to connect'
+                    : 'Copilot not installed'
+              }
               aria-label={copilotOk ? 'Copilot: connected' : 'Copilot: not connected'}
             >
               <span className={`w-1.5 h-1.5 rounded-full ${copilotOk ? 'bg-green-400' : 'bg-red-400/60'}`} />
@@ -236,7 +244,13 @@ export default function Sidebar(): JSX.Element {
               className={`flex-1 flex items-center justify-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium transition-colors ${
                 claudeOk ? 'text-gray-400 hover:bg-gray-700 hover:text-white' : 'text-gray-600'
               }`}
-              title={claudeOk ? 'Claude connected' : 'Claude not found'}
+              title={
+                claudeOk
+                  ? 'Claude connected'
+                  : authStatus.claude.cli.installed
+                    ? 'Claude installed — sign in to connect'
+                    : 'Claude not installed'
+              }
               aria-label={claudeOk ? 'Claude: connected' : 'Claude: not connected'}
             >
               <span className={`w-1.5 h-1.5 rounded-full ${claudeOk ? 'bg-green-400' : 'bg-red-400/60'}`} />

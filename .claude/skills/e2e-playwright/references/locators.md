@@ -185,7 +185,7 @@ const titles = await page.getByRole('listitem').evaluateAll(
   ```
 - XPath does NOT pierce shadow DOM — another reason to prefer `getBy*`.
 
-## Project-specific patterns (CoPilot Commander)
+## Project-specific patterns (ClearPath)
 
 ### Sidebar navigation
 The sidebar (`<aside>`) contains main nav links plus pinned-bottom links (Connect, Settings) outside the `<nav>`. The `<a>` elements have role="link":

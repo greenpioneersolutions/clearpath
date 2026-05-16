@@ -7,8 +7,8 @@ describe('STARTER_PROMPTS', () => {
     expect(STARTER_PROMPTS.length).toBeGreaterThan(0)
   })
 
-  it('contains exactly 6 prompts', () => {
-    expect(STARTER_PROMPTS).toHaveLength(6)
+  it('contains exactly 9 prompts', () => {
+    expect(STARTER_PROMPTS).toHaveLength(9)
   })
 
   it('has no duplicate IDs', () => {
@@ -27,7 +27,7 @@ describe('STARTER_PROMPTS', () => {
     })
 
     it('has a valid category', () => {
-      expect(['spotlight', 'default']).toContain(prompt.category)
+      expect(['spotlight', 'default', 'launchpad-spotlight']).toContain(prompt.category)
     })
 
     it('has a numeric displayOrder', () => {
@@ -58,5 +58,18 @@ describe('STARTER_PROMPTS', () => {
     expect(ids).toContain('decision-analysis')
     expect(ids).toContain('technical-review')
     expect(ids).toContain('weekly-planning')
+    expect(ids).toContain('launchpad-explain-project')
+    expect(ids).toContain('launchpad-summarize-week')
+    expect(ids).toContain('launchpad-status-update')
+  })
+
+  it('exposes the three launchpad-spotlight prompts on the Sessions launchpad surface', () => {
+    const launchpad = STARTER_PROMPTS.filter((p) => p.category === 'launchpad-spotlight')
+    expect(launchpad).toHaveLength(3)
+    expect(launchpad.map((p) => p.displayText)).toEqual([
+      "Explain this project like I'm new",
+      'Summarize what changed this week',
+      'Draft a status update for my team',
+    ])
   })
 })

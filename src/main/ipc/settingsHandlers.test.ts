@@ -131,6 +131,15 @@ const DEFAULT_SETTINGS = {
   maxTurns: null,
   verbose: false,
   envVars: {},
+  // Token Coach Phase 3 — cache policy lives on AppSettings so a single
+  // store roundtrip is enough to read it on boot.
+  cachePolicy: { enabled: false, ttl: 'ephemeral' },
+  // Token Coach Phase 4 — routing rules also live on AppSettings.
+  routingRules: {
+    enabled: false,
+    copilot: { trivial: 'gpt-5-mini', normal: 'claude-sonnet-4.5', hard: 'claude-opus-4.6' },
+    claude: { trivial: 'haiku', normal: 'sonnet', hard: 'opus' },
+  },
 }
 
 function createMockIpcMain() {
@@ -205,6 +214,12 @@ describe('settingsHandlers', () => {
         'settings:import-profile',
         'settings:list-plugins',
         'settings:open-terminal',
+        // Token Coach Phase 3
+        'settings:get-cache-policy',
+        'settings:set-cache-policy',
+        // Token Coach Phase 4
+        'settings:get-routing-rules',
+        'settings:set-routing-rules',
       ]
       for (const ch of expectedChannels) {
         expect(registeredChannels).toContain(ch)
@@ -431,6 +446,166 @@ describe('settingsHandlers', () => {
         maxTurns: null,
         verbose: false,
       }))
+    })
+  })
+
+  // ── settings:get-cache-policy / set-cache-policy (Token Coach Phase 3) ────
+
+  describe('settings:get-cache-policy', () => {
+    it('returns the stored cache policy', () => {
+      mockGet.mockReturnValue({
+        ...DEFAULT_SETTINGS,
+        cachePolicy: { enabled: true, ttl: '1h' },
+      })
+      const handler = getHandler(ipcMain, 'settings:get-cache-policy')
+      const result = handler(mockEvent)
+      expect(result).toEqual({ enabled: true, ttl: '1h' })
+    })
+
+    it('falls back to the safe default when cachePolicy is missing on the stored settings', () => {
+      // Simulate a settings row written before Phase 3 was added.
+      mockGet.mockReturnValue({
+        flags: {}, model: { copilot: '', claude: '' }, maxBudgetUsd: null,
+        maxTurns: null, verbose: false, envVars: {},
+      })
+      const handler = getHandler(ipcMain, 'settings:get-cache-policy')
+      const result = handler(mockEvent)
+      expect(result).toEqual({ enabled: false, ttl: 'ephemeral' })
+    })
+  })
+
+  describe('settings:set-cache-policy', () => {
+    it('persists a fully-specified policy and returns it', () => {
+      const settings = { ...DEFAULT_SETTINGS }
+      mockGet.mockReturnValue(settings)
+
+      const handler = getHandler(ipcMain, 'settings:set-cache-policy')
+      const result = handler(mockEvent, { enabled: true, ttl: '1h' })
+
+      expect(result).toEqual({ enabled: true, ttl: '1h' })
+      expect(mockSet).toHaveBeenCalledWith('settings', expect.objectContaining({
+        cachePolicy: { enabled: true, ttl: '1h' },
+      }))
+    })
+
+    it('only updates `enabled` when ttl is omitted', () => {
+      mockGet.mockReturnValue({
+        ...DEFAULT_SETTINGS,
+        cachePolicy: { enabled: false, ttl: '1h' },
+      })
+
+      const handler = getHandler(ipcMain, 'settings:set-cache-policy')
+      const result = handler(mockEvent, { enabled: true })
+      expect(result).toEqual({ enabled: true, ttl: '1h' })
+    })
+
+    it('only updates `ttl` when enabled is omitted', () => {
+      mockGet.mockReturnValue({
+        ...DEFAULT_SETTINGS,
+        cachePolicy: { enabled: true, ttl: 'ephemeral' },
+      })
+
+      const handler = getHandler(ipcMain, 'settings:set-cache-policy')
+      const result = handler(mockEvent, { ttl: '1h' })
+      expect(result).toEqual({ enabled: true, ttl: '1h' })
+    })
+
+    it('rejects an invalid ttl value and keeps the previous one', () => {
+      mockGet.mockReturnValue({
+        ...DEFAULT_SETTINGS,
+        cachePolicy: { enabled: true, ttl: 'ephemeral' },
+      })
+
+      const handler = getHandler(ipcMain, 'settings:set-cache-policy')
+      // 'forever' is not a valid TTL — handler should silently fall back.
+      const result = handler(mockEvent, { ttl: 'forever' as unknown as 'ephemeral' })
+      expect(result.ttl).toBe('ephemeral')
+    })
+  })
+
+  // ── settings:get-routing-rules / set-routing-rules (Token Coach Phase 4) ──
+
+  const DEFAULT_RULES = {
+    enabled: false,
+    copilot: { trivial: 'gpt-5-mini', normal: 'claude-sonnet-4.5', hard: 'claude-opus-4.6' },
+    claude: { trivial: 'haiku', normal: 'sonnet', hard: 'opus' },
+  }
+
+  describe('settings:get-routing-rules', () => {
+    it('returns the stored routing rules', () => {
+      const rules = { ...DEFAULT_RULES, enabled: true }
+      mockGet.mockReturnValue({ ...DEFAULT_SETTINGS, routingRules: rules })
+      const handler = getHandler(ipcMain, 'settings:get-routing-rules')
+      const result = handler(mockEvent)
+      expect(result).toEqual(rules)
+    })
+
+    it('falls back to defaults when routingRules is missing on the stored settings', () => {
+      mockGet.mockReturnValue({
+        flags: {}, model: { copilot: '', claude: '' }, maxBudgetUsd: null,
+        maxTurns: null, verbose: false, envVars: {},
+      })
+      const handler = getHandler(ipcMain, 'settings:get-routing-rules')
+      const result = handler(mockEvent) as typeof DEFAULT_RULES
+      expect(result.enabled).toBe(false)
+      expect(result.copilot.trivial).toBe('gpt-5-mini')
+      expect(result.claude.normal).toBe('sonnet')
+    })
+
+    it('backfills missing tiers from defaults', () => {
+      mockGet.mockReturnValue({
+        ...DEFAULT_SETTINGS,
+        routingRules: {
+          enabled: true,
+          copilot: { trivial: 'custom-fast' },  // normal/hard missing
+          claude: undefined,
+        } as unknown as typeof DEFAULT_RULES,
+      })
+      const handler = getHandler(ipcMain, 'settings:get-routing-rules')
+      const result = handler(mockEvent) as typeof DEFAULT_RULES
+      expect(result.copilot.trivial).toBe('custom-fast')
+      expect(result.copilot.normal).toBe('claude-sonnet-4.5')  // backfilled
+      expect(result.copilot.hard).toBe('claude-opus-4.6')      // backfilled
+      expect(result.claude.normal).toBe('sonnet')              // entire object backfilled
+    })
+  })
+
+  describe('settings:set-routing-rules', () => {
+    it('persists rules and returns the saved object', () => {
+      mockGet.mockReturnValue({ ...DEFAULT_SETTINGS })
+      const handler = getHandler(ipcMain, 'settings:set-routing-rules')
+      const next = { ...DEFAULT_RULES, enabled: true }
+      const result = handler(mockEvent, next)
+      expect(result).toEqual(next)
+      expect(mockSet).toHaveBeenCalledWith('settings', expect.objectContaining({
+        routingRules: next,
+      }))
+    })
+
+    it('merges partial updates against the current rules', () => {
+      mockGet.mockReturnValue({
+        ...DEFAULT_SETTINGS,
+        routingRules: { ...DEFAULT_RULES, enabled: true },
+      })
+      const handler = getHandler(ipcMain, 'settings:set-routing-rules')
+      // Only override copilot.hard
+      const result = handler(mockEvent, { copilot: { hard: 'claude-opus-4.5' } }) as typeof DEFAULT_RULES
+      expect(result.enabled).toBe(true)
+      expect(result.copilot.hard).toBe('claude-opus-4.5')
+      expect(result.copilot.trivial).toBe('gpt-5-mini')   // preserved
+      expect(result.claude.normal).toBe('sonnet')         // preserved
+    })
+
+    it('only toggles `enabled` when other fields are omitted', () => {
+      mockGet.mockReturnValue({
+        ...DEFAULT_SETTINGS,
+        routingRules: { ...DEFAULT_RULES, enabled: false },
+      })
+      const handler = getHandler(ipcMain, 'settings:set-routing-rules')
+      const result = handler(mockEvent, { enabled: true }) as typeof DEFAULT_RULES
+      expect(result.enabled).toBe(true)
+      expect(result.copilot).toEqual(DEFAULT_RULES.copilot)
+      expect(result.claude).toEqual(DEFAULT_RULES.claude)
     })
   })
 

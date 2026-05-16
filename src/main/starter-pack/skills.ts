@@ -1,5 +1,5 @@
 // ── Starter Pack: Skill Definitions ─────────────────────────────────────────
-// Production skill definitions for the CoPilot Commander starter pack.
+// Production skill definitions for the ClearPath starter pack.
 // Each skill includes a full XML-based skill_definition prompt that agents
 // use to execute the skill with consistent, high-quality output.
 

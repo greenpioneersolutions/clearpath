@@ -10,10 +10,12 @@ import LaunchCommandPreview from '../components/settings/LaunchCommandPreview'
 import NotificationPreferences from '../components/notifications/NotificationPreferences'
 import DataManagement from '../components/settings/DataManagement'
 import FeatureFlagSettings from '../components/settings/FeatureFlagSettings'
+import RoutingSettings from '../components/settings/RoutingSettings'
+import { useFlag } from '../contexts/FeatureFlagContext'
 
-type Tab = 'flags' | 'model' | 'limits' | 'profiles' | 'notifications' | 'data' | 'features'
+type Tab = 'flags' | 'model' | 'limits' | 'profiles' | 'notifications' | 'data' | 'features' | 'routing'
 
-const TABS: { key: Tab; label: string }[] = [
+const BASE_TABS: { key: Tab; label: string }[] = [
   { key: 'flags', label: 'CLI Flags' },
   { key: 'model', label: 'Model' },
   { key: 'limits', label: 'Session Limits' },
@@ -28,6 +30,14 @@ export default function Settings(): JSX.Element {
   const [cli, setCli] = useState<'copilot' | 'claude'>('copilot')
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS)
   const [loading, setLoading] = useState(true)
+  const showModelRouting = useFlag('showModelRouting')
+
+  // Routing tab is appended only when the flag is on. The Settings tabs row
+  // already collapses gracefully, so this is safe — but we keep the order
+  // stable so muscle-memory clicks still land in the right place.
+  const TABS = showModelRouting
+    ? [...BASE_TABS, { key: 'routing' as const, label: 'Routing' }]
+    : BASE_TABS
 
   // ── Load settings from electron-store ─────────────────────────────────────
 
@@ -172,6 +182,8 @@ export default function Settings(): JSX.Element {
         {tab === 'data' && <DataManagement />}
 
         {tab === 'features' && <FeatureFlagSettings />}
+
+        {tab === 'routing' && showModelRouting && <RoutingSettings />}
       </div>
 
       {/* Launch Command Preview — always visible at bottom */}
