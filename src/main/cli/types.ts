@@ -47,8 +47,22 @@ export interface ActiveSession {
   processingTurn: boolean
   /** Bytes of output received in the current turn (for cost estimation). */
   turnOutputBytes: number
+  /**
+   * Raw stdout text accumulated for the current turn. Capped at 256KB to
+   * bound memory. Tokenized at turn-end for accurate output-token attribution
+   * (Token Coach Phase 1). When the cap is hit, we fall back to the
+   * bytes/4 heuristic on whatever bytes weren't captured.
+   */
+  turnRawOutput?: string
   /** The prompt text sent for the current turn. */
   lastPrompt: string
+  /**
+   * Per-slice breakdown for the current turn (Token Coach Phase 1). Set by
+   * `sendInput` / `startSession` when slices were passed; undefined otherwise.
+   * Consumed by the cost-record path on turn-end. Backward compatible — when
+   * undefined we attribute the whole prompt to `userPromptTokens`.
+   */
+  currentSlices?: import('../../shared/tokenization/types').PromptSlices
   /** Full message history for this session (for rehydration when UI remounts). */
   messageLog: Array<{ type: string; content: string; metadata?: unknown; sender?: 'user' | 'ai' | 'system'; timestamp?: number; attachedNotes?: Array<{ id: string; title: string }>; attachedAgent?: { id: string; name: string }; attachedSkills?: Array<{ id: string; name: string }> }>
   /**
@@ -58,6 +72,27 @@ export interface ActiveSession {
    * streaming pauses.
    */
   currentTurnId?: string
+  /**
+   * Token Coach Phase 3 — cache usage reported by the adapter for the
+   * in-flight turn. Set on `cli:turn-end` when an adapter that owns its own
+   * API call (LocalModelAdapter pointed at Anthropic today) reports usage.
+   * CLI-passthrough turns leave this undefined; cost-record's
+   * `cachedInputTokens` / `cacheCreationTokens` fields then stay undefined
+   * on the row, which the renderer renders as "no cache data" rather than 0.
+   */
+  currentCacheUsage?: { cachedInputTokens: number; cacheCreationTokens: number }
+  /**
+   * Token Coach Phase 4 — routing decision captured by the pre-send pipeline
+   * for the in-flight turn. Set in `runTurn` when the routing middleware ran;
+   * consumed by the cost-record path on turn-end so the row carries
+   * `routedModel`, `userOverride`, and `routedDifficulty`. Reset between
+   * turns; CLI-routing-disabled turns leave this undefined.
+   */
+  currentRouting?: {
+    routedModel: string
+    userOverride: boolean
+    difficulty: 'trivial' | 'normal' | 'hard'
+  }
 }
 
 // ── Sub-agent / delegated task types ─────────────────────────────────────────

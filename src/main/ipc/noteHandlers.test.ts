@@ -619,6 +619,90 @@ describe('noteHandlers', () => {
       const framed = result.framedPrompt as string
       expect(framed).not.toContain('super-secret-uuid-xyz')
     })
+
+    // ── Token Coach Phase 3: deterministic ordering for cache stability ───
+
+    it('serializes notes in id-sorted order regardless of input id order', async () => {
+      // Two notes with intentionally non-alphabetical titles so we can tell
+      // them apart in the output without relying on id leakage.
+      storeData.notes = [
+        makeNote({ id: 'zzz-last',  title: 'Z-title', content: 'z-body' }),
+        makeNote({ id: 'aaa-first', title: 'A-title', content: 'a-body' }),
+      ]
+
+      // Selection order A then Z.
+      const ra = await handlers['notes:get-bundle-for-prompt'](
+        {}, { ids: ['aaa-first', 'zzz-last'] },
+      ) as Record<string, unknown>
+      // Selection order Z then A.
+      const rb = await handlers['notes:get-bundle-for-prompt'](
+        {}, { ids: ['zzz-last', 'aaa-first'] },
+      ) as Record<string, unknown>
+
+      // Byte-identical output regardless of selection order.
+      expect(ra.framedPrompt).toBe(rb.framedPrompt)
+
+      // The id-sorted note (aaa-first) must appear before the other.
+      const framed = ra.framedPrompt as string
+      expect(framed.indexOf('A-title')).toBeLessThan(framed.indexOf('Z-title'))
+      expect(framed.indexOf('a-body')).toBeLessThan(framed.indexOf('z-body'))
+    })
+
+    it('serializes attachments in filename-sorted order within a note', async () => {
+      storeData.notes = [makeNote({
+        id: 'n1',
+        title: 'Note',
+        content: 'body',
+        attachments: [
+          { id: 'att-z', path: '/tmp/zeta.txt', name: 'zeta.txt', sizeBytes: 10, addedAt: 1 },
+          { id: 'att-a', path: '/tmp/alpha.txt', name: 'alpha.txt', sizeBytes: 10, addedAt: 2 },
+          { id: 'att-m', path: '/tmp/mid.txt', name: 'mid.txt', sizeBytes: 10, addedAt: 3 },
+        ],
+      })]
+      vi.mocked(existsSync).mockReturnValue(true)
+      vi.mocked(readFileSync).mockImplementation((p) => `content-of-${String(p).split('/').pop()}`)
+
+      const result = await handlers['notes:get-bundle-for-prompt'](
+        {}, { ids: ['n1'] },
+      ) as Record<string, unknown>
+
+      const framed = result.framedPrompt as string
+      // alpha → mid → zeta is the alphabetical (filename) order.
+      const idxAlpha = framed.indexOf('alpha.txt')
+      const idxMid   = framed.indexOf('mid.txt')
+      const idxZeta  = framed.indexOf('zeta.txt')
+      expect(idxAlpha).toBeGreaterThan(-1)
+      expect(idxAlpha).toBeLessThan(idxMid)
+      expect(idxMid).toBeLessThan(idxZeta)
+    })
+
+    it('produces byte-identical output for the same note set across repeated invocations', async () => {
+      // Three notes with assorted ids. Build the input array each time in a
+      // different order — the output should be identical bytes for all of them.
+      storeData.notes = [
+        makeNote({ id: 'id-3', title: 'three', content: '3' }),
+        makeNote({ id: 'id-1', title: 'one',   content: '1' }),
+        makeNote({ id: 'id-2', title: 'two',   content: '2' }),
+      ]
+
+      const inputs = [
+        ['id-1', 'id-2', 'id-3'],
+        ['id-3', 'id-1', 'id-2'],
+        ['id-2', 'id-3', 'id-1'],
+        ['id-3', 'id-2', 'id-1'],
+      ]
+
+      const outputs = new Set<string>()
+      for (const input of inputs) {
+        const r = await handlers['notes:get-bundle-for-prompt'](
+          {}, { ids: input },
+        ) as Record<string, unknown>
+        outputs.add(r.framedPrompt as string)
+      }
+
+      // All four invocations must produce exactly the same bytes.
+      expect(outputs.size).toBe(1)
+    })
   })
 
   // ── notes:pick-files ──────────────────────────────────────────────────

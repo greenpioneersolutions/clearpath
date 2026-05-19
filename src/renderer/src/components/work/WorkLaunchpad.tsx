@@ -2,8 +2,7 @@ import type { SessionInfo } from '../../types/ipc'
 import type { BackendId } from '../../../../shared/backends'
 import QuickStartCard from './QuickStartCard'
 import WorkflowsCard from './WorkflowsCard'
-import ActiveSessionsCard from './ActiveSessionsCard'
-import RecentSessionsCard from './RecentSessionsCard'
+import PickUpWhereYouLeftOffCard from './PickUpWhereYouLeftOffCard'
 import NotesDiscoveryCard from './NotesDiscoveryCard'
 
 interface Props {
@@ -20,6 +19,8 @@ interface Props {
     attachedAgent?: { id: string; name: string }
     attachedSkills?: Array<{ id: string; name: string }>
     attachedNotes?: Array<{ id: string; title: string }>
+    /** Explicit "user picked no agent" — disables server-side default fallback. */
+    noAgent?: boolean
   }) => void
   /** Open Composer with a saved workflow loaded. */
   onOpenWorkflow: (workflowId: string) => void
@@ -46,19 +47,23 @@ export default function WorkLaunchpad({
       style={{ backgroundColor: 'var(--brand-dark-page)' }}
     >
       <div className="max-w-6xl mx-auto space-y-6">
-        <QuickStartCard onSubmit={onQuickStart} defaultCli={defaultCli} />
-
-        <NotesDiscoveryCard />
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <WorkflowsCard onOpenWorkflow={onOpenWorkflow} />
-          <ActiveSessionsCard onOpenSession={onOpenActiveSession} />
+        {/* Hero row: "start fresh" (left, 60%) and "continue work" (right, 40%) as equal-weight peers. */}
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+          <div className="lg:col-span-3">
+            <QuickStartCard onSubmit={onQuickStart} defaultCli={defaultCli} />
+          </div>
+          <div className="lg:col-span-2">
+            <PickUpWhereYouLeftOffCard
+              onOpenActiveSession={onOpenActiveSession}
+              onResumeSession={onResumeSession}
+              onSeeMore={onSeeMoreSessions}
+            />
+          </div>
         </div>
 
-        <RecentSessionsCard
-          onResumeSession={onResumeSession}
-          onSeeMore={onSeeMoreSessions}
-        />
+        <WorkflowsCard onOpenWorkflow={onOpenWorkflow} />
+
+        <NotesDiscoveryCard />
       </div>
     </div>
   )

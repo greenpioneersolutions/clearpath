@@ -211,8 +211,8 @@ export default function StatusDashboard(): JSX.Element {
               {refreshingInstall ? 'Checking…' : 'Re-check'}
             </button>
           </div>
-          <pre className="text-[11px] bg-black/40 border border-red-900/50 rounded p-2 text-red-100 font-mono">
-cargo install clearmemory
+          <pre className="text-[11px] bg-black/40 border border-red-900/50 rounded p-2 text-red-100 font-mono whitespace-pre-wrap break-all">
+cargo install --git https://github.com/greenpioneersolutions/clearmemory clearmemory
           </pre>
         </div>
       )}

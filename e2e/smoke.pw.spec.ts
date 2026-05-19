@@ -1,7 +1,7 @@
 /**
  * e2e/smoke.pw.spec.ts
  *
- * Smoke test suite for ClearPathAI (CoPilot Commander) — Playwright port.
+ * Smoke test suite for ClearPathAI (ClearPath) — Playwright port.
  *
  * Goals:
  *  1. Verify the Electron window opens and the React app mounts

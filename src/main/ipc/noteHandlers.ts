@@ -280,11 +280,22 @@ export function registerNoteHandlers(ipcMain: IpcMain): void {
   // user's instruction — and where each note begins/ends. We deliberately
   // *omit* the note's UUID; the model cites by title to avoid leaking
   // internal identifiers into AI output that might be saved or echoed back.
+  //
+  // Token Coach Phase 3 — DETERMINISTIC ORDERING for prompt-cache stability.
+  // Notes are sorted by `id` and each note's attachments are sorted by
+  // filename. This matters because the renderer's selection order is volatile
+  // (depends on the order chips were added to ContextPicker) and would
+  // otherwise reshuffle this block turn-to-turn, invalidating both
+  // ClearPath's cache_control breakpoint AND the underlying CLI's own cache
+  // on identical note sets.
   ipcMain.handle('notes:get-bundle-for-prompt', (_e, args: { ids: string[] }) => {
     const allNotes = store.get('notes')
     const bundle = (args.ids ?? [])
       .map((id) => allNotes.find((n) => n.id === id))
       .filter((n): n is Note => Boolean(n))
+      // Sort by id so the same note set always serializes in the same order
+      // regardless of selection order on the renderer side.
+      .sort((a, b) => a.id.localeCompare(b.id))
 
     if (bundle.length === 0) {
       return { framedPrompt: '', noteCount: 0, attachmentCount: 0 }
@@ -294,7 +305,13 @@ export function registerNoteHandlers(ipcMain: IpcMain): void {
     const noteBlocks: string[] = []
 
     for (const note of bundle) {
-      const attachments = note.attachments ?? []
+      // Sort attachments by filename for the same byte-stability reason.
+      // Tie-break by `id` so two attachments with the same display name still
+      // sort deterministically.
+      const attachments = [...(note.attachments ?? [])].sort((a, b) => {
+        const byName = a.name.localeCompare(b.name)
+        return byName !== 0 ? byName : a.id.localeCompare(b.id)
+      })
       totalAttachments += attachments.length
 
       const sourceAttr = note.source && note.source !== 'manual'

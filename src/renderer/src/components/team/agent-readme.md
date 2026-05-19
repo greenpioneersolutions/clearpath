@@ -49,4 +49,4 @@ Provides team onboarding, configuration sharing, marketplace agent discovery, an
   - Three states: no folder → folder selected → folder with config list
 
 ## Business Context
-Enables CoPilot Commander's team collaboration model: new members can run the setup wizard, pull team configurations from a shared folder (Dropbox, GitHub repo, network drive), browse and install community agents from marketplace, and track who's contributing to the codebase with AI detection. Configuration bundles allow easy onboarding across different machines.
+Enables ClearPath's team collaboration model: new members can run the setup wizard, pull team configurations from a shared folder (Dropbox, GitHub repo, network drive), browse and install community agents from marketplace, and track who's contributing to the codebase with AI detection. Configuration bundles allow easy onboarding across different machines.

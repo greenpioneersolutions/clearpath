@@ -3,7 +3,7 @@
  * `query()` API into the `ICLIAdapter` shape that CLIManager consumes.
  *
  * Why this exists: enterprises that don't want to install the `claude` CLI
- * binary can still drive Claude sessions from CoPilot Commander through their
+ * binary can still drive Claude sessions from ClearPath through their
  * `ANTHROPIC_API_KEY`. The SDK returns rich structured events; we forward them
  * onto a PassThrough stdout as stream-JSON frames so the existing
  * `ClaudeCodeAdapter.parseOutput` pipeline handles them unchanged.
@@ -165,7 +165,7 @@ export class ClaudeSdkAdapter implements ICLIAdapter {
   }
 
   /**
-   * Translate CoPilot Commander's `SessionOptions` into the SDK's `Options`.
+   * Translate ClearPath's `SessionOptions` into the SDK's `Options`.
    * Only fields that the SDK supports are forwarded; CLI-only flags are
    * ignored silently (they'd be no-ops anyway).
    */

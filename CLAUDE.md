@@ -1,7 +1,7 @@
-# CoPilot Commander — Electron GUI for CLI AI Agents
+# ClearPathAI — Electron GUI for CLI AI Agents
 
 ## Project Overview
-CoPilot Commander is an Electron + React + TypeScript application that provides a manager-friendly GUI wrapper around **GitHub Copilot CLI** (primary) and **Claude Code CLI** (secondary). Non-technical users never touch the terminal — the app spawns, manages, and parses CLI processes behind a polished UI.
+ClearPathAI (internal codename: ClearPath) is an Electron + React + TypeScript application that provides a manager-friendly GUI wrapper around **GitHub Copilot CLI** (primary) and **Claude Code CLI** (secondary). Non-technical users never touch the terminal — the app spawns, manages, and parses CLI processes behind a polished UI.
 
 ## Architecture
 
@@ -93,6 +93,7 @@ All user data is stored via electron-store in `~/Library/Application Support/cle
 | `clear-path-history.json` | Session history metadata (max 100) |
 | `clear-path-plugins.json` | CLI plugin custom paths and per-CLI enable lists |
 | `clear-path-mcps.json` | MCP registry entries (source of truth for MCP servers) |
+| `clear-path-pricing.json` | Per-model price overrides, optional remote-sync URL/results — applied on top of canonical defaults in `src/shared/pricing/defaults.ts` |
 
 MCP secrets (API tokens, DB URLs) are stored separately in `<userData>/mcp-secrets.json`, encrypted via Electron `safeStorage` when available.
 

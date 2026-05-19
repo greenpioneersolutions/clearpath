@@ -7,7 +7,7 @@ interface Props {
   cli: BackendId
   /** Current model name (e.g. "gpt-4.1"). When undefined, shows the default model label. */
   currentModel?: string
-  /** Called with the chosen model name. The Work page wires this to send `/model <name>`. */
+  /** Called with the chosen model name. The Work page persists this on the session — applies to the next message, no immediate turn. */
   onChange: (model: string) => void
   /** Disable the chip (e.g. while session is processing). */
   disabled?: boolean
@@ -49,7 +49,7 @@ export default function ModelChip({ cli, currentModel, onChange, disabled }: Pro
         type="button"
         onClick={() => setOpen((o) => !o)}
         disabled={disabled}
-        title="Switch model for this session"
+        title="Switch model — applies to your next message"
         aria-label={`Current model: ${display}. Click to change.`}
         aria-haspopup="listbox"
         aria-expanded={open}
@@ -95,7 +95,7 @@ export default function ModelChip({ cli, currentModel, onChange, disabled }: Pro
               Switch model
             </p>
             <p className="text-[10px] text-gray-600 mt-0.5">
-              Sends <code className="text-gray-400">/model</code> to this session.
+              Applies to your next message.
             </p>
           </div>
           <div className="max-h-72 overflow-y-auto py-1">

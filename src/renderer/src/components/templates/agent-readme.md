@@ -47,7 +47,7 @@ This folder contains components for creating, editing, browsing, and using reusa
 - Complexity color coding: map-based styling for low/medium/high badges
 
 ## Business Context
-**Feature:** CoPilot Commander's template library enables power users to create reusable prompt workflows. Users can save templates once and reuse them across sessions, improving productivity. Templates support dynamic variables for task-specific customization. The library includes built-in templates and supports import/export for team sharing. Usage stats help users track which templates are most valuable and costly.
+**Feature:** ClearPath's template library enables power users to create reusable prompt workflows. Users can save templates once and reuse them across sessions, improving productivity. Templates support dynamic variables for task-specific customization. The library includes built-in templates and supports import/export for team sharing. Usage stats help users track which templates are most valuable and costly.
 
 **User Workflow:**
 1. User clicks "Create Template" → TemplateEditor wizard → saves via `templates:save`

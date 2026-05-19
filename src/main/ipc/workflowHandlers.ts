@@ -2,6 +2,7 @@ import type { IpcMain } from 'electron'
 import Store from 'electron-store'
 import { randomUUID } from 'crypto'
 import { getStoreEncryptionKey } from '../utils/storeEncryption'
+import { tokenCounter } from '../tokenization/TokenCounter'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -85,12 +86,11 @@ export function registerWorkflowHandlers(ipcMain: IpcMain): void {
     return { success: true }
   })
 
-  // Cost estimation: rough tokens from prompt length × model pricing
+  // Cost estimation: real tokens via TokenCounter; output estimated as 2× input.
   ipcMain.handle('workflow:estimate-cost', (_e, args: { steps: WorkflowStep[] }) => {
     let totalTokens = 0
     for (const step of args.steps) {
-      // Rough: 1 token ≈ 4 chars for input, estimate 2x output
-      const inputTokens = Math.ceil(step.prompt.length / 4)
+      const inputTokens = tokenCounter.count(step.prompt, step.model ?? 'unknown')
       const outputTokens = inputTokens * 2
       totalTokens += inputTokens + outputTokens
     }

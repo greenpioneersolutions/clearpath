@@ -1,6 +1,6 @@
 ---
 name: e2e-playwright
-description: Playwright + Electron e2e testing reference for CoPilot Commander — _electron.launch setup, locators, web-first assertions, fixtures, visual regression, trace viewer, CI/CD. Auto-loads when working on Playwright spec files or playwright.config files.
+description: Playwright + Electron e2e testing reference for ClearPath — _electron.launch setup, locators, web-first assertions, fixtures, visual regression, trace viewer, CI/CD. Auto-loads when working on Playwright spec files or playwright.config files.
 user-invocable: false
 paths: "e2e/**/*.pw.spec.ts, e2e/**/*.ts, playwright.config.ts, playwright.screenshots.config.ts, playwright-report/**, test-results/**"
 allowed-tools: Read Glob Grep Bash
@@ -8,7 +8,7 @@ allowed-tools: Read Glob Grep Bash
 
 # Playwright E2E Testing for Electron
 
-This skill covers **Playwright** with `_electron.launch()` driving the CoPilot Commander Electron app. Playwright is used in **library mode** (Electron is launched directly via `playwright`'s `_electron` API), but tests run under the `@playwright/test` runner via custom worker-scoped fixtures.
+This skill covers **Playwright** with `_electron.launch()` driving the ClearPath Electron app. Playwright is used in **library mode** (Electron is launched directly via `playwright`'s `_electron` API), but tests run under the `@playwright/test` runner via custom worker-scoped fixtures.
 
 The app is built with `electron-vite` (unpackaged entry: `out/main/index.js`), React 18 with hash-based routing (`#/work?tab=session`), and exposes IPC via `window.electronAPI.invoke()`.
 

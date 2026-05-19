@@ -17,7 +17,7 @@ export function registerLocalModelHandlers(ipcMain: IpcMain): void {
       args: {
         model: string
         messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>
-        source?: 'ollama' | 'lmstudio'
+        source?: 'ollama' | 'lmstudio' | 'anthropic'
       },
     ) => {
       const content = await adapter.chat(args.model, args.messages, args.source)

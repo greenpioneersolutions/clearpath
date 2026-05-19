@@ -1,7 +1,7 @@
 # Voice — Speech-to-text input, voice commands, and text-to-speech output
 
 ## Purpose
-Provides hands-free voice interaction with CoPilot Commander, including speech-to-text input, voice command detection and routing, audio notifications, and text-to-speech responses. Enables accessibility and natural conversation flow.
+Provides hands-free voice interaction with ClearPath, including speech-to-text input, voice command detection and routing, audio notifications, and text-to-speech responses. Enables accessibility and natural conversation flow.
 
 ## Files
 | File | Description | Key Exports / Functions |
@@ -66,4 +66,4 @@ Provides hands-free voice interaction with CoPilot Commander, including speech-t
   - Command feedback shown as pulse animation for 2 seconds
 
 ## Business Context
-Implements accessibility-first voice interface for CoPilot Commander, enabling users to control the app entirely hands-free: speak prompts, trigger navigation commands, enable response readback. Particularly valuable for pair programming scenarios and accessibility needs. Integrates with session input pipeline via `onSendToSession` callback.
+Implements accessibility-first voice interface for ClearPath, enabling users to control the app entirely hands-free: speak prompts, trigger navigation commands, enable response readback. Particularly valuable for pair programming scenarios and accessibility needs. Integrates with session input pipeline via `onSendToSession` callback.

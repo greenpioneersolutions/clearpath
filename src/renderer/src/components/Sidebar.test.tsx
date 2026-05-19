@@ -43,6 +43,26 @@ vi.mock('../contexts/BrandingContext', () => ({
 const mockInvoke = vi.fn()
 const mockOn = vi.fn(() => vi.fn())
 
+/**
+ * Build an `auth:get-status` payload matching the new ProviderAuthState shape.
+ * `cli`/`sdk` booleans drive installed+authenticated together for each transport.
+ */
+function authStatusFixture(
+  copilot: { cli?: boolean; sdk?: boolean },
+  claude:  { cli?: boolean; sdk?: boolean },
+) {
+  const status = (ready: boolean) => ({ installed: ready, authenticated: ready, checkedAt: 0 })
+  const provider = (cli: boolean, sdk: boolean) => ({
+    ...status(cli),
+    cli: status(cli),
+    sdk: status(sdk),
+  })
+  return {
+    copilot: provider(!!copilot.cli, !!copilot.sdk),
+    claude:  provider(!!claude.cli,  !!claude.sdk),
+  }
+}
+
 beforeEach(() => {
   flagsRef.current = {
     showDashboard: true,
@@ -64,6 +84,7 @@ beforeEach(() => {
   mockInvoke.mockImplementation((channel: string) => {
     if (channel === 'policy:get-active') return Promise.resolve({ presetName: 'Standard' })
     if (channel === 'cli:check-installed') return Promise.resolve({ copilot: true, claude: false })
+    if (channel === 'auth:get-status') return Promise.resolve(authStatusFixture({ cli: true }, { cli: false }))
     if (channel === 'workspace:list') return Promise.resolve([])
     if (channel === 'workspace:get-active') return Promise.resolve(null)
     if (channel === 'learn:get-progress') return Promise.resolve({ percentage: 0, dismissed: false })
@@ -131,17 +152,59 @@ describe('Sidebar', () => {
     })
   })
 
-  it('shows Copilot status as connected when cli:check-installed returns copilot:true', async () => {
+  it('shows Copilot status as connected when auth:get-status reports the CLI as ready', async () => {
     renderSidebar()
     await waitFor(() => {
       expect(screen.getByLabelText('Copilot: connected')).toBeInTheDocument()
     })
   })
 
-  it('shows Claude status as not connected when cli:check-installed returns claude:false', async () => {
+  it('shows Claude status as not connected when auth:get-status reports the CLI as not ready', async () => {
     renderSidebar()
     await waitFor(() => {
       expect(screen.getByLabelText('Claude: not connected')).toBeInTheDocument()
+    })
+  })
+
+  it('keeps a provider red when CLI is installed but not authenticated (installed != ready)', async () => {
+    mockInvoke.mockImplementation((channel: string) => {
+      if (channel === 'policy:get-active') return Promise.resolve({ presetName: 'Standard' })
+      if (channel === 'cli:check-installed') return Promise.resolve({ copilot: true, claude: true })
+      // The CLI binary is present but the user has not signed in — `authenticated: false`.
+      if (channel === 'auth:get-status') return Promise.resolve({
+        copilot: { installed: true, authenticated: false, checkedAt: 0,
+          cli: { installed: true, authenticated: false, checkedAt: 0 },
+          sdk: { installed: false, authenticated: false, checkedAt: 0 } },
+        claude: { installed: true, authenticated: false, checkedAt: 0,
+          cli: { installed: true, authenticated: false, checkedAt: 0 },
+          sdk: { installed: false, authenticated: false, checkedAt: 0 } },
+      })
+      if (channel === 'workspace:list') return Promise.resolve([])
+      if (channel === 'workspace:get-active') return Promise.resolve(null)
+      if (channel === 'learn:get-progress') return Promise.resolve({ percentage: 0, dismissed: false })
+      return Promise.resolve(null)
+    })
+    renderSidebar()
+    await waitFor(() => {
+      expect(screen.getByLabelText('Copilot: not connected')).toBeInTheDocument()
+      expect(screen.getByLabelText('Claude: not connected')).toBeInTheDocument()
+    })
+  })
+
+  it('turns a provider green when the SDK is authenticated even if the CLI is missing', async () => {
+    mockInvoke.mockImplementation((channel: string) => {
+      if (channel === 'policy:get-active') return Promise.resolve({ presetName: 'Standard' })
+      if (channel === 'cli:check-installed') return Promise.resolve({ copilot: false, claude: false })
+      if (channel === 'auth:get-status') return Promise.resolve(authStatusFixture({ sdk: true }, { sdk: true }))
+      if (channel === 'workspace:list') return Promise.resolve([])
+      if (channel === 'workspace:get-active') return Promise.resolve(null)
+      if (channel === 'learn:get-progress') return Promise.resolve({ percentage: 0, dismissed: false })
+      return Promise.resolve(null)
+    })
+    renderSidebar()
+    await waitFor(() => {
+      expect(screen.getByLabelText('Copilot: connected')).toBeInTheDocument()
+      expect(screen.getByLabelText('Claude: connected')).toBeInTheDocument()
     })
   })
 
@@ -163,6 +226,7 @@ describe('Sidebar', () => {
     mockInvoke.mockImplementation((channel: string) => {
       if (channel === 'policy:get-active') return Promise.resolve({ presetName: 'Standard' })
       if (channel === 'cli:check-installed') return Promise.resolve({ copilot: true, claude: false })
+    if (channel === 'auth:get-status') return Promise.resolve(authStatusFixture({ cli: true }, { cli: false }))
       if (channel === 'workspace:list') return Promise.resolve([
         { id: 'ws1', name: 'My Workspace' },
         { id: 'ws2', name: 'Other Workspace' },
@@ -181,6 +245,7 @@ describe('Sidebar', () => {
     mockInvoke.mockImplementation((channel: string) => {
       if (channel === 'policy:get-active') return Promise.resolve({ presetName: 'Standard' })
       if (channel === 'cli:check-installed') return Promise.resolve({ copilot: true, claude: false })
+    if (channel === 'auth:get-status') return Promise.resolve(authStatusFixture({ cli: true }, { cli: false }))
       if (channel === 'workspace:list') return Promise.resolve([
         { id: 'ws1', name: 'Workspace One' },
         { id: 'ws2', name: 'Workspace Two' },
@@ -202,6 +267,7 @@ describe('Sidebar', () => {
     mockInvoke.mockImplementation((channel: string) => {
       if (channel === 'policy:get-active') return Promise.resolve({ presetName: 'Standard' })
       if (channel === 'cli:check-installed') return Promise.resolve({ copilot: true, claude: false })
+    if (channel === 'auth:get-status') return Promise.resolve(authStatusFixture({ cli: true }, { cli: false }))
       if (channel === 'workspace:list') return Promise.resolve([
         { id: 'ws1', name: 'My WS' },
       ])

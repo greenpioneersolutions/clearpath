@@ -56,7 +56,7 @@ export interface PromptSuggestion {
     displayText: string;
     targetAgentId: string;
     followUpQuestions: string[];
-    category: 'spotlight' | 'default';
+    category: 'spotlight' | 'default' | 'launchpad-spotlight';
     displayOrder: number;
 }
 export interface HandoffContext {

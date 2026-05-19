@@ -1,6 +1,6 @@
 # Example: `playwright.config.ts` (annotated)
 
-A complete `playwright.config.ts` for CoPilot Commander, plus the visual regression variant.
+A complete `playwright.config.ts` for ClearPath, plus the visual regression variant.
 
 ## `playwright.config.ts`
 
