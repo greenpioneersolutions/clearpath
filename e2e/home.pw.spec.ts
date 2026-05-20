@@ -115,33 +115,29 @@ test.describe('ClearPathAI — Home Page', () => {
   // ── Action Card Navigation ────────────────────────────────────────────
 
   test.describe('Action Card Navigation', () => {
-    test('all four action cards render with their headings', async ({ page }) => {
-      // HomeHub.tsx renders 4 cards with these exact headings. A trivial
-      // `html.includes('button')` would always be true on any non-empty
-      // page; asserting on the actual card headings catches regressions
-      // where a card is removed or its title changes.
+    test('the three core CTA cards render with their headings', async ({ page }) => {
+      // Post-1.14.0 HomeHub renders these always-on cards. The setup nudge
+      // ("Let's get you set up") is conditional on setupComplete === false
+      // so it is intentionally NOT asserted here — it would flake against
+      // either a fresh or a configured profile.
       for (const heading of [
-        'Ask a question or get guidance',
-        'Write or do something',
-        'Explore what I can do',
-        'Set up my workspace',
+        'Try an example',
+        'Browse what I can do',
+        'Customize my setup',
       ]) {
         await expect(page.getByText(heading)).toBeVisible()
       }
     })
 
-    test('clicking the "Ask a question" action card navigates to the wizard', async ({
-      page,
-    }) => {
+    test('clicking "Browse what I can do" navigates to /learn', async ({ page }) => {
       // HomeHub action cards are <button onClick={navigate(...)}> not <a> —
-      // a CSS selector like `a[href*="/work"]` would silently match nothing.
+      // a CSS selector like `a[href*="/learn"]` would silently match nothing.
       // Click via accessible name and assert the route change.
-      await page.getByRole('button', { name: /Ask a question or get guidance/ }).click()
+      await page.getByRole('button', { name: /Browse what I can do/ }).click()
       await page.waitForTimeout(500)
 
       const hash = await page.evaluate(() => window.location.hash)
-      expect(hash).toContain('/work')
-      expect(hash).toContain('wizard')
+      expect(hash).toContain('/learn')
     })
   })
 })

@@ -36,12 +36,17 @@ test.describe('ClearPathAI — Work Launchpad', () => {
       await expect(page.locator('[data-testid="work-launchpad"]')).toBeAttached()
     })
 
-    test('renders all four sub-cards', async ({ page }) => {
+    test('renders all three sub-cards', async ({ page }) => {
+      // Post-1.14.0 launchpad: Active + Recent are composed inside the
+      // `pick-up-where-you-left-off-card` wrapper, which collapses both
+      // inner cards into a merged empty state when there is nothing to
+      // resume (the path this test always hits — beforeEach stops every
+      // running session). Asserting on the wrapper covers both the
+      // populated and merged-empty branches without flaking.
       const ids = [
         'quick-start-card',
         'workflows-card',
-        'active-sessions-card',
-        'recent-sessions-card',
+        'pick-up-where-you-left-off-card',
       ]
       for (const id of ids) {
         await expect(page.locator(`[data-testid="${id}"]`)).toBeAttached()
