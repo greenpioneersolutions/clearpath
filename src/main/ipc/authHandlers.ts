@@ -1,26 +1,13 @@
 import type { IpcMain } from 'electron'
 import type { AuthManager } from '../auth/AuthManager'
 import type { InstallTarget } from '../../renderer/src/types/install'
-import { appendFileSync } from 'fs'
-
-const dbgAuth = (msg: string) => {
-  try { appendFileSync('/tmp/clearpath-auth-debug.log', `[${new Date().toISOString()}] IPC ${msg}\n`) } catch { /* ignore */ }
-}
 
 export function registerAuthHandlers(ipcMain: IpcMain, authManager: AuthManager): void {
   /** Return cached-or-fresh status for both CLIs. */
-  ipcMain.handle('auth:get-status', async () => {
-    const s = await authManager.getStatus()
-    dbgAuth(`get-status → claude.cli=${JSON.stringify(s?.claude?.cli)} claude.sdk=${JSON.stringify(s?.claude?.sdk)}`)
-    return s
-  })
+  ipcMain.handle('auth:get-status', () => authManager.getStatus())
 
   /** Force a re-check of install + auth state for both CLIs. */
-  ipcMain.handle('auth:refresh', async () => {
-    const s = await authManager.refresh()
-    dbgAuth(`refresh → claude.cli=${JSON.stringify(s?.claude?.cli)} claude.sdk=${JSON.stringify(s?.claude?.sdk)}`)
-    return s
-  })
+  ipcMain.handle('auth:refresh', () => authManager.refresh())
 
   /** Begin a login flow. Output streamed via push events. */
   ipcMain.handle(

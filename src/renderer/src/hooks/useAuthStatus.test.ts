@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { renderHook, waitFor, act } from '@testing-library/react'
-import { useAuthStatus } from './useAuthStatus'
+import { useAuthStatus, readyBackendsOf } from './useAuthStatus'
 
 function authStatusFixture(
   copilot: { cli?: boolean; sdk?: boolean },
@@ -160,6 +160,36 @@ describe('useAuthStatus', () => {
     await act(async () => { result.current.forceRefresh() })
     await waitFor(() => expect(result.current.claude.ready).toBe(true))
     expect(mockInvoke.mock.calls.some(([ch]) => ch === 'auth:refresh')).toBe(true)
+  })
+
+  // Regression: exact payload captured from the live IPC handler while the user
+  // saw "Claude not signed in". claude.cli.authenticated IS true here — proving
+  // the renderer mapping must surface claude as ready. If this passes, the bug
+  // was never in the mapping (it was a stale cached verdict in clear-path-auth.json).
+  it('maps the real production IPC payload (claude.cli authed) to a ready claude-cli backend', async () => {
+    const realPayload = {
+      copilot: {
+        installed: true, authenticated: false, checkedAt: 1780148026983,
+        cli: { installed: true, authenticated: false, binaryPath: '/opt/homebrew/bin/copilot', checkedAt: 1780148026983 },
+        sdk: { installed: false, authenticated: false, checkedAt: 1780148026403 },
+      },
+      claude: {
+        installed: true, authenticated: true, binaryPath: '/opt/homebrew/bin/claude',
+        version: '2.1.142 (Claude Code)', tokenSource: 'auth-status', checkedAt: 1780148026983,
+        cli: { installed: true, authenticated: true, binaryPath: '/opt/homebrew/bin/claude', version: '2.1.142 (Claude Code)', tokenSource: 'auth-status', checkedAt: 1780148026983 },
+        sdk: { installed: false, authenticated: false, checkedAt: 1780148026403 },
+      },
+    }
+    mockInvoke.mockImplementation((channel: string) => {
+      if (channel === 'auth:get-status') return Promise.resolve(realPayload)
+      return Promise.resolve(null)
+    })
+    const { result } = renderHook(() => useAuthStatus())
+    await waitFor(() => expect(result.current.loaded).toBe(true))
+
+    expect(result.current.claude.cli.authenticated).toBe(true)
+    expect(result.current.claude.ready).toBe(true)
+    expect(readyBackendsOf(result.current)).toContain('claude-cli')
   })
 
   it('marks loaded=true even if both auth probes throw — UI must not hang forever', async () => {
