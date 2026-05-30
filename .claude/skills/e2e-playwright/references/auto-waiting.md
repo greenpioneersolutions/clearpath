@@ -163,7 +163,7 @@ await page.getByTestId('toolbar').getByRole('button').first().click();
 
 ## "Element is unstable / receives events"
 
-Common causes in CoPilot Commander:
+Common causes in ClearPath:
 1. **Toast animation** — toast slides in over the button.
    - Fix: assert the toast is visible first, then click around it; or use `force: true` if the click target is unrelated.
 2. **CSS transition** on the click target.

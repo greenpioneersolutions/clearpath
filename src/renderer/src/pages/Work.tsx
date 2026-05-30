@@ -16,10 +16,26 @@ import { useFeatureFlags } from '../contexts/FeatureFlagContext'
 
 import SessionSummary from '../components/shared/SessionSummary'
 import WorkLaunchpad from '../components/work/WorkLaunchpad'
+import CompactNudge from '../components/work/CompactNudge'
+import PreflightWarningStack from '../components/work/PreflightWarningStack'
 // Notes picker is now integrated into ChatInputArea via ContextPicker.
 // The dedicated Notes management UI lives at /notes — there is no longer a
 // Notes sub-tab inside Sessions.
 import ExtensionSlot from '../components/extensions/ExtensionSlot'
+import { dispatchOrForward } from '../lib/slashCommandDispatcher'
+
+// The home page can hand us a prompt plus the model/agent/cli the user
+// picked from the home popover. None of these are required — the auto-start
+// effect below falls back to copilot-cli + defaults when they're absent.
+interface PendingQuickPrompt {
+  prompt: string
+  cli?: BackendId
+  model?: string
+  agent?: string
+  attachedAgent?: { id: string; name: string }
+  /** Forwarded straight through to `cli:start-session` — see SessionOptions. */
+  noAgent?: boolean
+}
 
 // ── Session state ────────────────────────────────────────────────────────────
 
@@ -47,6 +63,12 @@ interface ActiveSessionState {
   usageHistory: UsageStats[]
   /** Currently active model — updated when the user picks one via the ModelChip. */
   currentModel?: string
+  /**
+   * Most recent post-lint token breakdown for this session. Driven by
+   * `cli:prompt-shaped` (Token Coach Phase 2) so the meter chip can reflect
+   * the actual numbers that went out the wire instead of the typing estimate.
+   */
+  lastShapedBreakdown?: import('../../../shared/tokenization/types').SliceTokenBreakdown
 }
 
 export default function Work(): JSX.Element {
@@ -65,9 +87,23 @@ export default function Work(): JSX.Element {
   const [selectedNoteIds, setSelectedNoteIds] = useState<Set<string>>(new Set())
   const [selectedContextSources, setSelectedContextSources] = useState<import('../types/contextSources').SelectedContextSource[]>([])
   const [showSaveNoteModal, setShowSaveNoteModal] = useState<string | null>(null)
+  // Token Coach Phase 4 — per-turn routing override. The ModelRoutingChip
+  // writes here; we thread it into the next `cli:send-input` payload and
+  // clear immediately after so the override is strictly per-turn.
+  const [routingOverride, setRoutingOverride] = useState<string | null>(null)
+  // Token Coach Phase 5 — monotonic counter incremented on every keystroke
+  // in the chat input. PreflightWarningStack reads this to auto-dismiss its
+  // banners when the user starts editing (signal: "I've seen the warning,
+  // I'm addressing it"). Defaulting to 0 keeps stack mount neutral.
+  const [editTick, setEditTick] = useState(0)
+  // Per-session running token total — sum of cost records for the currently
+  // selected session. Drives CompactNudge's 70% threshold check. Refreshed
+  // on turn-end (where we re-read cost:list scoped to this session) so the
+  // nudge can appear as soon as the cumulative usage crosses the threshold.
+  const [sessionTokens, setSessionTokens] = useState<Map<string, number>>(new Map())
   const sessionsRef = useRef(sessions)
   sessionsRef.current = sessions
-  const pendingQuickPrompt = useRef<string | null>(null)
+  const pendingQuickPrompt = useRef<PendingQuickPrompt | null>(null)
 
   // selectedId is derived from the URL — `?id=<sessionId>`. When absent, the
   // launchpad renders. setSelectedId() pushes the id into the URL so deep
@@ -101,10 +137,24 @@ export default function Work(): JSX.Element {
     const state = location.state as {
       sessionId?: string
       quickPrompt?: string
+      quickPromptCli?: BackendId
+      quickPromptModel?: string
+      quickPromptAgent?: string
+      quickPromptAttachedAgent?: { id: string; name: string }
+      quickPromptNoAgent?: boolean
       preSelectedNoteIds?: string[]
     } | null
     if (state?.sessionId) setSelectedId(state.sessionId)
-    if (state?.quickPrompt) pendingQuickPrompt.current = state.quickPrompt
+    if (state?.quickPrompt) {
+      pendingQuickPrompt.current = {
+        prompt: state.quickPrompt,
+        cli: state.quickPromptCli,
+        model: state.quickPromptModel,
+        agent: state.quickPromptAgent,
+        attachedAgent: state.quickPromptAttachedAgent,
+        noAgent: state.quickPromptNoAgent,
+      }
+    }
     // Pre-select notes when arriving from the Notes page via "Use in next
     // session →". The selection lives until the user sends or clears.
     if (state?.preSelectedNoteIds && state.preSelectedNoteIds.length > 0) {
@@ -260,6 +310,25 @@ export default function Work(): JSX.Element {
     const handleTurnEnd = ({ sessionId }: { sessionId: string }) => {
       setSessions((prev) => { const s = prev.get(sessionId); if (!s) return prev; const u = new Map(prev); u.set(sessionId, { ...s, processing: false }); return u })
       void window.electronAPI.invoke('starter-pack:record-interaction')
+      // Token Coach Phase 5 — re-tally the session's cumulative tokens so
+      // CompactNudge can fire when the running total crosses 70%. Reading
+      // `cost:list` scoped to "after sessionStartedAt" keeps the query cheap.
+      void (async () => {
+        try {
+          const records = await window.electronAPI.invoke('cost:list', { since: 0 }) as Array<{ sessionId: string; totalTokens: number; inputTokens: number }>
+          if (!Array.isArray(records)) return
+          const total = records
+            .filter((r) => r.sessionId === sessionId)
+            .reduce((sum, r) => sum + (r.totalTokens ?? 0), 0)
+          setSessionTokens((prev) => {
+            const u = new Map(prev)
+            u.set(sessionId, total)
+            return u
+          })
+        } catch {
+          /* ignore — nudge stays silent if cost store is unreachable */
+        }
+      })()
     }
     const handlePermission = ({ sessionId, request }: { sessionId: string; request: ParsedOutput }) => {
       setSessions((prev) => {
@@ -282,6 +351,20 @@ export default function Work(): JSX.Element {
       })
     }
 
+    const handlePromptShaped = (payload: {
+      sessionId: string
+      tokens?: import('../../../shared/tokenization/types').SliceTokenBreakdown
+    }) => {
+      if (!payload.tokens) return
+      setSessions((prev) => {
+        const s = prev.get(payload.sessionId)
+        if (!s) return prev
+        const updated = new Map(prev)
+        updated.set(payload.sessionId, { ...s, lastShapedBreakdown: payload.tokens })
+        return updated
+      })
+    }
+
     const cleanup = [
       window.electronAPI.on('cli:output', handleOutput),
       window.electronAPI.on('cli:error', handleError),
@@ -290,6 +373,7 @@ export default function Work(): JSX.Element {
       window.electronAPI.on('cli:turn-end', handleTurnEnd),
       window.electronAPI.on('cli:permission-request', handlePermission),
       window.electronAPI.on('cli:usage', handleUsage),
+      window.electronAPI.on('cli:prompt-shaped', handlePromptShaped as (...args: unknown[]) => void),
     ]
     return () => cleanup.forEach((fn) => fn())
   }, [])
@@ -310,9 +394,13 @@ export default function Work(): JSX.Element {
     attachedAgent?: { id: string; name: string }
     attachedSkills?: Array<{ id: string; name: string }>
     attachedNotes?: Array<{ id: string; title: string }>
+    /** Token Coach Phase 1: per-slice breakdown for accurate cost attribution. */
+    promptSlices?: import('../types/ipc').SessionOptions['promptSlices']
+    /** Explicit "user picked (none)" — disables server-side default-agent fallback. */
+    noAgent?: boolean
   }) => {
     const startResult = (await window.electronAPI.invoke('cli:start-session', {
-      cli: opts.cli, mode: 'interactive', name: opts.name, workingDirectory: opts.workingDirectory, prompt: opts.initialPrompt, displayPrompt: opts.displayPrompt, agent: opts.agent, model: opts.model, permissionMode: opts.permissionMode, additionalDirs: opts.additionalDirs, attachedNotes: opts.attachedNotes,
+      cli: opts.cli, mode: 'interactive', name: opts.name, workingDirectory: opts.workingDirectory, prompt: opts.initialPrompt, displayPrompt: opts.displayPrompt, agent: opts.agent, model: opts.model, permissionMode: opts.permissionMode, additionalDirs: opts.additionalDirs, attachedNotes: opts.attachedNotes, promptSlices: opts.promptSlices, noAgent: opts.noAgent,
     })) as { sessionId: string; agentApplied?: { id: string; name: string } }
     const { sessionId, agentApplied } = startResult
     const info: SessionInfo = { sessionId, name: opts.name, cli: opts.cli, status: 'running', startedAt: Date.now() }
@@ -414,9 +502,17 @@ export default function Work(): JSX.Element {
   // a second session.
   useEffect(() => {
     if (pendingQuickPrompt.current) {
-      const p = pendingQuickPrompt.current
+      const q = pendingQuickPrompt.current
       pendingQuickPrompt.current = null
-      void startSession({ cli: 'copilot-cli', name: p.slice(0, 30), initialPrompt: p })
+      void startSession({
+        cli: q.cli ?? 'copilot-cli',
+        model: q.model,
+        agent: q.agent,
+        attachedAgent: q.attachedAgent,
+        noAgent: q.noAgent,
+        name: q.prompt.slice(0, 30),
+        initialPrompt: q.prompt,
+      })
       setWorkMode('session')
       navigate(location.pathname + location.search, { replace: true, state: null })
     }
@@ -426,6 +522,24 @@ export default function Work(): JSX.Element {
     await window.electronAPI.invoke('cli:stop-session', { sessionId })
     setSessions((prev) => { const s = prev.get(sessionId); if (!s) return prev; const u = new Map(prev); u.set(sessionId, { ...s, info: { ...s.info, status: 'stopped' } }); return u })
   }, [])
+
+  /**
+   * Token Coach Phase 5 — "Fresh start" — spawn a new session with the same
+   * agent + model selection but no conversation history. The old session
+   * stays in the session list (not auto-deleted) so the user can archive or
+   * revisit it. WorkingDirectory isn't tracked on the renderer-side
+   * SessionInfo; the main process applies its default when omitted.
+   */
+  const handleFreshStart = useCallback(async () => {
+    if (!selectedId) return
+    const current = sessions.get(selectedId)
+    if (!current) return
+    await startSession({
+      cli: current.info.cli,
+      model: current.currentModel,
+      name: current.info.name ? `${current.info.name} (fresh)` : undefined,
+    })
+  }, [selectedId, sessions, startSession])
 
   const handleSend = useCallback((input: string) => {
     if (!selectedId) return
@@ -508,8 +622,14 @@ export default function Work(): JSX.Element {
     // here cannot drift afterwards (note rename / delete / flag flip).
     void (async () => {
       let actualInput = input
+      // Token Coach Phase 1: capture per-slice text as we assemble the prompt
+      // so the cost record on turn-end can attribute tokens correctly.
+      const slices: import('../types/ipc').SessionOptions['promptSlices'] = { userText: input }
+
       if (quickConfig.fleet) {
-        actualInput = `[Fleet mode: You may use &prompt to dispatch sub-agents for parallel work. Break this task into independent parts and delegate them to work simultaneously when appropriate.]\n\n${actualInput}`
+        const fleetPrefix = `[Fleet mode: You may use &prompt to dispatch sub-agents for parallel work. Break this task into independent parts and delegate them to work simultaneously when appropriate.]`
+        actualInput = `${fleetPrefix}\n\n${actualInput}`
+        slices.fleetPrefix = fleetPrefix
       }
 
       const capturedNotes: Array<{ id: string; title: string }> = []
@@ -528,6 +648,7 @@ export default function Work(): JSX.Element {
           { framedPrompt: string; noteCount: number; attachmentCount: number }
         if (bundle.framedPrompt) {
           actualInput = `${bundle.framedPrompt}\n\nUser request:\n${actualInput}`
+          slices.notesFramed = bundle.framedPrompt
         }
         setSelectedNoteIds(new Set()) // Clear after sending
       }
@@ -545,7 +666,9 @@ export default function Work(): JSX.Element {
             }
           }
           if (contextBlocks.length > 0) {
-            actualInput = `[Reference context from connected sources]\n\n${contextBlocks.join('\n\n')}\n\n---\n\n${actualInput}`
+            const contextBlob = `[Reference context from connected sources]\n\n${contextBlocks.join('\n\n')}\n\n---`
+            actualInput = `${contextBlob}\n\n${actualInput}`
+            slices.contextSources = contextBlob
           }
         } catch {
           // Context fetch failed — send without it
@@ -590,26 +713,45 @@ export default function Work(): JSX.Element {
         sessionId: selectedId,
         input: actualInput,
         attachedNotes: capturedNotes.length > 0 ? capturedNotes : undefined,
+        promptSlices: slices,
+        // Token Coach Phase 4 — per-turn override. Cleared immediately after
+        // dispatch so the next turn re-routes fresh.
+        userOverrideModel: routingOverride ?? undefined,
       })
+      if (routingOverride) setRoutingOverride(null)
     })()
-  }, [selectedId, sessions, selectedNoteIds, selectedContextSources, quickConfig])
+  }, [selectedId, sessions, selectedNoteIds, selectedContextSources, quickConfig, routingOverride])
 
-  const handleSlashCommand = useCallback((command: string) => {
-    if (!selectedId) return
-    // Intercept /delegate as a slash command too
-    if (command.match(/^\/delegate\s+/i)) {
-      handleSend(command)
-      return
-    }
-    window.electronAPI.invoke('cli:send-slash-command', { sessionId: selectedId, command })
-  }, [selectedId, handleSend])
+  /** Append a single status bubble to the active session's message log. */
+  const appendStatus = useCallback((sessionId: string, content: string) => {
+    setSessions((prev) => {
+      const s = prev.get(sessionId); if (!s) return prev
+      const u = new Map(prev)
+      u.set(sessionId, {
+        ...s,
+        messages: [
+          ...s.messages,
+          {
+            id: String(s.msgIdCounter),
+            output: { type: 'status', content },
+            sender: 'system',
+            timestamp: Date.now(),
+          },
+        ],
+        msgIdCounter: s.msgIdCounter + 1,
+      })
+      return u
+    })
+  }, [])
 
   const handleModelChange = useCallback((model: string) => {
     if (!selectedId || !model) return
-    // Send `/model <name>` to the running CLI session
-    void window.electronAPI.invoke('cli:send-slash-command', {
+    // ClearPath spawns a fresh headless CLI per turn — the REPL `/model`
+    // command is unreachable. Instead, persist the new model on the session
+    // server-side; the very next user message will spawn with --model <new>.
+    void window.electronAPI.invoke('session:update-model', {
       sessionId: selectedId,
-      command: `/model ${model}`,
+      model,
     })
     setSessions((prev) => {
       const s = prev.get(selectedId); if (!s) return prev
@@ -621,7 +763,7 @@ export default function Work(): JSX.Element {
           ...s.messages,
           {
             id: String(s.msgIdCounter),
-            output: { type: 'status', content: `Model switched to ${model}` },
+            output: { type: 'status', content: `Model switched to ${model} — applies to your next message.` },
             sender: 'system',
             timestamp: Date.now(),
           },
@@ -631,6 +773,50 @@ export default function Work(): JSX.Element {
       return u
     })
   }, [selectedId])
+
+  const handleSlashCommand = useCallback((command: string) => {
+    if (!selectedId) return
+    // /delegate is special — it routes through the same path as a sub-agent
+    // spawn (& prefix), not a slash command.
+    if (command.match(/^\/delegate\s+/i)) {
+      handleSend(command)
+      return
+    }
+    const sid = selectedId
+    dispatchOrForward(command, {
+      onModelChange: (model) => handleModelChange(model),
+      onClear: () => {
+        const ok = typeof window !== 'undefined' && typeof window.confirm === 'function'
+          ? window.confirm('Clear this conversation? This starts a fresh CLI session — prior context will not be carried over.')
+          : true
+        if (!ok) return
+        void window.electronAPI.invoke('session:reset', { sessionId: sid })
+        setSessions((prev) => {
+          const s = prev.get(sid); if (!s) return prev
+          const u = new Map(prev)
+          u.set(sid, {
+            ...s,
+            messages: [{
+              id: '0',
+              output: { type: 'status', content: 'Conversation cleared.' },
+              sender: 'system',
+              timestamp: Date.now(),
+            }],
+            msgIdCounter: 1,
+          })
+          return u
+        })
+      },
+      onPermissions: () => navigate('/configure'),
+      onCost: () => navigate('/insights'),
+      onExit: () => { void stopSession(sid) },
+      onHelp: () => navigate('/learn'),
+      onConfig: () => navigate('/configure'),
+      onStatus: (text) => appendStatus(sid, text),
+      sendToCli: (cmd) =>
+        void window.electronAPI.invoke('cli:send-slash-command', { sessionId: sid, command: cmd }),
+    })
+  }, [selectedId, handleSend, handleModelChange, navigate, stopSession, appendStatus])
 
   const handlePermissionResponse = useCallback((response: 'y' | 'n') => {
     if (!selectedId) return
@@ -783,6 +969,17 @@ export default function Work(): JSX.Element {
                   ) : (
                     <span className="text-xs text-gray-500">Stopped</span>
                   )}
+                  {/* Token Coach Phase 5 — "Fresh start" button. Same workspace,
+                      same agent, no carried history. Gated on showEfficiencyInsights. */}
+                  {flags.showEfficiencyInsights && selectedSession.info.status === 'running' && (
+                    <button
+                      onClick={() => void handleFreshStart()}
+                      title="Start a new conversation with the same setup. The old one stays accessible in the session list."
+                      className="px-2 py-1 text-xs bg-teal-900/40 hover:bg-teal-800/60 text-teal-300 border border-teal-700/50 rounded-md"
+                    >
+                      Fresh start
+                    </button>
+                  )}
                 </>
               )}
 
@@ -808,6 +1005,17 @@ export default function Work(): JSX.Element {
         {workMode === 'session' && (
           selectedSession && (selectedSession.info.status === 'running' || viewingStoppedSession) ? (
             <div className="flex-1 flex flex-col min-h-0">
+              {/* Token Coach Phase 5 — 70% context-window nudge. Renders only
+                  when the running token total crosses the threshold AND
+                  showEfficiencyInsights is on. */}
+              {flags.showEfficiencyInsights && selectedSession.info.status === 'running' && (
+                <CompactNudge
+                  sessionId={selectedSession.info.sessionId}
+                  model={selectedSession.currentModel ?? (providerOf(selectedSession.info.cli) === 'copilot' ? 'gpt-5-mini' : 'sonnet')}
+                  totalTokens={sessionTokens.get(selectedSession.info.sessionId) ?? 0}
+                  onCompact={() => handleSlashCommand('/compact')}
+                />
+              )}
               <OutputDisplay messages={selectedSession.messages} onPermissionResponse={handlePermissionResponse} processing={selectedSession.processing} usageHistory={selectedSession.usageHistory}
                 onSaveAsNote={(content) => setShowSaveNoteModal(content)} />
               {selectedSession.info.status === 'running' ? (
@@ -825,6 +1033,24 @@ export default function Work(): JSX.Element {
                     </div>
                   )}
                   <ExtensionSlot slotName="work:above-input" className="flex-shrink-0" />
+                  {/* Token Coach Phase 5 — pre-flight cost/size warnings.
+                      Subscribes to cli:prompt-shaped events for THIS session
+                      and renders banners (max 2) above the chat input. The
+                      middleware always emits notes; this surface is what
+                      shows them to the user. Flag-gated. */}
+                  {flags.showEfficiencyInsights && (
+                    <PreflightWarningStack
+                      sessionId={selectedSession.info.sessionId}
+                      editTick={editTick}
+                      onTrim={() => {
+                        // Best-effort deep-link to the Notes management page —
+                        // the deeper UX (open the picker on the relevant tab)
+                        // can layer in once we know which slice triggered.
+                        navigate('/notes')
+                      }}
+                      onCompact={() => handleSlashCommand('/compact')}
+                    />
+                  )}
                   <ChatInputArea
                     cli={selectedSession.info.cli}
                     onSend={handleSend}
@@ -858,6 +1084,12 @@ export default function Work(): JSX.Element {
                     onTemplateSelect={handleTemplateSelect}
                     currentModel={selectedSession.currentModel}
                     onModelChange={handleModelChange}
+                    priorSessionTokens={sessionTokens.get(selectedSession.info.sessionId) ?? 0}
+                    lastShapedBreakdown={selectedSession.lastShapedBreakdown}
+                    routingOverride={routingOverride}
+                    onRoutingOverride={setRoutingOverride}
+                    isContinuation={selectedSession.messages.some((m) => m.sender === 'ai')}
+                    onTextChange={() => setEditTick((t) => t + 1)}
                   />
                 </>
               ) : (
@@ -888,7 +1120,7 @@ export default function Work(): JSX.Element {
             /* Launchpad: the default empty-state of /work — quick start, workflows, active + recent sessions. */
             <WorkLaunchpad
               defaultCli={lastUsedCli}
-              onQuickStart={({ prompt, displayPrompt, cli, model, agent, permissionMode, additionalDirs, attachedAgent, attachedSkills, attachedNotes }) => {
+              onQuickStart={({ prompt, displayPrompt, cli, model, agent, permissionMode, additionalDirs, attachedAgent, attachedSkills, attachedNotes, noAgent }) => {
                 const shown = displayPrompt ?? prompt
                 void startSession({
                   cli, model, agent, permissionMode, additionalDirs,
@@ -898,6 +1130,7 @@ export default function Work(): JSX.Element {
                   attachedAgent,
                   attachedSkills,
                   attachedNotes,
+                  noAgent,
                 })
               }}
               onOpenWorkflow={(id) => {

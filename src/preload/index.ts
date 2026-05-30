@@ -22,6 +22,7 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   'cli:list-sessions', 'cli:get-session', 'cli:get-message-log',
   'cli:get-persisted-sessions', 'cli:delete-session', 'cli:delete-sessions',
   'cli:archive-session', 'cli:archive-sessions', 'cli:rename-session', 'cli:search-sessions',
+  'session:update-model', 'session:reset',
 
   // Agents
   'agent:list', 'agent:create', 'agent:read-file', 'agent:write-file', 'agent:delete',
@@ -81,6 +82,18 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   'cost:summary', 'cost:daily-spend', 'cost:by-session', 'cost:by-agent', 'cost:by-model',
   'cost:export-csv', 'cost:clear',
   'cost:get-display-mode', 'cost:set-display-mode',
+
+  // Pricing (single source of truth: defaults + remote sync + user overrides)
+  'pricing:get-effective', 'pricing:get-defaults', 'pricing:get-overrides',
+  'pricing:get-settings', 'pricing:set-override', 'pricing:clear-override',
+  'pricing:set-settings', 'pricing:sync-now',
+  'cost:turn-breakdown',
+  'tokenizer:count-multi',
+
+  // Token Coach Phase 5 — Efficiency tab + savings suggestions
+  'efficiency:where-did-tokens-go',
+  'efficiency:top-context-bloat',
+  'efficiency:savings-suggestions',
 
   // Tools & MCP
   'tools:list-mcp-servers', 'tools:add-mcp-server', 'tools:remove-mcp-server',
@@ -284,7 +297,7 @@ const ALLOWED_RECEIVE_CHANNELS = new Set([
   'auth:login-output', 'auth:login-complete', 'auth:status-changed',
   'auth:install-output', 'auth:install-complete', 'auth:login-browser-opened',
   'cli:output', 'cli:error', 'cli:exit', 'cli:turn-start', 'cli:turn-end',
-  'cli:permission-request', 'cli:usage',
+  'cli:permission-request', 'cli:usage', 'cli:prompt-shaped',
   'clearmemory:init-progress', 'clearmemory:state-change', 'clearmemory:import-progress',
   'clearmemory:backup-progress',
   'files:changed',
@@ -292,6 +305,7 @@ const ALLOWED_RECEIVE_CHANNELS = new Set([
   'subagent:output', 'subagent:spawned', 'subagent:status-changed',
   'updater:status',
   'mcp:external-changes-detected',
+  'pricing:changed',
   'integration:powerbi-device-code',
   'integration:powerbi-auth-complete',
   'extension:updated', 'extension:removed', 'extension:event',

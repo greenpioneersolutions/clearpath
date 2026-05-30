@@ -49,4 +49,32 @@ export const STARTER_PROMPTS: PromptSuggestion[] = [
     displayOrder: 6,
     followUpQuestions: ["What's on your plate this week?"],
   },
+  // \u2500\u2500 Launchpad spotlight (Sessions QuickStartCard cold-start chips) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+  // These are non-technical, project-agnostic prompts that render as small
+  // chip buttons below the empty Quick Start textarea. They are filtered out
+  // of the Home hub and TryAnExampleModal surfaces \u2014 see PromptSuggestion JSDoc.
+  {
+    id: 'launchpad-explain-project',
+    displayText: "Explain this project like I'm new",
+    targetAgentId: 'technical-reviewer',
+    category: 'launchpad-spotlight',
+    displayOrder: 7,
+    followUpQuestions: ["What part of the project do you want explained first?"],
+  },
+  {
+    id: 'launchpad-summarize-week',
+    displayText: 'Summarize what changed this week',
+    targetAgentId: 'chief-of-staff',
+    category: 'launchpad-spotlight',
+    displayOrder: 8,
+    followUpQuestions: ["Any specific area \u2014 code, docs, decisions \u2014 to focus on?"],
+  },
+  {
+    id: 'launchpad-status-update',
+    displayText: 'Draft a status update for my team',
+    targetAgentId: 'communication-coach',
+    category: 'launchpad-spotlight',
+    displayOrder: 9,
+    followUpQuestions: ["Who's the audience and what should they take away?"],
+  },
 ]

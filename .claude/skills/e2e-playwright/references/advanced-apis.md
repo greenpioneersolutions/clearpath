@@ -116,7 +116,7 @@ await ctx.storageState({ path: 'e2e/auth.json' });
 test.use({ storageState: 'e2e/auth.json' });
 ```
 
-For most CoPilot Commander tests, the per-worker `userDataDir` fixture is the right pattern — `electron-store` data is on disk, not in browser storage.
+For most ClearPath tests, the per-worker `userDataDir` fixture is the right pattern — `electron-store` data is on disk, not in browser storage.
 
 ## Packaged binary testing
 
@@ -219,7 +219,7 @@ This is rarely needed — for any window you can get a `Page` via `firstWindow()
 
 ## Multiple BrowserWindows
 
-CoPilot Commander mostly uses a single window, but extensions or future features may add modals/splash windows.
+ClearPath mostly uses a single window, but extensions or future features may add modals/splash windows.
 
 ```ts
 test('handles split-screen extension window', async ({ page, electronApp }) => {
@@ -243,7 +243,7 @@ test('handles split-screen extension window', async ({ page, electronApp }) => {
 
 ## `page.evaluate(window.electronAPI)` exposed via preload
 
-CoPilot Commander's preload bridge exposes `window.electronAPI.invoke`. To round-trip an IPC call AS THE RENDERER WOULD:
+ClearPath's preload bridge exposes `window.electronAPI.invoke`. To round-trip an IPC call AS THE RENDERER WOULD:
 
 ```ts
 const result = await page.evaluate(

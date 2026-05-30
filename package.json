@@ -1,6 +1,6 @@
 {
   "name": "clear-path",
-  "version": "1.13.0",
+  "version": "1.14.0",
   "author": "Jason Humphrey",
   "description": "ClearPathAI — Desktop control tower for AI coding agents",
   "main": "out/main/index.js",
@@ -43,6 +43,7 @@
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.118",
+    "@anthropic-ai/tokenizer": "^0.0.4",
     "@codemirror/lang-json": "^6.0.2",
     "@codemirror/lang-markdown": "^6.5.0",
     "@uiw/react-codemirror": "^4.25.9",
@@ -63,7 +64,8 @@
     "rehype-highlight": "^7.0.2",
     "rehype-raw": "^7.0.0",
     "rehype-sanitize": "^6.0.0",
-    "remark-gfm": "^4.0.1"
+    "remark-gfm": "^4.0.1",
+    "tiktoken": "^1.0.22"
   },
   "devDependencies": {
     "@playwright/test": "^1.59.1",

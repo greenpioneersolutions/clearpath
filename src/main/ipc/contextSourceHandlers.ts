@@ -4,6 +4,7 @@ import { getStoreEncryptionKey } from '../utils/storeEncryption'
 import { getIntegrationContextProviders, fetchIntegrationContext } from '../integrations/contextProviderRegistry'
 import type { ExtensionRegistry } from '../extensions/ExtensionRegistry'
 import { log } from '../utils/logger'
+import { tokenCounter } from '../tokenization/TokenCounter'
 
 // ── Context Source Handlers ──────────────────────────────────────────────────
 // Unified API for listing and fetching context from both extensions and
@@ -150,7 +151,7 @@ async function fetchContextSource(
       }) as { success?: boolean; context?: string; tokenEstimate?: number; metadata?: unknown }
 
       const context = result?.context ?? (typeof result === 'string' ? result : JSON.stringify(result))
-      const tokenEstimate = result?.tokenEstimate ?? Math.ceil(context.length / 4)
+      const tokenEstimate = result?.tokenEstimate ?? tokenCounter.count(context, 'unknown')
 
       return {
         success: result?.success !== false,

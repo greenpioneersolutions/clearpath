@@ -1,8 +1,12 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import type { PromptTemplate } from '../types/template'
 import type { SelectedContextSource } from '../types/contextSources'
+import type { SliceTokenBreakdown } from '../../../shared/tokenization/types'
 import ContextPicker, { type ContextPickerTab } from './ContextPicker'
 import ModelChip from './ModelChip'
+import ContextMeterChip from './work/ContextMeterChip'
+import ModelRoutingChip from './work/ModelRoutingChip'
+import { useFlag } from '../contexts/FeatureFlagContext'
 import type { BackendId } from '../../../shared/backends'
 import { providerOf } from '../../../shared/backends'
 
@@ -74,6 +78,44 @@ interface Props {
   currentModel?: string
   /** Called when user picks a new model. The Work page wires this to send `/model <name>`. */
   onModelChange?: (model: string) => void
+
+  /**
+   * Post-lint breakdown for the most recent turn, populated by the Work page
+   * from `cli:prompt-shaped`. Drives the meter to display the actual numbers
+   * after middleware trim. Optional — when omitted, the meter shows the
+   * pre-send estimate from `tokenizer:count-multi`.
+   */
+  lastShapedBreakdown?: SliceTokenBreakdown | null
+
+  /**
+   * Token Coach Phase 4 — per-turn user override of model routing. Driven by
+   * Work.tsx state; the ModelRoutingChip writes through `onRoutingOverride`
+   * when the user picks a tier, and reads from `routingOverride` to highlight
+   * the active model. Cleared automatically on send.
+   */
+  routingOverride?: string | null
+  onRoutingOverride?: (model: string | null) => void
+  /**
+   * True when there's been at least one completed turn — drives the
+   * "continuation" signal the routing classifier uses.
+   */
+  isContinuation?: boolean
+
+  /**
+   * Token Coach Phase 5 — invoked on every change to the textarea value.
+   * Parent uses this to drive `editTick` on PreflightWarningStack so the
+   * banners auto-dismiss when the user starts addressing the warning.
+   * Optional — when undefined, ChatInputArea behaves identically to before.
+   */
+  onTextChange?: () => void
+
+  /**
+   * Cumulative tokens consumed by this session's prior turns. Forwarded to
+   * ContextMeterChip so the meter doesn't read 0% after the user has already
+   * sent a few messages (which is what it would do if it only counted the
+   * empty draft).
+   */
+  priorSessionTokens?: number
 }
 
 /**
@@ -109,7 +151,15 @@ export default function ChatInputArea(props: Props): JSX.Element {
     onTemplateSelect,
     currentModel,
     onModelChange,
+    lastShapedBreakdown,
+    priorSessionTokens,
+    routingOverride,
+    onRoutingOverride,
+    isContinuation,
+    onTextChange,
   } = props
+  const showTokenMeter = useFlag('showTokenMeter')
+  const showModelRouting = useFlag('showModelRouting')
 
   // Picker state
   const [pickerOpen, setPickerOpen] = useState(false)
@@ -172,6 +222,10 @@ export default function ChatInputArea(props: Props): JSX.Element {
       setValue(val)
       setSelectedIdx(-1)
       setJustAccepted(false)
+      // Token Coach Phase 5 — signal to parent that the user is typing so the
+      // preflight warning stack can auto-dismiss. Fires on every keystroke;
+      // the stack throttles internally by comparing tick deltas.
+      onTextChange?.()
 
       if (val.startsWith('/') && !val.includes(' ')) {
         setSuggestions(commands.filter((c) => c.startsWith(val)))
@@ -179,7 +233,7 @@ export default function ChatInputArea(props: Props): JSX.Element {
         setSuggestions([])
       }
     },
-    [commands],
+    [commands, onTextChange],
   )
 
   const handleKeyDown = useCallback(
@@ -349,6 +403,33 @@ export default function ChatInputArea(props: Props): JSX.Element {
           >
             Clear all
           </button>
+        </div>
+      )}
+
+      {/* Live context meter (Token Coach Phase 2) — flag-gated. Placed above
+          the input row so users see token cost before they hit Send. The
+          routing chip (Phase 4) sits in the same band, adjacent to the meter,
+          so cost-awareness and routing-awareness live in one visual region. */}
+      {(showTokenMeter || showModelRouting) && (
+        <div className="px-4 pt-1.5 pb-0.5 flex items-center gap-3 flex-wrap">
+          {showTokenMeter && (
+            <ContextMeterChip
+              slices={{ userText: value }}
+              model={currentModel ?? (providerOf(cli) === 'copilot' ? 'gpt-5-mini' : 'sonnet')}
+              postLintBreakdown={lastShapedBreakdown}
+              priorSessionTokens={priorSessionTokens}
+            />
+          )}
+          {showModelRouting && onRoutingOverride && (
+            <ModelRoutingChip
+              cli={cli}
+              userText={value}
+              promptTokens={lastShapedBreakdown?.userPrompt ?? 0}
+              isContinuation={!!isContinuation}
+              userOverride={routingOverride ?? null}
+              onOverride={onRoutingOverride}
+            />
+          )}
         </div>
       )}
 

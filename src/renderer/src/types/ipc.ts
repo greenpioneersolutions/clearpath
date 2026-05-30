@@ -1,5 +1,6 @@
 import type { IpcRendererEvent } from 'electron'
 import type { BackendId } from '../../../shared/backends'
+import type { PromptSlices } from '../../../shared/tokenization/types'
 
 export interface AgentConfig {
   description: string
@@ -27,6 +28,13 @@ export interface SessionOptions {
   prompt?: string             // Initial prompt text
   model?: string              // --model
   agent?: string              // --agent
+  /**
+   * When `true`, the main process must NOT fall back to the user's stored
+   * "active agent" for this CLI when `agent` is absent. Set by call sites
+   * where the user explicitly chose "no agent" — without it, the server
+   * silently overrides their choice with the default.
+   */
+  noAgent?: boolean
   workingDirectory?: string   // spawn cwd
   additionalDirs?: string[]   // --add-dir (both CLIs)
   pluginDirs?: string[]       // --plugin-dir (both CLIs, repeatable on Claude; Copilot accepts the same shape)
@@ -172,6 +180,26 @@ export interface SessionOptions {
   attachedAgent?: { id: string; name: string }
   /** Skills the user tagged this chat with. Frozen for chip display. */
   attachedSkills?: Array<{ id: string; name: string }>
+
+  /**
+   * Per-slice prompt breakdown for accurate cost attribution. Captured by the
+   * renderer when it assembles a prompt out of user text + agent + notes +
+   * context-sources. Threaded straight through to main where each slice is
+   * tokenized independently. Optional and backward-compatible — without it
+   * the legacy single-slice attribution applies. See Token Coach Phase 1.
+   */
+  promptSlices?: PromptSlices
+
+  /**
+   * Token Coach Phase 4 — per-turn user override of the model-routing decision.
+   * Set by the renderer when the user clicks a tier button on the
+   * `ModelRoutingChip`. The routing middleware skips its decision and forces
+   * `ctx.model = userOverrideModel`. The override is per-turn — it does NOT
+   * persist on the session — and the cost record marks the turn with
+   * `userOverride: true` so Insights can count overrides. Optional; when
+   * undefined the routing middleware classifies normally.
+   */
+  userOverrideModel?: string
 }
 
 export interface ParsedOutput {

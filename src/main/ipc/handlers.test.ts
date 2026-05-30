@@ -140,6 +140,8 @@ describe('handlers (registerIpcHandlers)', () => {
       'cli:archive-sessions',
       'cli:rename-session',
       'cli:search-sessions',
+      'session:update-model',
+      'session:reset',
       'app:get-cwd',
     ]
     for (const channel of expected) {
@@ -445,8 +447,24 @@ describe('handlers (registerIpcHandlers)', () => {
   describe('cli:send-input', () => {
     it('delegates to cliManager.sendInput', () => {
       handlers.get('cli:send-input')!(mockEvent, { sessionId: 's1', input: 'hello' })
-      // Third arg is `attachedNotes` — undefined when the renderer doesn't pass one.
-      expect(cliManager.sendInput).toHaveBeenCalledWith('s1', 'hello', undefined)
+      // Args: sessionId, input, attachedNotes, promptSlices, userOverrideModel —
+      // all trailing undefined when the renderer doesn't pass them.
+      expect(cliManager.sendInput).toHaveBeenCalledWith('s1', 'hello', undefined, undefined, undefined)
+    })
+
+    it('forwards promptSlices when the renderer attaches them', () => {
+      const slices = { userText: 'hello', agentPrompt: 'be concise' }
+      handlers.get('cli:send-input')!(mockEvent, {
+        sessionId: 's1', input: 'be concise\n\nhello', promptSlices: slices,
+      })
+      expect(cliManager.sendInput).toHaveBeenCalledWith('s1', 'be concise\n\nhello', undefined, slices, undefined)
+    })
+
+    it('forwards userOverrideModel when the renderer attaches it (Phase 4)', () => {
+      handlers.get('cli:send-input')!(mockEvent, {
+        sessionId: 's1', input: 'hi', userOverrideModel: 'claude-opus-4.6',
+      })
+      expect(cliManager.sendInput).toHaveBeenCalledWith('s1', 'hi', undefined, undefined, 'claude-opus-4.6')
     })
   })
 

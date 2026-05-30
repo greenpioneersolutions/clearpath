@@ -124,7 +124,7 @@ await expect(async () => { /* ... */ }).toPass({ timeout: 30_000 });
 - Wait for the end state explicitly: `await expect(menu).toBeVisible()`
 - Or globally disable animations in the spec: `await page.addStyleTag({ content: '* { transition: none !important }' })`
 
-## Recommended defaults for CoPilot Commander
+## Recommended defaults for ClearPath
 
 ```ts
 // playwright.config.ts

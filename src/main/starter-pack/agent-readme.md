@@ -71,7 +71,7 @@ Manages agent-to-agent context transfer:
 - **System Prompt Addition**: Injects handoff context into receiving agent's session
 
 ## Business Context
-Provides the foundation for CoPilot Commander's multi-agent collaboration feature. Enables:
+Provides the foundation for ClearPath's multi-agent collaboration feature. Enables:
 - Users to start with zero configuration — agents are pre-trained
 - Cross-agent handoffs without context loss (summary of prior agent's work passed along)
 - Memories to calibrate all agents to user's role, priorities, and preferences

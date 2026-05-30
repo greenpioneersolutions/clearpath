@@ -17,4 +17,4 @@ This folder contains the root entry point for the Electron main process. It init
 - **Encryption**: Uses electron-store with encryption key derived from hostname/username; checks key integrity on startup.
 
 ## Business Context
-Bootstraps the entire CoPilot Commander GUI application — a wrapper around GitHub Copilot CLI and Claude Code CLI. Enables the renderer process to interact with CLI binaries, manage sessions, record costs, handle authentication, and serve user-facing features via 34+ IPC channels.
+Bootstraps the entire ClearPath GUI application — a wrapper around GitHub Copilot CLI and Claude Code CLI. Enables the renderer process to interact with CLI binaries, manage sessions, record costs, handle authentication, and serve user-facing features via 34+ IPC channels.

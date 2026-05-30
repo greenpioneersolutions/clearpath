@@ -17,6 +17,7 @@ export type FeatureFlagKey =
   | 'showDashboard'
   | 'showDataManagement'
   | 'showEfficiencyCoach'
+  | 'showEfficiencyInsights'
   | 'showEnvVars'
   | 'showExtensions'
   | 'showHomeHub'
@@ -26,10 +27,12 @@ export type FeatureFlagKey =
   | 'showLearn'
   | 'showMcpServers'
   | 'showMemory'
+  | 'showModelRouting'
   | 'showNotes'
   | 'showPlugins'
   | 'showPolicies'
   | 'showPrScores'
+  | 'showPromptCache'
   | 'showScheduler'
   | 'showSessionWizard'
   | 'showSettings'
@@ -38,6 +41,7 @@ export type FeatureFlagKey =
   | 'showSubAgents'
   | 'showTeamHub'
   | 'showTemplates'
+  | 'showTokenMeter'
   | 'showUseContext'
   | 'showVoice'
   | 'showWebhooks'
@@ -60,6 +64,7 @@ export type FeatureFlags = {
   showDashboard: boolean;
   showDataManagement: boolean;
   showEfficiencyCoach: boolean;
+  showEfficiencyInsights: boolean;
   showEnvVars: boolean;
   showExtensions: boolean;
   showHomeHub: boolean;
@@ -69,10 +74,12 @@ export type FeatureFlags = {
   showLearn: boolean;
   showMcpServers: boolean;
   showMemory: boolean;
+  showModelRouting: boolean;
   showNotes: boolean;
   showPlugins: boolean;
   showPolicies: boolean;
   showPrScores: boolean;
+  showPromptCache: boolean;
   showScheduler: boolean;
   showSessionWizard: boolean;
   showSettings: boolean;
@@ -81,6 +88,7 @@ export type FeatureFlags = {
   showSubAgents: boolean;
   showTeamHub: boolean;
   showTemplates: boolean;
+  showTokenMeter: boolean;
   showUseContext: boolean;
   showVoice: boolean;
   showWebhooks: boolean;
@@ -115,6 +123,7 @@ export const BUILD_FLAGS: Readonly<FeatureFlags> = Object.freeze({
   showDashboard: true,
   showDataManagement: false,
   showEfficiencyCoach: false,
+  showEfficiencyInsights: false,
   showEnvVars: false,
   showExtensions: false,
   showHomeHub: true,
@@ -124,10 +133,12 @@ export const BUILD_FLAGS: Readonly<FeatureFlags> = Object.freeze({
   showLearn: true,
   showMcpServers: false,
   showMemory: false,
+  showModelRouting: false,
   showNotes: true,
   showPlugins: false,
   showPolicies: false,
   showPrScores: false,
+  showPromptCache: false,
   showScheduler: false,
   showSessionWizard: false,
   showSettings: true,
@@ -136,6 +147,7 @@ export const BUILD_FLAGS: Readonly<FeatureFlags> = Object.freeze({
   showSubAgents: false,
   showTeamHub: false,
   showTemplates: false,
+  showTokenMeter: true,
   showUseContext: false,
   showVoice: false,
   showWebhooks: false,
@@ -169,6 +181,7 @@ export const FEATURE_FLAG_META: Readonly<Record<FeatureFlagKey, FeatureFlagMetad
   showDashboard: { experimental: false, enabled: true, addedIn: "1.0.0" },
   showDataManagement: { experimental: false, enabled: false, addedIn: "1.0.0" },
   showEfficiencyCoach: { experimental: true, enabled: false, addedIn: "1.6.0" },
+  showEfficiencyInsights: { experimental: true, enabled: false, addedIn: "1.14.0" },
   showEnvVars: { experimental: false, enabled: false, addedIn: "1.0.0" },
   showExtensions: { experimental: true, enabled: false, addedIn: "1.9.0" },
   showHomeHub: { experimental: false, enabled: true, addedIn: "1.0.0" },
@@ -178,10 +191,12 @@ export const FEATURE_FLAG_META: Readonly<Record<FeatureFlagKey, FeatureFlagMetad
   showLearn: { experimental: false, enabled: true, addedIn: "1.0.0" },
   showMcpServers: { experimental: true, enabled: false, addedIn: "1.9.0" },
   showMemory: { experimental: false, enabled: false, addedIn: "1.0.0" },
+  showModelRouting: { experimental: true, enabled: false, addedIn: "1.14.0" },
   showNotes: { experimental: false, enabled: true, addedIn: "1.13.0" },
   showPlugins: { experimental: false, enabled: false, addedIn: "1.0.0" },
   showPolicies: { experimental: false, enabled: false, addedIn: "1.0.0" },
   showPrScores: { experimental: true, enabled: false, addedIn: "1.5.0" },
+  showPromptCache: { experimental: true, enabled: false, addedIn: "1.14.0" },
   showScheduler: { experimental: false, enabled: false, addedIn: "1.0.0" },
   showSessionWizard: { experimental: false, enabled: false, addedIn: "1.0.0" },
   showSettings: { experimental: false, enabled: true, addedIn: "1.0.0" },
@@ -190,6 +205,7 @@ export const FEATURE_FLAG_META: Readonly<Record<FeatureFlagKey, FeatureFlagMetad
   showSubAgents: { experimental: false, enabled: false, addedIn: "1.0.0" },
   showTeamHub: { experimental: false, enabled: false, addedIn: "1.0.0" },
   showTemplates: { experimental: false, enabled: false, addedIn: "1.0.0" },
+  showTokenMeter: { experimental: false, enabled: true, addedIn: "1.14.0" },
   showUseContext: { experimental: false, enabled: false, addedIn: "1.0.0" },
   showVoice: { experimental: false, enabled: false, addedIn: "1.0.0" },
   showWebhooks: { experimental: false, enabled: false, addedIn: "1.0.0" },
@@ -203,9 +219,12 @@ export const EXPERIMENTAL_FLAG_KEYS: readonly FeatureFlagKey[] = Object.freeze([
   'showBackstageExplorer',
   'showClearMemory',
   'showEfficiencyCoach',
+  'showEfficiencyInsights',
   'showExtensions',
   'showMcpServers',
+  'showModelRouting',
   'showPrScores',
+  'showPromptCache',
 ]);
 
 export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = Object.freeze([
@@ -224,6 +243,7 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = Object.freeze([
   'showDashboard',
   'showDataManagement',
   'showEfficiencyCoach',
+  'showEfficiencyInsights',
   'showEnvVars',
   'showExtensions',
   'showHomeHub',
@@ -233,10 +253,12 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = Object.freeze([
   'showLearn',
   'showMcpServers',
   'showMemory',
+  'showModelRouting',
   'showNotes',
   'showPlugins',
   'showPolicies',
   'showPrScores',
+  'showPromptCache',
   'showScheduler',
   'showSessionWizard',
   'showSettings',
@@ -245,6 +267,7 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = Object.freeze([
   'showSubAgents',
   'showTeamHub',
   'showTemplates',
+  'showTokenMeter',
   'showUseContext',
   'showVoice',
   'showWebhooks',

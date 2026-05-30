@@ -1,5 +1,11 @@
 import { ipcMain } from 'electron'
 import { log } from '../utils/logger'
+import { tokenCounter } from '../tokenization/TokenCounter'
+
+// Helper: tokenize a context-source block. Provider scope has no specific model
+// in hand, so we pass `'unknown'` and accept the heuristic fallback — these
+// estimates are advisory (used to budget context injection size, not billed).
+const ctxTokens = (s: string): number => tokenCounter.count(s, 'unknown')
 
 // ── Integration Context Provider Registry ────────────────────────────────────
 // Built-in integrations (GitHub, Jira, ServiceNow, etc.) are not extensions,
@@ -162,7 +168,7 @@ async function fetchGitHubPRs(owner: string, repo: string, state: string): Promi
     if (truncated) lines.push(`\n_[Showing ${lines.length - 1} of ${pulls.length} PRs — truncated for context budget]_`)
 
     const context = lines.join('\n')
-    return { success: true, context, tokenEstimate: Math.ceil(context.length / 4), metadata: { itemCount: pulls.length, truncated } }
+    return { success: true, context, tokenEstimate: ctxTokens(context), metadata: { itemCount: pulls.length, truncated } }
   } catch (err) {
     log.error('[context-registry] GitHub PRs fetch failed: %s', err)
     return { success: false, context: '', tokenEstimate: 0 }
@@ -194,7 +200,7 @@ async function fetchGitHubIssues(owner: string, repo: string): Promise<{ success
     }
 
     const context = lines.join('\n')
-    return { success: true, context, tokenEstimate: Math.ceil(context.length / 4), metadata: { itemCount: issues.length, truncated } }
+    return { success: true, context, tokenEstimate: ctxTokens(context), metadata: { itemCount: issues.length, truncated } }
   } catch (err) {
     log.error('[context-registry] GitHub issues fetch failed: %s', err)
     return { success: false, context: '', tokenEstimate: 0 }
@@ -218,7 +224,7 @@ async function fetchGitHubSearch(query: string): Promise<{ success: boolean; con
     }
 
     const context = lines.join('\n')
-    return { success: true, context, tokenEstimate: Math.ceil(context.length / 4) }
+    return { success: true, context, tokenEstimate: ctxTokens(context) }
   } catch (err) {
     return { success: false, context: '', tokenEstimate: 0 }
   }
@@ -243,7 +249,7 @@ async function fetchJiraSprint(projectKey: string): Promise<{ success: boolean; 
     }
 
     const context = lines.join('\n')
-    return { success: true, context, tokenEstimate: Math.ceil(context.length / 4) }
+    return { success: true, context, tokenEstimate: ctxTokens(context) }
   } catch (err) {
     return { success: false, context: '', tokenEstimate: 0 }
   }
@@ -266,7 +272,7 @@ async function fetchServiceNowIncidents(): Promise<{ success: boolean; context: 
     }
 
     const context = lines.join('\n')
-    return { success: true, context, tokenEstimate: Math.ceil(context.length / 4) }
+    return { success: true, context, tokenEstimate: ctxTokens(context) }
   } catch (err) {
     return { success: false, context: '', tokenEstimate: 0 }
   }
@@ -291,7 +297,7 @@ async function fetchDatadogMonitors(): Promise<{ success: boolean; context: stri
     }
 
     const context = lines.join('\n')
-    return { success: true, context, tokenEstimate: Math.ceil(context.length / 4) }
+    return { success: true, context, tokenEstimate: ctxTokens(context) }
   } catch (err) {
     return { success: false, context: '', tokenEstimate: 0 }
   }

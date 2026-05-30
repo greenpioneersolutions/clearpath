@@ -11,10 +11,11 @@ import WizardSettings from '../components/wizard/WizardSettings'
 import SetupWizardFull from '../components/onboarding/SetupWizardFull'
 import WhiteLabel from '../components/settings/WhiteLabel'
 import AccessibilitySettings from '../components/settings/AccessibilitySettings'
+import PricingSettings from '../components/settings/PricingSettings'
 import Agents from './Agents'
 import Tools from './Tools'
 
-type Tab = 'setup' | 'accessibility' | 'settings' | 'policies' | 'tools' | 'memory' | 'agents' | 'skills' | 'wizard' | 'workspaces' | 'team' | 'scheduler' | 'branding'
+type Tab = 'setup' | 'accessibility' | 'settings' | 'policies' | 'tools' | 'memory' | 'agents' | 'skills' | 'wizard' | 'workspaces' | 'team' | 'scheduler' | 'branding' | 'pricing'
 
 type TabGroup = {
   heading: string
@@ -44,6 +45,7 @@ const TAB_GROUPS: TabGroup[] = [
       { key: 'settings', label: 'General' },
       { key: 'tools', label: 'Tools & Permissions' },
       { key: 'wizard', label: 'Session Wizard' },
+      { key: 'pricing', label: 'Cost & Pricing' },
     ],
   },
   {
@@ -163,6 +165,7 @@ export default function Configure(): JSX.Element {
         {tab === 'team' && <TeamHub />}
         {tab === 'scheduler' && <ScheduledTasks />}
         {tab === 'branding' && <WhiteLabel />}
+        {tab === 'pricing' && <PricingSettings />}
       </div>
     </div>
   )

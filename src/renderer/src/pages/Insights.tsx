@@ -1,7 +1,9 @@
 import { useState, useMemo } from 'react'
 import Activity from './Activity'
 import Compliance from './Compliance'
+import EfficiencyTab from './insights/EfficiencyTab'
 import { useExtensions } from '../hooks/useExtensions'
+import { useFlag } from '../contexts/FeatureFlagContext'
 import ExtensionHost from '../components/extensions/ExtensionHost'
 
 type Tab = string
@@ -13,7 +15,7 @@ interface TabDef {
   extensionId?: string
 }
 
-const BUILTIN_TABS: TabDef[] = [
+const BASE_TABS: TabDef[] = [
   { key: 'activity', label: 'Activity', type: 'builtin' },
   { key: 'compliance', label: 'Compliance', type: 'builtin' },
 ]
@@ -21,10 +23,16 @@ const BUILTIN_TABS: TabDef[] = [
 export default function Insights(): JSX.Element {
   const [tab, setTab] = useState<Tab>('activity')
   const { enabledExtensions } = useExtensions()
+  const showEfficiencyInsights = useFlag('showEfficiencyInsights')
 
-  // Build the full tab list: builtin + extension-contributed tabs
+  // Build the full tab list: builtin + (efficiency when flag on) + extension-contributed tabs.
+  // Mirrors the conditional-append pattern from Settings.tsx — feature flags
+  // gate optional tabs by extending the array rather than rendering null.
   const allTabs = useMemo(() => {
-    const tabs: TabDef[] = [...BUILTIN_TABS]
+    const tabs: TabDef[] = [...BASE_TABS]
+    if (showEfficiencyInsights) {
+      tabs.push({ key: 'efficiency', label: 'Efficiency', type: 'builtin' })
+    }
 
     for (const ext of enabledExtensions) {
       const extTabs = ext.manifest.contributes?.tabs
@@ -41,7 +49,7 @@ export default function Insights(): JSX.Element {
     }
 
     return tabs
-  }, [enabledExtensions])
+  }, [enabledExtensions, showEfficiencyInsights])
 
   // Find the extension for the currently selected extension tab
   const activeExtension = useMemo(() => {
@@ -75,6 +83,7 @@ export default function Insights(): JSX.Element {
       {/* Tab content */}
       {tab === 'activity' && <Activity />}
       {tab === 'compliance' && <Compliance />}
+      {tab === 'efficiency' && showEfficiencyInsights && <EfficiencyTab />}
 
       {/* Extension tab content */}
       {activeExtension && (

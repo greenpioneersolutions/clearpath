@@ -130,13 +130,18 @@ export default function EnableGate({ children }: { children: ReactNode }): JSX.E
             <h2 className="text-2xl font-bold text-white">Install ClearMemory first</h2>
             <p className="text-sm text-gray-400 mt-2">
               Clear Memory runs a local daemon backed by the <code className="text-indigo-300">clearmemory</code> CLI.
-              We couldn&apos;t find it on your system.
+              We couldn&apos;t find it on your system. Install from source via Rust&apos;s
+              {' '}<code className="text-indigo-300">cargo</code> (first build takes ~5–10 minutes):
             </p>
           </div>
 
-          <pre className="text-xs bg-black/40 border border-gray-700 rounded p-3 text-gray-200 font-mono overflow-x-auto">
-cargo install clearmemory
+          <pre className="text-xs bg-black/40 border border-gray-700 rounded p-3 text-gray-200 font-mono overflow-x-auto whitespace-pre-wrap break-all">
+cargo install --git https://github.com/greenpioneersolutions/clearmemory clearmemory
           </pre>
+
+          <p className="text-[11px] text-gray-500">
+            Don&apos;t have Rust? Install it from <code className="text-indigo-300">https://rustup.rs</code>.
+          </p>
 
           {install?.error && (
             <p className="text-xs text-gray-500">{install.error}</p>

@@ -545,7 +545,7 @@ export function registerClearMemoryHandlers(
         if (clearMemoryService.status === 'missing-binary') {
           return {
             ok: false,
-            error: 'clearmemory binary not found. Install with: cargo install clearmemory',
+            error: 'clearmemory binary not found. Install from source: cargo install --git https://github.com/greenpioneersolutions/clearmemory clearmemory',
             state: clearMemoryService.status,
           }
         }

@@ -278,6 +278,12 @@ export default function ExtensionHost({ extension, className, slotData }: Extens
 
         // ── Context ─────────────────────────────────────────────────────
         case 'context.estimateTokens': {
+          // TODO(Token Coach Phase 2): wire `tokenizer:count-single` IPC so the
+          // extension SDK gets real tokenizer counts. For now we keep the
+          // heuristic to avoid a cross-process round-trip per call from the
+          // sandboxed iframe — Phase 2's measure middleware is the right hook
+          // point. Cost-record attribution (the user-visible accuracy goal)
+          // already uses the real tokenizer in the main process.
           const { text } = request.params as { text: string }
           result = { tokens: Math.ceil(text.length / 4), method: 'heuristic' }
           break

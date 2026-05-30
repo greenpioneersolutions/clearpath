@@ -1,6 +1,6 @@
 # Playwright Electron Setup
 
-How to launch the CoPilot Commander Electron app under Playwright. Replaces `wdio-electron-service` and the WDIO capability config.
+How to launch the ClearPath Electron app under Playwright. Replaces `wdio-electron-service` and the WDIO capability config.
 
 ## Library mode — `_electron`
 

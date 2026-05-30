@@ -143,7 +143,7 @@ export default function SetupWizardFull(): JSX.Element {
         {step === 'welcome' && (
           <div className="text-center max-w-lg mx-auto py-8 space-y-6">
             <div className="text-5xl">👋</div>
-            <h2 className="text-xl font-bold text-gray-900">Welcome to CoPilot Commander</h2>
+            <h2 className="text-xl font-bold text-gray-900">Welcome to ClearPath</h2>
             <p className="text-sm text-gray-600 leading-relaxed">
               A friendly home for the AI tools that help you work faster. We'll get your CLI connected
               and capture your first note — then you can explore prompts and playbooks at your own pace.
@@ -162,7 +162,7 @@ export default function SetupWizardFull(): JSX.Element {
             <div>
               <h2 className="text-lg font-bold text-gray-900">Step 1: Choose how to connect</h2>
               <p className="text-sm text-gray-500 mt-1">
-                CoPilot Commander supports two ways to reach each AI provider — pick the installed CLI or the programmatic SDK (API key). At least one backend must be ready to continue.
+                ClearPath supports two ways to reach each AI provider — pick the installed CLI or the programmatic SDK (API key). At least one backend must be ready to continue.
               </p>
             </div>
 

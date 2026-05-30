@@ -723,7 +723,11 @@ describe('CLIManager', () => {
       expect(costCb).toHaveBeenCalledTimes(1)
       const record = costCb.mock.calls[0][0]
       expect(record.model).toBe('claude-sonnet-4.5')
-      expect(record.inputTokens).toBe(Math.ceil(11 / 4))
+      // Token Coach Phase 1: real Anthropic tokenizer counts "Test prompt" as
+      // 2 tokens. We assert it's small and positive rather than pinning to a
+      // specific number that would change with tokenizer-version drift.
+      expect(record.inputTokens).toBeGreaterThan(0)
+      expect(record.inputTokens).toBeLessThan(10)
       expect(record.estimatedCostUsd).toBeGreaterThanOrEqual(0)
     })
 
@@ -795,6 +799,402 @@ describe('CLIManager', () => {
       const record = costCb.mock.calls[0][0]
       expect(record.model).toBe('unknown-model-xyz')
       expect(record.estimatedCostUsd).toBeGreaterThanOrEqual(0)
+    })
+  })
+
+  // ═════════════════════════════════════════════════════════════════════════════
+  // Token Coach Phase 1: per-slice attribution on cost records
+  // ═════════════════════════════════════════════════════════════════════════════
+
+  describe('per-slice cost attribution', () => {
+    it('attributes everything to userPromptTokens when no slices are provided', async () => {
+      const costCb = vi.fn()
+      const mockProc = createMockProcess()
+      mockCopilotAdapter.startSession.mockReturnValue(mockProc)
+
+      const mgr = makeManager()
+      mgr.setCostRecordCallback(costCb)
+
+      // No promptSlices on the session options — legacy single-slice fallback.
+      await mgr.startSession({ cli: 'copilot', mode: 'prompt', prompt: 'hello world', model: 'gpt-5-mini' })
+      mockProc._emit('exit', 0, null)
+
+      const record = costCb.mock.calls[0][0]
+      expect(record.userPromptTokens).toBeGreaterThan(0)
+      // userPromptTokens absorbs the whole input when no slices were captured.
+      expect(record.userPromptTokens).toBe(record.inputTokens)
+      // Injected-context slices should be undefined or 0 — no slice info to attribute.
+      expect(record.agentPromptTokens).toBeUndefined()
+      expect(record.notesTokens).toBeUndefined()
+      expect(record.contextSourcesTokens).toBeUndefined()
+      expect(record.injectedContextTokens).toBeUndefined()
+    })
+
+    it('attributes each slice independently when promptSlices is provided', async () => {
+      const costCb = vi.fn()
+      const mockProc = createMockProcess()
+      mockClaudeAdapter.startSession.mockReturnValue(mockProc)
+
+      const mgr = makeManager()
+      mgr.setCostRecordCallback(costCb)
+
+      const userText = 'do the thing'
+      const agentPrompt = 'You are an expert assistant. Be concise.'
+      const notesFramed = '<notes><note title="Style">Use TypeScript strict mode.</note></notes>'
+      const contextSources = '--- Context: GitHub PRs ---\nPR #1: Fix the thing.'
+
+      await mgr.startSession({
+        cli: 'claude',
+        mode: 'prompt',
+        prompt: `${agentPrompt}\n\n${notesFramed}\n\n${contextSources}\n\n${userText}`,
+        model: 'sonnet',
+        promptSlices: { userText, agentPrompt, notesFramed, contextSources },
+      })
+      mockProc._emit('exit', 0, null)
+
+      const record = costCb.mock.calls[0][0]
+      expect(record.userPromptTokens).toBeGreaterThan(0)
+      expect(record.agentPromptTokens).toBeGreaterThan(0)
+      expect(record.notesTokens).toBeGreaterThan(0)
+      expect(record.contextSourcesTokens).toBeGreaterThan(0)
+
+      // injectedContextTokens = sum of all non-user slices.
+      expect(record.injectedContextTokens).toBe(
+        record.agentPromptTokens + record.notesTokens + record.contextSourcesTokens,
+      )
+      // inputTokens = userPromptTokens + injectedContextTokens.
+      expect(record.inputTokens).toBe(record.userPromptTokens + record.injectedContextTokens)
+    })
+
+    it('zeroes out unset slice fields rather than reporting undefined', async () => {
+      const costCb = vi.fn()
+      const mockProc = createMockProcess()
+      mockClaudeAdapter.startSession.mockReturnValue(mockProc)
+
+      const mgr = makeManager()
+      mgr.setCostRecordCallback(costCb)
+
+      // Only userText + notesFramed — no agent or context sources.
+      await mgr.startSession({
+        cli: 'claude',
+        mode: 'prompt',
+        prompt: 'framed-notes\n\nhello',
+        model: 'sonnet',
+        promptSlices: { userText: 'hello', notesFramed: 'framed-notes' },
+      })
+      mockProc._emit('exit', 0, null)
+
+      const record = costCb.mock.calls[0][0]
+      expect(record.userPromptTokens).toBeGreaterThan(0)
+      expect(record.notesTokens).toBeGreaterThan(0)
+      // Unset slices count as 0, not undefined, when slice mode is active.
+      expect(record.agentPromptTokens).toBe(0)
+      expect(record.contextSourcesTokens).toBe(0)
+      expect(record.injectedContextTokens).toBe(record.notesTokens)
+    })
+
+    it('passes slices through sendInput on subsequent turns', async () => {
+      const costCb = vi.fn()
+      const mockProc = createMockProcess()
+      mockCopilotAdapter.startSession.mockReturnValue(mockProc)
+
+      const mgr = makeManager()
+      mgr.setCostRecordCallback(costCb)
+
+      // Start a session with no initial prompt
+      const { sessionId } = await mgr.startSession({ cli: 'copilot', mode: 'prompt', model: 'gpt-5-mini' })
+
+      // Subsequent send-input with slices
+      mockCopilotAdapter.startSession.mockReturnValue(createMockProcess())
+      const secondProc = createMockProcess()
+      mockCopilotAdapter.startSession.mockReturnValue(secondProc)
+
+      await mgr.sendInput(
+        sessionId,
+        'agent-prompt-text\n\nuser-input',
+        undefined,
+        { userText: 'user-input', agentPrompt: 'agent-prompt-text' },
+      )
+      secondProc._emit('exit', 0, null)
+
+      expect(costCb).toHaveBeenCalledTimes(1)
+      const record = costCb.mock.calls[0][0]
+      expect(record.userPromptTokens).toBeGreaterThan(0)
+      expect(record.agentPromptTokens).toBeGreaterThan(0)
+    })
+  })
+
+  // ═════════════════════════════════════════════════════════════════════════════
+  // Token Coach Phase 2: pre-send middleware pipeline
+  // ═════════════════════════════════════════════════════════════════════════════
+
+  describe('middleware pipeline', () => {
+    function makeManagerWithWc() {
+      const mockWc = { send: vi.fn(), isDestroyed: vi.fn().mockReturnValue(false) }
+      const mgr = new CLIManager(() => mockWc as never)
+      return { mgr, mockWc }
+    }
+
+    it('emits cli:prompt-shaped with post-lint token counts after a turn runs', async () => {
+      const mockProc = createMockProcess()
+      mockCopilotAdapter.startSession.mockReturnValue(mockProc)
+      const { mgr, mockWc } = makeManagerWithWc()
+
+      await mgr.startSession({
+        cli: 'copilot',
+        mode: 'prompt',
+        prompt: 'hello   world',  // trailing whitespace the linter will trim
+        model: 'gpt-5-mini',
+        promptSlices: { userText: 'hello   world' },
+      })
+
+      const shapedCalls = mockWc.send.mock.calls.filter(
+        (c: unknown[]) => c[0] === 'cli:prompt-shaped',
+      )
+      expect(shapedCalls.length).toBe(1)
+      const payload = shapedCalls[0][1] as {
+        sessionId: string
+        turnId: string
+        tokens: { userPrompt: number; total: number; injectedTotal: number }
+        notes: string[]
+      }
+      expect(payload.sessionId).toBeTruthy()
+      expect(payload.turnId).toBeTruthy()
+      expect(payload.tokens).toBeDefined()
+      expect(payload.tokens.userPrompt).toBeGreaterThan(0)
+      expect(payload.tokens.total).toBe(payload.tokens.userPrompt + payload.tokens.injectedTotal)
+    })
+
+    it('passes the post-lint prompt to the adapter, not the pre-lint version', async () => {
+      const mockProc = createMockProcess()
+      mockCopilotAdapter.startSession.mockReturnValue(mockProc)
+      const { mgr } = makeManagerWithWc()
+
+      const noisyPrompt = 'first line   \n\n\n\n\nsecond line   '
+      await mgr.startSession({
+        cli: 'copilot',
+        mode: 'prompt',
+        prompt: noisyPrompt,
+        model: 'gpt-5-mini',
+      })
+
+      // adapter.startSession is called twice during start: once for the user-prompt
+      // turn. Find the call whose options.prompt matches our test data.
+      const callsWithPrompt = mockCopilotAdapter.startSession.mock.calls.filter(
+        (call) => typeof call[0]?.prompt === 'string',
+      )
+      const lastCall = callsWithPrompt[callsWithPrompt.length - 1]
+      const adapterPrompt = lastCall[0].prompt as string
+      // Lint should have removed trailing whitespace and collapsed blank-line runs.
+      expect(adapterPrompt).not.toBe(noisyPrompt)
+      expect(/[ \t]+\n/.test(adapterPrompt)).toBe(false)  // no trailing ws before newlines
+      expect(/\n\n\n\n+/.test(adapterPrompt)).toBe(false) // no 3+ consecutive blank lines
+    })
+
+    // ── Token Coach Phase 3 — prefixOrder + cacheStatus ────────────────────
+
+    it('reorders prompt slices into the canonical order (Phase 3) before sending to the adapter', async () => {
+      const mockProc = createMockProcess()
+      mockCopilotAdapter.startSession.mockReturnValue(mockProc)
+      const { mgr } = makeManagerWithWc()
+
+      // Pass slices that intentionally have non-canonical insertion order in
+      // the literal — prefixOrderMiddleware should reorder them to:
+      // fleetPrefix → agentPrompt → notesFramed → contextSources → userText.
+      await mgr.startSession({
+        cli: 'copilot',
+        mode: 'prompt',
+        prompt: 'USER',
+        model: 'gpt-5-mini',
+        promptSlices: {
+          userText: 'USER',
+          notesFramed: 'NOTES',
+          fleetPrefix: 'FLEET',
+          agentPrompt: 'AGENT',
+        },
+      })
+
+      const callsWithPrompt = mockCopilotAdapter.startSession.mock.calls.filter(
+        (call) => typeof call[0]?.prompt === 'string',
+      )
+      const lastCall = callsWithPrompt[callsWithPrompt.length - 1]
+      const adapterPrompt = lastCall[0].prompt as string
+
+      // Canonical order: FLEET < AGENT < NOTES < USER.
+      expect(adapterPrompt.indexOf('FLEET')).toBeGreaterThanOrEqual(0)
+      expect(adapterPrompt.indexOf('FLEET')).toBeLessThan(adapterPrompt.indexOf('AGENT'))
+      expect(adapterPrompt.indexOf('AGENT')).toBeLessThan(adapterPrompt.indexOf('NOTES'))
+      expect(adapterPrompt.indexOf('NOTES')).toBeLessThan(adapterPrompt.indexOf('USER'))
+    })
+
+    it('includes a cacheStatus payload in cli:prompt-shaped (Phase 3)', async () => {
+      const mockProc = createMockProcess()
+      mockCopilotAdapter.startSession.mockReturnValue(mockProc)
+      const { mgr, mockWc } = makeManagerWithWc()
+
+      await mgr.startSession({
+        cli: 'copilot',
+        mode: 'prompt',
+        prompt: 'hi',
+        model: 'gpt-5-mini',
+        promptSlices: { userText: 'hi', agentPrompt: 'A short agent' },
+      })
+
+      const shapedCalls = mockWc.send.mock.calls.filter(
+        (c: unknown[]) => c[0] === 'cli:prompt-shaped',
+      )
+      expect(shapedCalls.length).toBe(1)
+      const payload = shapedCalls[0][1] as {
+        cacheStatus?: { breakpointTokens: number; eligible: boolean; reason?: string }
+      }
+      expect(payload.cacheStatus).toBeDefined()
+      // For a CLI passthrough turn, eligible is always false and the reason
+      // reflects the gate that blocked it (policy-disabled by default).
+      expect(payload.cacheStatus!.eligible).toBe(false)
+      expect(typeof payload.cacheStatus!.reason).toBe('string')
+      expect(payload.cacheStatus!.breakpointTokens).toBeGreaterThanOrEqual(0)
+    })
+
+    // ── Token Coach Phase 4 — routing pipeline ─────────────────────────────
+
+    it('spawns the adapter with the routed model when routing is enabled', async () => {
+      const mockProc = createMockProcess()
+      mockCopilotAdapter.startSession.mockReturnValue(mockProc)
+      const { mgr } = makeManagerWithWc()
+      mgr.setRoutingRules({
+        enabled: true,
+        copilot: { trivial: 'gpt-5-mini', normal: 'claude-sonnet-4.5', hard: 'claude-opus-4.6' },
+        claude: { trivial: 'haiku', normal: 'sonnet', hard: 'opus' },
+      })
+
+      await mgr.startSession({
+        cli: 'copilot-cli',
+        mode: 'prompt',
+        prompt: 'Refactor everything across the codebase',
+        model: 'gpt-5-mini',
+        promptSlices: { userText: 'Refactor everything across the codebase' },
+      })
+
+      const callsWithPrompt = mockCopilotAdapter.startSession.mock.calls.filter(
+        (call) => typeof call[0]?.prompt === 'string',
+      )
+      const lastCall = callsWithPrompt[callsWithPrompt.length - 1]
+      // Hard prompt → routed to hard tier (claude-opus-4.6) — adapter spawn
+      // should carry the routed model, not the session's original.
+      expect(lastCall[0].model).toBe('claude-opus-4.6')
+    })
+
+    it('does NOT change the spawn model when routing is disabled', async () => {
+      const mockProc = createMockProcess()
+      mockCopilotAdapter.startSession.mockReturnValue(mockProc)
+      const { mgr } = makeManagerWithWc()
+      // Don't toggle on — the default is disabled.
+
+      await mgr.startSession({
+        cli: 'copilot-cli',
+        mode: 'prompt',
+        prompt: 'Refactor everything across the codebase',
+        model: 'gpt-5-mini',
+      })
+
+      const callsWithPrompt = mockCopilotAdapter.startSession.mock.calls.filter(
+        (call) => typeof call[0]?.prompt === 'string',
+      )
+      const lastCall = callsWithPrompt[callsWithPrompt.length - 1]
+      // Routing off → original session model survives.
+      expect(lastCall[0].model).toBe('gpt-5-mini')
+    })
+
+    it('honors a per-turn userOverrideModel over routing decisions', async () => {
+      const mockProc = createMockProcess()
+      mockCopilotAdapter.startSession.mockReturnValue(mockProc)
+      const { mgr } = makeManagerWithWc()
+      mgr.setRoutingRules({
+        enabled: true,
+        copilot: { trivial: 'gpt-5-mini', normal: 'claude-sonnet-4.5', hard: 'claude-opus-4.6' },
+        claude: { trivial: 'haiku', normal: 'sonnet', hard: 'opus' },
+      })
+
+      // A short question would normally route to trivial — but we force the
+      // hard model via userOverrideModel. Routing should NOT classify; it
+      // should pass the override through.
+      await mgr.startSession({
+        cli: 'copilot-cli',
+        mode: 'prompt',
+        prompt: 'What time is it?',
+        model: 'gpt-5-mini',
+        userOverrideModel: 'claude-opus-4.6',
+      })
+
+      const callsWithPrompt = mockCopilotAdapter.startSession.mock.calls.filter(
+        (call) => typeof call[0]?.prompt === 'string',
+      )
+      const lastCall = callsWithPrompt[callsWithPrompt.length - 1]
+      expect(lastCall[0].model).toBe('claude-opus-4.6')
+    })
+
+    it('emits routing payload on cli:prompt-shaped when routing is enabled', async () => {
+      const mockProc = createMockProcess()
+      mockCopilotAdapter.startSession.mockReturnValue(mockProc)
+      const { mgr, mockWc } = makeManagerWithWc()
+      mgr.setRoutingRules({
+        enabled: true,
+        copilot: { trivial: 'gpt-5-mini', normal: 'claude-sonnet-4.5', hard: 'claude-opus-4.6' },
+        claude: { trivial: 'haiku', normal: 'sonnet', hard: 'opus' },
+      })
+
+      await mgr.startSession({
+        cli: 'copilot-cli',
+        mode: 'prompt',
+        prompt: 'What time is it?',
+        model: 'gpt-5-mini',
+        promptSlices: { userText: 'What time is it?' },
+      })
+
+      const shapedCalls = mockWc.send.mock.calls.filter((c: unknown[]) => c[0] === 'cli:prompt-shaped')
+      expect(shapedCalls.length).toBe(1)
+      const payload = shapedCalls[0][1] as {
+        routing?: { routedModel: string; userOverride: boolean; difficulty: string }
+      }
+      expect(payload.routing).toBeDefined()
+      expect(payload.routing!.routedModel).toBe('gpt-5-mini')
+      expect(payload.routing!.userOverride).toBe(false)
+      expect(payload.routing!.difficulty).toBe('trivial')
+    })
+
+    it('omits routing payload on cli:prompt-shaped when routing is disabled', async () => {
+      const mockProc = createMockProcess()
+      mockCopilotAdapter.startSession.mockReturnValue(mockProc)
+      const { mgr, mockWc } = makeManagerWithWc()
+
+      await mgr.startSession({
+        cli: 'copilot-cli',
+        mode: 'prompt',
+        prompt: 'hi',
+        model: 'gpt-5-mini',
+        promptSlices: { userText: 'hi' },
+      })
+
+      const shapedCalls = mockWc.send.mock.calls.filter((c: unknown[]) => c[0] === 'cli:prompt-shaped')
+      const payload = shapedCalls[0][1] as { routing?: unknown }
+      expect(payload.routing).toBeUndefined()
+    })
+
+    it('setRoutingRules round-trips via getRoutingRules', () => {
+      const { mgr } = makeManagerWithWc()
+      const next = {
+        enabled: true,
+        copilot: { trivial: 'a', normal: 'b', hard: 'c' },
+        claude: { trivial: 'x', normal: 'y', hard: 'z' },
+      }
+      mgr.setRoutingRules(next)
+      expect(mgr.getRoutingRules()).toEqual(next)
+    })
+
+    it('setCachePolicy round-trips via getCachePolicy', () => {
+      const { mgr } = makeManagerWithWc()
+      mgr.setCachePolicy({ enabled: true, ttl: '1h' })
+      expect(mgr.getCachePolicy()).toEqual({ enabled: true, ttl: '1h' })
     })
   })
 
@@ -1428,7 +1828,7 @@ describe('CLIManager', () => {
       const mockProc2 = createMockProcess()
       mockCopilotAdapter.startSession.mockReturnValue(mockProc2)
 
-      mgr.sendInput(sessionId, 'Review my code')
+      await mgr.sendInput(sessionId, 'Review my code')
 
       // The adapter.startSession should have been called with a prompt that includes agentContext
       const lastCall = mockCopilotAdapter.startSession.mock.calls[mockCopilotAdapter.startSession.mock.calls.length - 1]
@@ -1442,7 +1842,7 @@ describe('CLIManager', () => {
       // Second input should NOT include agentContext
       const mockProc3 = createMockProcess()
       mockCopilotAdapter.startSession.mockReturnValue(mockProc3)
-      mgr.sendInput(sessionId, 'Another message')
+      await mgr.sendInput(sessionId, 'Another message')
 
       const lastCall2 = mockCopilotAdapter.startSession.mock.calls[mockCopilotAdapter.startSession.mock.calls.length - 1]
       expect(lastCall2[0].prompt).toBe('Another message')
@@ -1467,7 +1867,7 @@ describe('CLIManager', () => {
       const mockProc2 = createMockProcess()
       mockCopilotAdapter.startSession.mockReturnValue(mockProc2)
 
-      mgr.sendSlashCommand(sessionId, '/clear')
+      await mgr.sendSlashCommand(sessionId, '/clear')
 
       // Should have spawned a new process for the slash command turn
       expect(mockCopilotAdapter.startSession).toHaveBeenCalled()

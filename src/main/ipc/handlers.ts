@@ -38,9 +38,13 @@ export function registerIpcHandlers(
       if (modelToUse) resolved = { ...resolved, model: modelToUse }
     }
 
-    // Resolve the agent — either from explicit option or from stored active agent
+    // Resolve the agent — either from explicit option or from stored active agent.
+    // `noAgent: true` is the renderer's signal that the user explicitly chose
+    // no agent (e.g. picked "(none)" in the Home or launchpad agent picker);
+    // skip the stored-default fallback in that case so we don't silently
+    // override their choice.
     let agentId = resolved.agent ?? null
-    if (!agentId && agentManager) {
+    if (!agentId && !options.noAgent && agentManager) {
       const active = agentManager.getActiveAgents()
       agentId = active[providerOf(options.cli)] ?? null
     }
@@ -101,10 +105,20 @@ export function registerIpcHandlers(
           // prompt. Without this the messageLog gets the combined text and
           // the chat shows the entire agent definition on rehydrate.
           const userPrompt = resolved.prompt
+          // Token Coach Phase 1: reflect the prepended agent prompt on slices
+          // so the first turn's cost record attributes the agent system prompt
+          // to its own slice, not lumped into userPromptTokens. Caller-supplied
+          // agentPrompt wins so the renderer can override if it ever does its
+          // own prepend.
+          const callerSlices = resolved.promptSlices
+          const promptSlices = callerSlices
+            ? { ...callerSlices, agentPrompt: callerSlices.agentPrompt ?? agentSystemPrompt }
+            : undefined
           resolved = {
             ...resolved,
             displayPrompt: resolved.displayPrompt ?? userPrompt,
             prompt: `${agentSystemPrompt}\n\n${userPrompt}`,
+            ...(promptSlices ? { promptSlices } : {}),
           }
         } else {
           // No user prompt — store as agentContext so it gets prepended on the first real input
@@ -128,13 +142,15 @@ export function registerIpcHandlers(
     'cli:send-input',
     (
       _event,
-      { sessionId, input, attachedNotes }: {
+      { sessionId, input, attachedNotes, promptSlices, userOverrideModel }: {
         sessionId: string
         input: string
         attachedNotes?: Array<{ id: string; title: string }>
+        promptSlices?: import('../../shared/tokenization/types').PromptSlices
+        userOverrideModel?: string
       },
     ) => {
-      cliManager.sendInput(sessionId, input, attachedNotes)
+      cliManager.sendInput(sessionId, input, attachedNotes, promptSlices, userOverrideModel)
     }
   )
 
@@ -142,6 +158,27 @@ export function registerIpcHandlers(
     'cli:send-slash-command',
     (_event, { sessionId, command }: { sessionId: string; command: string }) => {
       cliManager.sendSlashCommand(sessionId, command)
+    }
+  )
+
+  // Apply a model to a session WITHOUT triggering a turn. Used by the model
+  // chip and the /model slash command — the CLI's REPL /model is unreachable
+  // in headless mode, so the renderer mutates session state directly and the
+  // next user message will spawn with the new --model.
+  ipcMain.handle(
+    'session:update-model',
+    (_event, { sessionId, model }: { sessionId: string; model: string }) => {
+      cliManager.updateSessionModel(sessionId, model)
+    }
+  )
+
+  // Reset a session's conversation history and drop the --continue chain so
+  // the next message starts a brand-new underlying CLI session. Backs the
+  // renderer-side /clear handler.
+  ipcMain.handle(
+    'session:reset',
+    (_event, { sessionId }: { sessionId: string }) => {
+      cliManager.resetSession(sessionId)
     }
   )
 

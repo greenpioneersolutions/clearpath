@@ -58,7 +58,7 @@ describe('SetupWizardFull', () => {
 
     renderWithRouter(<SetupWizardFull />)
     await waitFor(() => {
-      expect(screen.getByText('Welcome to CoPilot Commander')).toBeInTheDocument()
+      expect(screen.getByText('Welcome to ClearPath')).toBeInTheDocument()
     })
     expect(screen.getByText("Let's Get Started")).toBeInTheDocument()
   })
