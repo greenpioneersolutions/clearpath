@@ -20,7 +20,7 @@ describe('TemplateLauncher', () => {
     {
       id: 't1', name: 'Bug Fix', category: 'Bug Fix', description: 'Fix a bug systematically',
       body: 'Fix the bug in {{MODULE}} affecting {{FEATURE}}',
-      complexity: 'medium' as const, variables: ['MODULE', 'FEATURE'],
+      complexity: 'medium' as const, variables: [{ name: 'MODULE', type: 'text' as const }, { name: 'FEATURE', type: 'text' as const }],
       source: 'builtin' as const, usageCount: 3, totalCost: 0.12, createdAt: Date.now(),
     },
     {
@@ -139,10 +139,10 @@ describe('TemplateLauncher', () => {
 
     fireEvent.click(screen.getByText('Run Now'))
 
-    expect(defaultProps.onRunNow).toHaveBeenCalledWith('Fix the bug in auth affecting login')
+    expect(defaultProps.onRunNow).toHaveBeenCalledWith({ prompt: 'Fix the bug in auth affecting login', patch: {} })
   })
 
-  it('calls onStartFromTemplate with template and values', async () => {
+  it('calls onStartFromTemplate with template and hydrated result', async () => {
     render(<TemplateLauncher {...defaultProps} />)
     await clickBugFixTemplate()
 
@@ -157,7 +157,7 @@ describe('TemplateLauncher', () => {
 
     expect(defaultProps.onStartFromTemplate).toHaveBeenCalledWith(
       expect.objectContaining({ id: 't1' }),
-      { MODULE: 'auth', FEATURE: 'login' },
+      { prompt: 'Fix the bug in auth affecting login', patch: {} },
     )
   })
 

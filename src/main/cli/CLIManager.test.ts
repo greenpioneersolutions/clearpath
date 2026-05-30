@@ -644,6 +644,42 @@ describe('CLIManager', () => {
     })
   })
 
+  // ═════════════════════════════════════════════════════════════════════════════
+  // Caller-provided session id across turns — regression for
+  // "Session ID … is already in use" (the file-attachment pre-generated id leaked
+  // to --session-id on every turn; --session-id is create-only and must not be
+  // re-sent on continue turns).
+  // ═════════════════════════════════════════════════════════════════════════════
+  describe('caller-provided sessionId across turns', () => {
+    it('emits the explicit sessionId on turn 0 but NOT on turn 1 (lets --continue take over)', async () => {
+      const proc0 = createMockProcess()
+      mockClaudeAdapter.startSession.mockReturnValue(proc0)
+      const mgr = makeManager()
+
+      const res = await mgr.startSession({
+        cli: 'claude', mode: 'interactive',
+        sessionId: '3e93d55f-d4f1-4a98-8f0f-ed4d758a1731',
+        prompt: 'first turn',
+      })
+      const sid = (res as { sessionId: string }).sessionId
+      // Turn 0 carries the explicit id (so the CLI creates that session).
+      expect(mockClaudeAdapter.startSession.mock.calls[0][0].sessionId).toBe('3e93d55f-d4f1-4a98-8f0f-ed4d758a1731')
+
+      // Finish turn 0 (clean exit → turnCount++ , session stays running).
+      proc0._emit('exit', 0, null)
+
+      // Turn 1 — a second send must NOT re-pass --session-id, or the CLI errors
+      // "Session ID … is already in use". It should fall through to --continue.
+      const proc1 = createMockProcess()
+      mockClaudeAdapter.startSession.mockReturnValue(proc1)
+      await mgr.sendInput(sid, 'second turn')
+
+      const turn1 = mockClaudeAdapter.startSession.mock.calls[1][0]
+      expect(turn1.sessionId).toBeUndefined()
+      expect(turn1.continue).toBe(true)
+    })
+  })
+
   describe('sub-agent management', () => {
     it('listSubAgents returns empty array initially', () => {
       expect(makeManager().listSubAgents()).toEqual([])

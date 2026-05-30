@@ -21,6 +21,8 @@ interface Props {
     attachedNotes?: Array<{ id: string; title: string }>
     /** Files the user picked to attach (source paths only; copied at launch). */
     pickedFiles?: Array<{ sourcePath: string; name: string; sizeBytes: number }>
+    /** Per-session CLI toggle overrides keyed by SessionOptions boolean field. */
+    sessionFlags?: Record<string, boolean>
     /** Explicit "user picked no agent" — disables server-side default fallback. */
     noAgent?: boolean
   }) => void

@@ -18,6 +18,7 @@ vi.mock('electron', () => ({
   dialog: { showOpenDialog: vi.fn() },
   BrowserWindow: { getFocusedWindow: () => null },
   shell: { openPath: vi.fn() },
+  app: { getPath: () => tmpdir() },
 }))
 
 // Tiny limits passed directly to stagePaths so caps can be exercised with
@@ -29,6 +30,7 @@ import {
   buildFilesBundle,
   cleanupSessionUploads,
   sweepOrphanUploads,
+  ensureBaseDir,
   getUploadsDir,
   getUploadsRoot,
 } from './fileAttachmentHandlers'
@@ -150,6 +152,14 @@ describe('buildFilesBundle', () => {
     expect(bundle.framedPrompt).not.toMatch(/name="a&b<c>/)
     rmSync(otherDir, { recursive: true, force: true })
   })
+})
+
+describe('ensureBaseDir', () => {
+  it('returns the preferred workspace dir when it exists (the common case)', () => {
+    expect(ensureBaseDir(workspace)).toBe(workspace)
+  })
+  // The no-workspace fallback (mkdir under app userData) is covered manually —
+  // the test harness's global electron mock returns a non-writable app path.
 })
 
 describe('cleanupSessionUploads', () => {

@@ -32,13 +32,17 @@ export function computeBreakdown(
   const userPrompt     = slices.userText        ? counter.count(slices.userText,        model) : 0
   const agentPrompt    = slices.agentPrompt     ? counter.count(slices.agentPrompt,     model) : 0
   const notesFramed    = slices.notesFramed     ? counter.count(slices.notesFramed,     model) : 0
+  const filesFramed    = slices.filesFramed     ? counter.count(slices.filesFramed,     model) : 0
   const contextSources = slices.contextSources  ? counter.count(slices.contextSources,  model) : 0
   const fleetPrefix    = slices.fleetPrefix     ? counter.count(slices.fleetPrefix,     model) : 0
-  const injectedTotal  = agentPrompt + notesFramed + contextSources + fleetPrefix
+  // filesFramed is folded into notesFramed for the breakdown's reference-context
+  // bucket — it carries no dedicated field, but it MUST be counted so the meter
+  // total matches the assembled prompt (which now includes the file block).
+  const injectedTotal  = agentPrompt + notesFramed + filesFramed + contextSources + fleetPrefix
   return {
     userPrompt,
     agentPrompt,
-    notesFramed,
+    notesFramed: notesFramed + filesFramed,
     contextSources,
     fleetPrefix,
     injectedTotal,

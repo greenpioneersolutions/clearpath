@@ -60,8 +60,8 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   'files:list', 'files:is-protected', 'files:watch', 'files:unwatch',
 
   // Session File Attachments (Slice 29)
-  'files:pick', 'files:stage-paths', 'files:pick-and-stage', 'files:list-attachments',
-  'files:remove', 'files:get-bundle-for-prompt', 'files:open-folder',
+  'files:pick', 'files:ensure-base-dir', 'files:stage-paths', 'files:pick-and-stage',
+  'files:list-attachments', 'files:remove', 'files:get-bundle-for-prompt', 'files:open-folder',
   'files:cleanup-session', 'files:sweep-orphans',
 
   // Git

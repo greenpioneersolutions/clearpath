@@ -1,5 +1,5 @@
 import type { IpcMain } from 'electron'
-import { dialog, BrowserWindow, shell } from 'electron'
+import { dialog, BrowserWindow, shell, app } from 'electron'
 import { randomUUID, createHash } from 'crypto'
 import {
   readFileSync, writeFileSync, existsSync, statSync,
@@ -127,6 +127,24 @@ function escapeAttr(value: string): string {
     .replace(/"/g, '&quot;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
+}
+
+/**
+ * Resolve a concrete, writable directory to anchor a session + its file uploads.
+ * Prefers the caller's resolved workspace dir; otherwise falls back to a dedicated
+ * app-managed scratch workspace under userData (always writable + always exists).
+ *
+ * This guarantees file attachments never silently fail for users without a
+ * configured workspace — the old behaviour left `workingDirectory` undefined,
+ * which both skipped staging AND spawned the CLI in `process.cwd()` (often
+ * read-only on a packaged app). The returned dir is used for BOTH staging and
+ * the CLI spawn, so the relative `.clear-path/uploads/...` paths always resolve.
+ */
+export function ensureBaseDir(preferred?: string): string {
+  if (preferred && existsSync(preferred)) return preferred
+  const base = join(app.getPath('userData'), 'session-files')
+  mkdirSync(base, { recursive: true })
+  return base
 }
 
 // ── Standalone ops (also used directly by the session-delete hook) ──────────────
@@ -315,10 +333,17 @@ export function registerFileAttachmentHandlers(
     return { files }
   })
 
+  // Resolve a guaranteed-writable base dir for staging + the session spawn.
+  // The launchpad calls this when files are attached so a missing workspace
+  // never silently drops the upload.
+  ipcMain.handle('files:ensure-base-dir', (_e, args: { preferred?: string }): { dir: string } => {
+    return { dir: ensureBaseDir(args?.preferred) }
+  })
+
   // Copy already-picked source paths into a session's uploads dir.
   ipcMain.handle('files:stage-paths', (_e, args: { workingDirectory?: string; sessionId: string; sourcePaths: string[] }): PickAndStageResult => {
-    if (!args.workingDirectory) return { attachments: [], errors: ['Select a workspace folder before attaching files.'] }
-    return stagePaths(args.workingDirectory, args.sessionId, args.sourcePaths ?? [])
+    const baseDir = ensureBaseDir(args.workingDirectory)
+    return stagePaths(baseDir, args.sessionId, args.sourcePaths ?? [])
   })
 
   // Convenience for mid-session attach (existing session → cwd + id are known):

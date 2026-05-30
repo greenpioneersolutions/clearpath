@@ -54,6 +54,32 @@ describe('prefixOrderMiddleware', () => {
       expect(result.prompt.indexOf('SOURCES')).toBeLessThan(result.prompt.indexOf('USER'))
     })
 
+    it('includes filesFramed after notes and before sources — and never drops it', async () => {
+      // Regression: the file-attachment block lives in the filesFramed slice.
+      // An earlier version omitted it from the assembly order, so the reassembled
+      // prompt silently dropped the file reference and the agent never saw it.
+      const slices: PromptSlices = {
+        agentPrompt: 'AGENT',
+        notesFramed: 'NOTES',
+        filesFramed: 'FILES',
+        contextSources: 'SOURCES',
+        userText: 'USER',
+      }
+      const result = await prefixOrderMiddleware(ctx({ slices, prompt: 'renderer-sent' }))
+      expect(result.prompt).toBe('AGENT\n\nNOTES\n\nFILES\n\nSOURCES\n\nUSER')
+      // The whole point: the file block must reach the assembled prompt.
+      expect(result.prompt).toContain('FILES')
+      expect(result.prompt.indexOf('NOTES')).toBeLessThan(result.prompt.indexOf('FILES'))
+      expect(result.prompt.indexOf('FILES')).toBeLessThan(result.prompt.indexOf('SOURCES'))
+    })
+
+    it('assembles a files-only injection (the launchpad attach case)', async () => {
+      // The exact shape onQuickStart sends: just userText + filesFramed.
+      const slices: PromptSlices = { userText: 'describe this file', filesFramed: '<files>...</files>' }
+      const result = await prefixOrderMiddleware(ctx({ slices, prompt: 'whatever' }))
+      expect(result.prompt).toBe('<files>...</files>\n\ndescribe this file')
+    })
+
     it('produces byte-identical output regardless of source field order in the slices object', async () => {
       // Different object construction orders — JS object key iteration order
       // would let a naive impl reshuffle these. The middleware must NOT care.

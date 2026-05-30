@@ -65,6 +65,21 @@ describe('OutputDisplay', () => {
     expect(screen.getByText('AI response here')).toBeInTheDocument()
   })
 
+  it('renders a whole-message raw JSON dump as a JSON block, not plain markdown', () => {
+    // react-markdown is mocked to a passthrough, but the bare-JSON pre-check in
+    // AIBubble runs *before* markdown — so an unfenced JSON dump is routed to the
+    // real <JsonBlock> (rich tree), exercising the detection directly.
+    const content = '{\n  "compilerOptions": { "strict": true },\n  "files": []\n}'
+    const messages: OutputMessage[] = [
+      { id: '1', sender: 'ai', output: { type: 'text', content } },
+    ]
+    render(<OutputDisplay messages={messages} onPermissionResponse={onPermissionResponse} />)
+    // JSON tree renders the key tokens, and the markdown passthrough is bypassed.
+    expect(screen.getByText(/compilerOptions/)).toBeInTheDocument()
+    expect(screen.getByText('JSON')).toBeInTheDocument()
+    expect(screen.queryByTestId('markdown')).toBeNull()
+  })
+
   it('renders tool-use messages', () => {
     const messages: OutputMessage[] = [
       { id: '1', sender: 'ai', output: { type: 'tool-use', content: 'Running shell command' } },

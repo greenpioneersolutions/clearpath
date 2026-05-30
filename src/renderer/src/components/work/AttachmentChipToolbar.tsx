@@ -22,7 +22,7 @@ export interface AttachmentChip {
    * rendered above the input (violet for agent, indigo for skills, teal for
    * notes) so users can pattern-match the chip back to the chip-pill source.
    */
-  accent: 'violet' | 'indigo' | 'teal' | 'gray'
+  accent: 'violet' | 'indigo' | 'teal' | 'gray' | 'sky' | 'amber'
   /**
    * `aria-controls` plumbing — set by the parent when managing focus +
    * keyboard semantics for the popover this chip owns.
@@ -74,6 +74,16 @@ const ACCENT_STYLES: Record<AttachmentChip['accent'], { idle: string; open: stri
     idle:     'text-gray-400 border-gray-700/50 bg-gray-900/30',
     open:     'text-gray-300 border-gray-600 bg-gray-900/40',
     selected: 'text-gray-300 border-gray-700 bg-gray-900/30',
+  },
+  sky: {
+    idle:     'text-sky-200 border-sky-700/40 bg-sky-900/15 hover:bg-sky-900/30 hover:border-sky-600',
+    open:     'text-sky-100 border-sky-500 bg-sky-900/40 ring-1 ring-sky-500/40',
+    selected: 'text-sky-100 border-sky-600 bg-sky-900/30',
+  },
+  amber: {
+    idle:     'text-amber-200 border-amber-700/40 bg-amber-900/15 hover:bg-amber-900/30 hover:border-amber-600',
+    open:     'text-amber-100 border-amber-500 bg-amber-900/40 ring-1 ring-amber-500/40',
+    selected: 'text-amber-100 border-amber-600 bg-amber-900/30',
   },
 }
 

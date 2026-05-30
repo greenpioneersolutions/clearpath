@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import type { AppSettings } from '../types/settings'
+import type { AuthState } from '../types/ipc'
 import { DEFAULT_SETTINGS } from '../types/settings'
 import FlagBuilder from '../components/settings/FlagBuilder'
 import ModelSelector from '../components/settings/ModelSelector'
@@ -42,19 +43,34 @@ export default function Settings(): JSX.Element {
 
   // ── Load settings from electron-store ─────────────────────────────────────
 
-  // On first load only, sync the CLI toggle to the saved preferred backend so a
-  // Claude-primary user lands on Claude instead of always defaulting to Copilot.
-  // A ref guard keeps later reloads (e.g. applying a profile) from yanking the
-  // toggle back while the user is mid-configuration.
+  // On first load only, point the CLI toggle at a provider that's actually
+  // usable so a Claude-primary user (Copilot never installed) doesn't land on a
+  // hardcoded Copilot tab. Priority: an explicitly-saved preferred backend wins;
+  // otherwise fall back to whichever provider is installed — Copilot if present
+  // (or if both are absent), else Claude. A ref guard keeps later reloads (e.g.
+  // applying a profile) from yanking the toggle back mid-configuration.
   const cliInitialized = useRef(false)
 
   const loadSettings = useCallback(async () => {
     setLoading(true)
-    const result = await window.electronAPI.invoke('settings:get') as AppSettings
+    const [result, auth] = await Promise.all([
+      window.electronAPI.invoke('settings:get') as Promise<AppSettings>,
+      window.electronAPI.invoke('auth:get-status') as Promise<AuthState>,
+    ])
     setSettings(result)
     if (!cliInitialized.current) {
       cliInitialized.current = true
-      if (result.preferredBackend) setCli(providerOf(result.preferredBackend))
+      if (result.preferredBackend) {
+        setCli(providerOf(result.preferredBackend))
+      } else {
+        // A provider counts as "available" if either transport (CLI or SDK) is
+        // installed. Copilot is the default unless it's absent and Claude isn't.
+        // Guard against a missing/partial auth response — settings must still
+        // load (defaulting to Copilot) even if the auth probe is unavailable.
+        const copilotAvailable = !!(auth?.copilot?.cli?.installed || auth?.copilot?.sdk?.installed)
+        const claudeAvailable = !!(auth?.claude?.cli?.installed || auth?.claude?.sdk?.installed)
+        if (!copilotAvailable && claudeAvailable) setCli('claude')
+      }
     }
     setLoading(false)
   }, [])

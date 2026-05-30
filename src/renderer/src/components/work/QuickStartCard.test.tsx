@@ -110,16 +110,12 @@ describe('QuickStartCard', () => {
     const ta = screen.getByTestId('quick-start-textarea') as HTMLTextAreaElement
     fireEvent.change(ta, { target: { value: 'Hello world' } })
     fireEvent.click(screen.getByTestId('quick-start-submit'))
-    expect(onSubmit).toHaveBeenCalledWith({
+    // The payload now also carries attachment + per-session-toggle fields, so we
+    // assert the core values rather than an exact object.
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({
       prompt: 'Hello world',
-      displayPrompt: undefined,
       cli: 'copilot-cli',
-      model: undefined,
-      agent: undefined,
-      permissionMode: undefined,
-      additionalDirs: undefined,
-      contextSummary: undefined,
-    })
+    }))
   })
 
   it('switches Provider dropdown selection and forwards the new backend id', () => {
@@ -320,13 +316,16 @@ describe('QuickStartCard', () => {
     })
   })
 
-  it('reveals permission mode + folder picker when Customize is expanded', async () => {
+  it('reveals permission mode + session toggles when Customize is expanded; folders live in the +Folder chip', async () => {
     render(<QuickStartCard onSubmit={vi.fn()} />)
     fireEvent.click(screen.getByTestId('quick-start-customize-toggle'))
     expect(screen.getByTestId('quick-start-customize')).toBeInTheDocument()
     expect(screen.getByTestId('quick-start-permission-mode')).toBeInTheDocument()
-    // Approved folders are mocked, so the picker (not the empty state) renders.
-    expect(await screen.findByTestId('quick-start-dir-picker')).toBeInTheDocument()
+    // Per-session CLI toggles now live in Customize (folders moved out).
+    expect(screen.getByTestId('quick-start-cli-toggles')).toBeInTheDocument()
+    // Folders are reached via the +Folder chip popover.
+    fireEvent.click(screen.getByTestId('attachment-chip:folder'))
+    expect(await screen.findByTestId('quick-start-folder-picker')).toBeInTheDocument()
   })
 
   it('forwards attachment + customize values to onSubmit', async () => {
@@ -337,11 +336,12 @@ describe('QuickStartCard', () => {
     const agentPicker = await screen.findByTestId('quick-start-agent-picker')
     const reviewerBtn = await within(agentPicker).findByText('Reviewer')
     fireEvent.click(reviewerBtn)
-    // Switch to the Customize disclosure (separate surface).
+    // Switch to the Customize disclosure (separate surface) for permission mode.
     fireEvent.click(screen.getByTestId('quick-start-customize-toggle'))
     fireEvent.change(screen.getByTestId('quick-start-permission-mode'), { target: { value: 'plan' } })
-    // Select two approved folders from the picker (order determines array order).
-    const dirPicker = await screen.findByTestId('quick-start-dir-picker')
+    // Folders now live in the +Folder chip popover (order determines array order).
+    fireEvent.click(screen.getByTestId('attachment-chip:folder'))
+    const dirPicker = await screen.findByTestId('quick-start-folder-picker')
     fireEvent.click(within(dirPicker).getByText('Foo'))
     fireEvent.click(within(dirPicker).getByText('Bar'))
     fireEvent.change(screen.getByTestId('quick-start-textarea'), { target: { value: 'do thing' } })
@@ -362,10 +362,12 @@ describe('QuickStartCard', () => {
     const agentPicker = await screen.findByTestId('quick-start-agent-picker')
     const reviewerBtn = await within(agentPicker).findByText('Reviewer')
     fireEvent.click(reviewerBtn)
-    // Switch to Customize for the per-session knobs.
+    // Switch to Customize for the permission mode.
     fireEvent.click(screen.getByTestId('quick-start-customize-toggle'))
     fireEvent.change(screen.getByTestId('quick-start-permission-mode'), { target: { value: 'acceptEdits' } })
-    const dirPicker = await screen.findByTestId('quick-start-dir-picker')
+    // Folder selection lives in the +Folder chip popover now.
+    fireEvent.click(screen.getByTestId('attachment-chip:folder'))
+    const dirPicker = await screen.findByTestId('quick-start-folder-picker')
     fireEvent.click(within(dirPicker).getByText('X'))
 
     const stored = window.localStorage.getItem('quickStartAdvanced')
@@ -379,8 +381,9 @@ describe('QuickStartCard', () => {
     await waitFor(() => {
       expect((screen.getByTestId('quick-start-permission-mode') as HTMLSelectElement).value).toBe('acceptEdits')
     })
-    // The previously-selected folder is restored as selected (aria-pressed).
-    const restoredPicker = await screen.findByTestId('quick-start-dir-picker')
+    // The previously-selected folder is restored as selected (aria-pressed) in the chip popover.
+    fireEvent.click(screen.getByTestId('attachment-chip:folder'))
+    const restoredPicker = await screen.findByTestId('quick-start-folder-picker')
     await waitFor(() => {
       expect(within(restoredPicker).getByText('X').closest('button')).toHaveAttribute('aria-pressed', 'true')
     })
@@ -766,13 +769,14 @@ describe('QuickStartCard', () => {
     expect(badge).toHaveTextContent('1')
   })
 
-  it('Files chip is disabled and clicking it does not open a popover', () => {
+  it('Files chip is active (showFileAttachments default-on) and opens a popover', async () => {
     render(<QuickStartCard onSubmit={vi.fn()} />)
     const filesChip = screen.getByTestId('attachment-chip:files') as HTMLButtonElement
-    expect(filesChip).toBeDisabled()
-    expect(filesChip).toHaveAttribute('title', LAUNCHPAD_COPY.quickStart.chips.filesTooltip)
+    // File attachments now ship enabled by default, so the chip is interactive.
+    expect(filesChip).not.toBeDisabled()
+    expect(filesChip).toHaveTextContent(LAUNCHPAD_COPY.quickStart.chips.filesActive)
     fireEvent.click(filesChip)
-    expect(screen.queryByTestId('attachment-popover')).not.toBeInTheDocument()
+    expect(await screen.findByTestId('quick-start-files-picker')).toBeInTheDocument()
   })
 
   // ── PR 3: centralized launchpad copy ─────────────────────────────────────
@@ -805,8 +809,9 @@ describe('QuickStartCard', () => {
       .toHaveTextContent(LAUNCHPAD_COPY.quickStart.chips.skill)
     expect(screen.getByTestId('attachment-chip:note'))
       .toHaveTextContent(LAUNCHPAD_COPY.quickStart.chips.note)
+    // Files ships enabled by default now → active label, not the "(soon)" placeholder.
     expect(screen.getByTestId('attachment-chip:files'))
-      .toHaveTextContent(LAUNCHPAD_COPY.quickStart.chips.files)
+      .toHaveTextContent(LAUNCHPAD_COPY.quickStart.chips.filesActive)
   })
 
   // ── Gap coverage: end-to-end and resilience ─────────────────────────────────
@@ -850,6 +855,15 @@ describe('QuickStartCard', () => {
     const notePicker = await screen.findByTestId('quick-start-note-picker')
     fireEvent.click(await within(notePicker).findByText('Team conventions'))
 
+    // Sanity (BEFORE submit): the selected-attachment chips above the input
+    // reflect all three. Submit clears the draft (skills/notes), so this must
+    // be asserted while the selections are still live.
+    const refs = screen.getByTestId('quick-start-refs')
+    expect(within(refs).getByText('Planner')).toBeInTheDocument()
+    expect(within(refs).getByText('Lint')).toBeInTheDocument()
+    expect(within(refs).getByText('Doc')).toBeInTheDocument()
+    expect(within(refs).getByText('Team conventions')).toBeInTheDocument()
+
     // Submit. All three attachment kinds plus the prompt must land on onSubmit.
     fireEvent.change(screen.getByTestId('quick-start-textarea'), { target: { value: 'do everything' } })
     fireEvent.click(screen.getByTestId('quick-start-submit'))
@@ -864,12 +878,6 @@ describe('QuickStartCard', () => {
       ]),
       attachedNotes: [{ id: 'n-conv', title: 'Team conventions' }],
     }))
-    // Sanity: the selected-attachment chips above the input reflect all three.
-    const refs = screen.getByTestId('quick-start-refs')
-    expect(within(refs).getByText('Planner')).toBeInTheDocument()
-    expect(within(refs).getByText('Lint')).toBeInTheDocument()
-    expect(within(refs).getByText('Doc')).toBeInTheDocument()
-    expect(within(refs).getByText('Team conventions')).toBeInTheDocument()
   })
 
   it('does NOT persist skill or note selections to ADVANCED_KEY (those are per-session only)', async () => {

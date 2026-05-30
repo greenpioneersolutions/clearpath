@@ -85,6 +85,12 @@ interface MessageLogEntry {
    * `.clear-path/uploads/<sessionId>/`; this never carries file content.
    */
   attachedFiles?: Array<{ id: string; name: string; relPath: string }>
+  /**
+   * Repo / additional directories the agent was granted access to for this turn
+   * (the `--add-dir` folders). Path + display name, frozen here so the in-chat
+   * "N folders" chip shows the scope the agent had.
+   */
+  attachedDirs?: Array<{ path: string; name: string }>
 }
 
 interface PersistedSession {
@@ -694,6 +700,11 @@ export class CLIManager {
       if (options.attachedFiles && options.attachedFiles.length > 0) {
         entry.attachedFiles = options.attachedFiles.map((f) => ({ id: f.id, name: f.name, relPath: f.relPath }))
       }
+      // Surface the repo / additional directories the agent was given access to
+      // (--add-dir folders) as a frozen chip, derived from additionalDirs.
+      if (options.additionalDirs && options.additionalDirs.length > 0) {
+        entry.attachedDirs = options.additionalDirs.map((p) => ({ path: p, name: p.split('/').filter(Boolean).pop() || p }))
+      }
       session.messageLog.push(entry)
     }
 
@@ -1030,6 +1041,12 @@ export class CLIManager {
       continue: session.turnCount > 0 ? true : session.originalOptions.continue,
       // Don't re-resume a named session on turn 2+ — let --continue handle it
       resume: session.turnCount === 0 ? session.originalOptions.resume : undefined,
+      // `--session-id` is a CREATE-with-this-id flag and, in the Claude adapter,
+      // takes priority over --continue. ClearPath spawns a fresh CLI per turn, so
+      // re-sending it on turn 2+ makes the CLI try to re-create the same session
+      // ("Session ID … is already in use"). Emit it only on turn 0; later turns
+      // fall through to --continue. (Copilot ignores sessionId, so this is a no-op there.)
+      sessionId: session.turnCount === 0 ? session.originalOptions.sessionId : undefined,
       // Token Coach Phase 4 — thread the routed model back into the spawn
       // options so the adapter emits `--model <routed>` for this turn. The
       // routing decision is per-turn — `session.originalOptions.model` stays

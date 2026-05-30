@@ -252,7 +252,7 @@ describe('templateHandlers', () => {
       const saved = mockSet.mock.calls[0][1][0]
       expect(saved.id).toBe('aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee')
       expect(saved.name).toBe('New Template')
-      expect(saved.variables).toEqual(['THING', 'STUFF'])
+      expect(saved.variables.map((v: { name: string }) => v.name)).toEqual(['THING', 'STUFF'])
       expect(saved.source).toBe('user')
       expect(saved.usageCount).toBe(0)
       expect((result as { id: string }).id).toBe('aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee')
@@ -302,7 +302,7 @@ describe('templateHandlers', () => {
       expect(saved.totalCost).toBe(5.0)
       expect(saved.lastUsedAt).toBe(9000)
       expect(saved.createdAt).toBe(1000)
-      expect(saved.variables).toEqual(['VAR'])
+      expect(saved.variables.map((v: { name: string }) => v.name)).toEqual(['VAR'])
     })
 
     it('defaults complexity to medium', () => {
@@ -325,7 +325,7 @@ describe('templateHandlers', () => {
       })
       const saved = mockSet.mock.calls[0][1][0]
       // Should be deduplicated
-      expect(saved.variables).toEqual(['FOO', 'BAR'])
+      expect(saved.variables.map((v: { name: string }) => v.name)).toEqual(['FOO', 'BAR'])
     })
   })
 
@@ -549,7 +549,7 @@ describe('templateHandlers', () => {
       expect(result.template).toBeDefined()
       expect(result.template.name).toBe('Imported')
       expect(result.template.category).toBe('Custom')
-      expect(result.template.variables).toEqual(['ACTION', 'TARGET'])
+      expect(result.template.variables.map((v: { name: string }) => v.name)).toEqual(['ACTION', 'TARGET'])
       expect(result.template.complexity).toBe('high')
       expect(result.template.source).toBe('user')
       expect(mockSet).toHaveBeenCalledWith('templates', expect.any(Array))

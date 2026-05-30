@@ -360,7 +360,7 @@ export default function SchedulePanel({ cli }: Props): JSX.Element {
                   className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-gray-200 placeholder-gray-600 font-mono focus:outline-none focus:border-indigo-500 resize-y" />
                 {selectedTemplate && selectedTemplate.variables.length > 0 && (
                   <p className="text-yellow-500/70 text-[11px] mt-1">
-                    This template has variables ({selectedTemplate.variables.map(v => `{{${v}}}`).join(', ')}). Fill them in above before saving.
+                    This template has variables ({selectedTemplate.variables.map(v => `{{${v.name}}}`).join(', ')}). Fill them in above before saving.
                   </p>
                 )}
               </div>

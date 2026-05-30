@@ -73,6 +73,12 @@ interface Props {
 
   onTemplateSelect?: (template: PromptTemplate) => void
 
+  // Mid-session file attach (Slice 29 parity). Optional — when provided and the
+  // showFileAttachments flag is on, the "+" picker grows a Files tab.
+  attachedFiles?: { id: string; name: string; relPath: string }[]
+  onAttachFiles?: () => void
+  onRemoveAttachedFile?: (id: string) => void
+
   // Model chip
   /** Currently active model for the session. Falls back to default when undefined. */
   currentModel?: string
@@ -149,6 +155,9 @@ export default function ChatInputArea(props: Props): JSX.Element {
     onRemoveContextSource,
     onClearContextSources,
     onTemplateSelect,
+    attachedFiles,
+    onAttachFiles,
+    onRemoveAttachedFile,
     currentModel,
     onModelChange,
     lastShapedBreakdown,
@@ -487,6 +496,9 @@ export default function ChatInputArea(props: Props): JSX.Element {
               onToggleContextSource={onToggleContextSource}
               onRemoveContextSource={onRemoveContextSource}
               onTemplateSelect={onTemplateSelect}
+              attachedFiles={attachedFiles}
+              onAttachFiles={onAttachFiles}
+              onRemoveAttachedFile={onRemoveAttachedFile}
             />
           </div>
 

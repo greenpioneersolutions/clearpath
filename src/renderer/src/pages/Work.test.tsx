@@ -1397,8 +1397,8 @@ describe('Work', () => {
       if (channel === 'templates:list') return Promise.resolve([{
         id: 'tmpl-with-vars',
         name: 'Template With Vars',
-        body: 'Review {{feature}} for {{team}}',
-        variables: ['feature', 'team'],
+        body: 'Review {{FEATURE}} for {{TEAM}}',
+        variables: [{ name: 'FEATURE', type: 'text' }, { name: 'TEAM', type: 'text' }],
         category: 'development',
         tags: [],
         usageCount: 0,

@@ -34,7 +34,7 @@ describe('TemplateEditor', () => {
   it('renders "Edit Template" heading when template is provided', () => {
     const template = {
       id: 't1', name: 'Existing', category: 'Bug Fix', description: 'Desc',
-      body: 'Fix {{BUG}}', complexity: 'medium' as const, variables: ['BUG'],
+      body: 'Fix {{BUG}}', complexity: 'medium' as const, variables: [{ name: 'BUG', type: 'text' as const }],
       source: 'user' as const, usageCount: 0, totalCost: 0, createdAt: Date.now(),
     }
     render(<TemplateEditor {...defaultProps} template={template} />)
@@ -44,7 +44,7 @@ describe('TemplateEditor', () => {
   it('populates form fields from existing template', () => {
     const template = {
       id: 't1', name: 'My Template', category: 'Testing', description: 'Test desc',
-      body: 'Run tests on {{MODULE}}', complexity: 'high' as const, variables: ['MODULE'],
+      body: 'Run tests on {{MODULE}}', complexity: 'high' as const, variables: [{ name: 'MODULE', type: 'text' as const }],
       source: 'user' as const, usageCount: 0, totalCost: 0, createdAt: Date.now(),
       recommendedModel: 'sonnet',
     }

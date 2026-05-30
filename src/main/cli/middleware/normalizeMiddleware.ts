@@ -31,6 +31,7 @@ export const normalizeMiddleware: Middleware = (ctx) => {
     const normalizedUser    = ctx.slices.userText        !== undefined ? normalize(ctx.slices.userText)        : ctx.slices.userText
     const normalizedAgent   = ctx.slices.agentPrompt     !== undefined ? normalize(ctx.slices.agentPrompt)     : ctx.slices.agentPrompt
     const normalizedNotes   = ctx.slices.notesFramed     !== undefined ? normalize(ctx.slices.notesFramed)     : ctx.slices.notesFramed
+    const normalizedFiles   = ctx.slices.filesFramed     !== undefined ? normalize(ctx.slices.filesFramed)     : ctx.slices.filesFramed
     const normalizedCtxSrc  = ctx.slices.contextSources  !== undefined ? normalize(ctx.slices.contextSources)  : ctx.slices.contextSources
     const normalizedFleet   = ctx.slices.fleetPrefix     !== undefined ? normalize(ctx.slices.fleetPrefix)     : ctx.slices.fleetPrefix
     nextSlices = {
@@ -38,6 +39,7 @@ export const normalizeMiddleware: Middleware = (ctx) => {
       userText: normalizedUser as string,
       ...(normalizedAgent  !== undefined ? { agentPrompt:    normalizedAgent  } : {}),
       ...(normalizedNotes  !== undefined ? { notesFramed:    normalizedNotes  } : {}),
+      ...(normalizedFiles  !== undefined ? { filesFramed:    normalizedFiles  } : {}),
       ...(normalizedCtxSrc !== undefined ? { contextSources: normalizedCtxSrc } : {}),
       ...(normalizedFleet  !== undefined ? { fleetPrefix:    normalizedFleet  } : {}),
     }

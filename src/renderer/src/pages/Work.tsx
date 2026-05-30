@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useLocation, useSearchParams, useNavigate } from 'react-router-dom'
 import type { ParsedOutput, SessionInfo, HistoricalSession } from '../types/ipc'
-import type { PromptTemplate } from '../types/template'
+import type { PromptTemplate, HydratedTemplate } from '../types/template'
 import type { BackendId } from '../../../shared/backends'
 import { providerOf, migrateLegacyBackendId, pickReadyBackend } from '../../../shared/backends'
 import { useAuthStatus, readyBackendsOf } from '../hooks/useAuthStatus'
@@ -86,6 +86,10 @@ export default function Work(): JSX.Element {
   const [showSessionManager, setShowSessionManager] = useState(false)
   const [viewingStoppedSession, setViewingStoppedSession] = useState(false)
   const [selectedNoteIds, setSelectedNoteIds] = useState<Set<string>>(new Set())
+  // Mid-session file attachments, staged into the active session's uploads dir
+  // and framed onto the NEXT send. Keyed by sessionId so switching sessions
+  // never leaks one chat's pending files into another.
+  const [pendingFilesBySession, setPendingFilesBySession] = useState<Record<string, Array<{ id: string; name: string; relPath: string }>>>({})
   const [selectedContextSources, setSelectedContextSources] = useState<import('../types/contextSources').SelectedContextSource[]>([])
   const [showSaveNoteModal, setShowSaveNoteModal] = useState<string | null>(null)
   // Token Coach Phase 4 — per-turn routing override. The ModelRoutingChip
@@ -198,7 +202,7 @@ export default function Work(): JSX.Element {
 
       // 2. Load persisted sessions from disk (survive app restart)
       const persisted = await window.electronAPI.invoke('cli:get-persisted-sessions') as
-        Array<{ sessionId: string; cli: BackendId; name?: string; firstPrompt?: string; startedAt: number; endedAt?: number; messageLog: Array<{ type: string; content: string; metadata?: unknown; sender?: string; timestamp?: number; attachedNotes?: Array<{ id: string; title: string }>; attachedAgent?: { id: string; name: string }; attachedSkills?: Array<{ id: string; name: string }>; attachedFiles?: Array<{ id: string; name: string; relPath: string }> }> }>
+        Array<{ sessionId: string; cli: BackendId; name?: string; firstPrompt?: string; startedAt: number; endedAt?: number; messageLog: Array<{ type: string; content: string; metadata?: unknown; sender?: string; timestamp?: number; attachedNotes?: Array<{ id: string; title: string }>; attachedAgent?: { id: string; name: string }; attachedSkills?: Array<{ id: string; name: string }>; attachedFiles?: Array<{ id: string; name: string; relPath: string }>; attachedDirs?: Array<{ path: string; name: string }> }> }>
 
       // Build a set of active session IDs so we don't duplicate
       const activeIds = new Set(activeSessions.map((s) => s.sessionId))
@@ -207,7 +211,7 @@ export default function Work(): JSX.Element {
       const logs = await Promise.all(
         activeSessions.map(async (info) => {
           const log = await window.electronAPI.invoke('cli:get-message-log', { sessionId: info.sessionId }) as
-            Array<{ type: string; content: string; metadata?: unknown; sender?: string; timestamp?: number; attachedNotes?: Array<{ id: string; title: string }>; attachedAgent?: { id: string; name: string }; attachedSkills?: Array<{ id: string; name: string }>; attachedFiles?: Array<{ id: string; name: string; relPath: string }> }>
+            Array<{ type: string; content: string; metadata?: unknown; sender?: string; timestamp?: number; attachedNotes?: Array<{ id: string; title: string }>; attachedAgent?: { id: string; name: string }; attachedSkills?: Array<{ id: string; name: string }>; attachedFiles?: Array<{ id: string; name: string; relPath: string }>; attachedDirs?: Array<{ path: string; name: string }> }>
           return { sessionId: info.sessionId, log }
         })
       )
@@ -234,6 +238,7 @@ export default function Work(): JSX.Element {
                 attachedSkills: entry.attachedSkills,
                 attachedNotes: entry.attachedNotes,
                 attachedFiles: entry.attachedFiles,
+                attachedDirs: entry.attachedDirs,
               }
             })
             if (messages.length === 0) {
@@ -262,6 +267,7 @@ export default function Work(): JSX.Element {
             attachedSkills: entry.attachedSkills,
             attachedNotes: entry.attachedNotes,
             attachedFiles: entry.attachedFiles,
+                attachedDirs: entry.attachedDirs,
           }))
           if (messages.length === 0) continue // Skip empty sessions
           const info: SessionInfo = {
@@ -426,6 +432,8 @@ export default function Work(): JSX.Element {
     attachedFiles?: Array<{ id: string; name: string; relPath: string }>
     /** Caller-provided session id — lets files be staged before the session starts. */
     sessionId?: string
+    /** Per-session CLI toggle overrides, keyed by SessionOptions boolean field. */
+    sessionFlags?: Record<string, boolean>
     /** Token Coach Phase 1: per-slice breakdown for accurate cost attribution. */
     promptSlices?: import('../types/ipc').SessionOptions['promptSlices']
     /** Explicit "user picked (none)" — disables server-side default-agent fallback. */
@@ -435,6 +443,9 @@ export default function Work(): JSX.Element {
     setStartError(null)
     const startResult = (await window.electronAPI.invoke('cli:start-session', {
       cli: opts.cli, mode: 'interactive', name: opts.name, workingDirectory: opts.workingDirectory, prompt: opts.initialPrompt, displayPrompt: opts.displayPrompt, agent: opts.agent, model: opts.model, permissionMode: opts.permissionMode, additionalDirs: opts.additionalDirs, attachedNotes: opts.attachedNotes, attachedFiles: opts.attachedFiles, sessionId: opts.sessionId, promptSlices: opts.promptSlices, noAgent: opts.noAgent,
+      // Per-session CLI toggle overrides (experimental/verbose/etc.) as explicit
+      // typed fields so they beat the stored global defaults in the main-process merge.
+      ...(opts.sessionFlags ?? {}),
     })) as
       | { sessionId: string; agentApplied?: { id: string; name: string } }
       | { error: string; code: 'CLI_NOT_READY' }
@@ -465,6 +476,9 @@ export default function Work(): JSX.Element {
         attachedSkills: opts.attachedSkills,
         attachedNotes: opts.attachedNotes,
         attachedFiles: opts.attachedFiles,
+        attachedDirs: opts.additionalDirs && opts.additionalDirs.length > 0
+          ? opts.additionalDirs.map((p) => ({ path: p, name: p.split('/').filter(Boolean).pop() || p }))
+          : undefined,
       })
     }
 
@@ -764,6 +778,25 @@ export default function Work(): JSX.Element {
         }
       }
 
+      // Mid-session file attachments — frame by PATH (never inline content),
+      // same reference bundle the launchpad uses. Files were already staged
+      // into the session's uploads dir by handleAttachFiles.
+      const capturedFiles = pendingFilesBySession[selectedId] ?? []
+      if (capturedFiles.length > 0) {
+        try {
+          const workingDirectory = await resolveWorkingDirectory()
+          const bundle = await window.electronAPI.invoke('files:get-bundle-for-prompt', {
+            workingDirectory, sessionId: selectedId, ids: capturedFiles.map((f) => f.id),
+          }) as { framedPrompt: string; fileCount: number }
+          if (bundle.framedPrompt) {
+            actualInput = `${bundle.framedPrompt}\n\n${actualInput}`
+            slices.filesFramed = bundle.framedPrompt
+          }
+        } catch {
+          // Bundle fetch failed — send without the framing
+        }
+      }
+
       // Show only the user's original message in the chat (not the prepended
       // context). The "Sent with..." annotation surfaces what context was
       // attached. attachedNotes is what powers the in-chat chip.
@@ -772,10 +805,12 @@ export default function Work(): JSX.Element {
         const u = new Map(prev)
         const noteCount = capturedNotes.length
         const ctxCount = selectedContextSources.length
+        const fileCount = capturedFiles.length
         const parts: string[] = []
         if (quickConfig.agent) parts.push(`Agent: ${quickConfig.agent}`)
         if (quickConfig.skill) parts.push(`Skill: ${quickConfig.skill}`)
         if (noteCount > 0) parts.push(`${noteCount} note${noteCount === 1 ? '' : 's'}`)
+        if (fileCount > 0) parts.push(`${fileCount} file${fileCount === 1 ? '' : 's'}`)
         if (ctxCount > 0) parts.push(`${ctxCount} source${ctxCount === 1 ? '' : 's'}`)
         if (quickConfig.fleet) parts.push('Parallel Mode')
         const contextAnnotation = parts.length > 0 ? `Sent with ${parts.join(' + ')}` : undefined
@@ -790,6 +825,7 @@ export default function Work(): JSX.Element {
               timestamp: Date.now(),
               contextAnnotation,
               attachedNotes: capturedNotes.length > 0 ? capturedNotes : undefined,
+              attachedFiles: capturedFiles.length > 0 ? capturedFiles : undefined,
             },
           ],
           msgIdCounter: s.msgIdCounter + 1,
@@ -802,14 +838,19 @@ export default function Work(): JSX.Element {
         sessionId: selectedId,
         input: actualInput,
         attachedNotes: capturedNotes.length > 0 ? capturedNotes : undefined,
+        attachedFiles: capturedFiles.length > 0 ? capturedFiles : undefined,
         promptSlices: slices,
         // Token Coach Phase 4 — per-turn override. Cleared immediately after
         // dispatch so the next turn re-routes fresh.
         userOverrideModel: routingOverride ?? undefined,
       })
+      // Clear this session's pending files now that they've been framed + sent.
+      if (capturedFiles.length > 0) {
+        setPendingFilesBySession((prev) => ({ ...prev, [selectedId]: [] }))
+      }
       if (routingOverride) setRoutingOverride(null)
     })()
-  }, [selectedId, sessions, selectedNoteIds, selectedContextSources, quickConfig, routingOverride])
+  }, [selectedId, sessions, selectedNoteIds, selectedContextSources, quickConfig, routingOverride, pendingFilesBySession, resolveWorkingDirectory])
 
   /** Append a single status bubble to the active session's message log. */
   const appendStatus = useCallback((sessionId: string, content: string) => {
@@ -923,10 +964,59 @@ export default function Work(): JSX.Element {
     }
   }, [handleSend])
 
-  const handleTemplateSend = useCallback((hydratedPrompt: string) => {
-    handleSend(hydratedPrompt)
+  const handleTemplateSend = useCallback((result: HydratedTemplate) => {
+    const { patch } = result
+    // Apply the subset of the patch a live process can honor. Agent /
+    // permission mode are launch-only and are dropped by TemplateForm in
+    // `session` context, so they never reach here.
+    if (patch.model) handleModelChange(patch.model)
+    if (patch.attachedNotes?.length) {
+      setSelectedNoteIds((prev) => {
+        const next = new Set(prev)
+        for (const id of patch.attachedNotes ?? []) next.add(id)
+        return next
+      })
+    }
+    if (patch.attachedSkills?.length) {
+      // Mid-session skill is single-select; take the first.
+      setQuickConfig((c) => ({ ...c, skill: patch.attachedSkills![0].name }))
+    }
+    // patch.pickedFiles mid-session staging is handled by the compose "+" file
+    // attach flow (Phase 6); template-picked files surface there.
+    handleSend(result.prompt)
     setActiveTemplate(null)
-  }, [handleSend])
+  }, [handleSend, handleModelChange])
+
+  // Stage files into the active session's uploads dir for the next turn.
+  const handleAttachFiles = useCallback(async () => {
+    if (!selectedId) return
+    const workingDirectory = await resolveWorkingDirectory()
+    const res = await window.electronAPI.invoke('files:pick-and-stage', {
+      workingDirectory,
+      sessionId: selectedId,
+    }) as { canceled?: boolean; attachments: Array<{ id: string; name: string; relPath: string }>; errors: string[] }
+    if (res.canceled) return
+    if (res.attachments.length > 0) {
+      setPendingFilesBySession((prev) => ({
+        ...prev,
+        [selectedId]: [
+          ...(prev[selectedId] ?? []),
+          ...res.attachments
+            .filter((a) => !(prev[selectedId] ?? []).some((x) => x.id === a.id))
+            .map((a) => ({ id: a.id, name: a.name, relPath: a.relPath })),
+        ],
+      }))
+    }
+    if (res.errors?.length) appendStatus(selectedId, `Couldn't attach: ${res.errors.join('; ')}`)
+  }, [selectedId, resolveWorkingDirectory, appendStatus])
+
+  const handleRemovePendingFile = useCallback((id: string) => {
+    if (!selectedId) return
+    setPendingFilesBySession((prev) => ({
+      ...prev,
+      [selectedId]: (prev[selectedId] ?? []).filter((f) => f.id !== id),
+    }))
+  }, [selectedId])
 
   const handleModeToggle = useCallback(() => {
     if (!selectedId) return
@@ -1121,7 +1211,9 @@ export default function Work(): JSX.Element {
                       <div className="max-w-2xl mx-auto bg-white rounded-xl border border-gray-200 p-5 shadow-lg">
                         <TemplateForm
                           template={activeTemplate}
-                          onSend={handleTemplateSend}
+                          cli={selectedSession.info.cli}
+                          context="session"
+                          onSubmit={handleTemplateSend}
                           onCancel={() => setActiveTemplate(null)}
                         />
                       </div>
@@ -1177,6 +1269,9 @@ export default function Work(): JSX.Element {
                     }
                     onClearContextSources={() => setSelectedContextSources([])}
                     onTemplateSelect={handleTemplateSelect}
+                    attachedFiles={pendingFilesBySession[selectedSession.info.sessionId] ?? []}
+                    onAttachFiles={() => { void handleAttachFiles() }}
+                    onRemoveAttachedFile={handleRemovePendingFile}
                     currentModel={selectedSession.currentModel}
                     onModelChange={handleModelChange}
                     priorSessionTokens={sessionTokens.get(selectedSession.info.sessionId) ?? 0}
@@ -1241,21 +1336,27 @@ export default function Work(): JSX.Element {
             )}
             <WorkLaunchpad
               defaultCli={lastUsedCli}
-              onQuickStart={({ prompt, displayPrompt, cli, model, agent, permissionMode, additionalDirs, attachedAgent, attachedSkills, attachedNotes, pickedFiles, noAgent }) => {
+              onQuickStart={({ prompt, displayPrompt, cli, model, agent, permissionMode, additionalDirs, attachedAgent, attachedSkills, attachedNotes, pickedFiles, sessionFlags, noAgent }) => {
                 const shown = displayPrompt ?? prompt
                 void (async () => {
                   // Anchor the session to the user's code so the AI can read it.
-                  const workingDirectory = await resolveWorkingDirectory()
+                  let workingDirectory = await resolveWorkingDirectory()
 
-                  // Stage any picked files INTO the resolved workspace dir, keyed
-                  // by a pre-generated session id so their paths line up with the
+                  // Stage any picked files INTO the session's working dir, keyed by
+                  // a pre-generated session id so their paths line up with the
                   // session we're about to start. Then frame them by path (the AI
                   // reads the real files with its own tools — content never inlined).
                   let initialPrompt = prompt
                   let attachedFiles: Array<{ id: string; name: string; relPath: string }> | undefined
                   let filesSessionId: string | undefined
                   let filesSlice: string | undefined
-                  if (pickedFiles && pickedFiles.length > 0 && workingDirectory) {
+                  if (pickedFiles && pickedFiles.length > 0) {
+                    // Guarantee a concrete, writable cwd even when no workspace is
+                    // configured — otherwise the upload was silently dropped AND
+                    // the CLI spawned in a read-only dir. The SAME dir is used for
+                    // staging and the spawn below so relative paths always resolve.
+                    const base = await window.electronAPI.invoke('files:ensure-base-dir', { preferred: workingDirectory }) as { dir: string }
+                    workingDirectory = base.dir
                     filesSessionId = crypto.randomUUID()
                     const staged = await window.electronAPI.invoke('files:stage-paths', {
                       workingDirectory, sessionId: filesSessionId,
@@ -1270,6 +1371,9 @@ export default function Work(): JSX.Element {
                         initialPrompt = `${bundle.framedPrompt}\n\nUser request:\n${prompt}`
                         filesSlice = bundle.framedPrompt
                       }
+                    } else if (staged.errors.length > 0) {
+                      // Never fail silently — tell the user why the file didn't attach.
+                      setStartError(`Couldn't attach your file${pickedFiles.length === 1 ? '' : 's'}: ${staged.errors.join('; ')}`)
                     }
                   }
 
@@ -1285,6 +1389,7 @@ export default function Work(): JSX.Element {
                     attachedFiles,
                     sessionId: filesSessionId,
                     promptSlices: filesSlice ? { userText: prompt, filesFramed: filesSlice } : undefined,
+                    sessionFlags,
                     noAgent,
                   })
                 })()

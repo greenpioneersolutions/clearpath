@@ -14,11 +14,11 @@ import type { PromptSlices } from '../../../shared/tokenization/types'
  *
  * Canonical order — most-stable to least-stable:
  *
- *     [fleetPrefix] → [agentPrompt] → [notesFramed] → [contextSources] → [userText]
+ *     [fleetPrefix] → [agentPrompt] → [notesFramed] → [filesFramed] → [contextSources] → [userText]
  *
  * Rationale:
  *   - userText changes every turn (the user types something new) → goes LAST.
- *   - Notes change less often than the user prompt.
+ *   - Notes / file references change less often than the user prompt.
  *   - Agent prompt is constant for the session.
  *   - Fleet prefix is constant when present.
  *
@@ -60,10 +60,11 @@ function assembleFromSlices(slices: PromptSlices): { prompt: string; userTextByt
   const parts: string[] = []
 
   // ORDER MATTERS — do not reorder these without updating the doc comment + tests.
-  // fleetPrefix → agentPrompt → notesFramed → contextSources → userText
+  // fleetPrefix → agentPrompt → notesFramed → filesFramed → contextSources → userText
   if (slices.fleetPrefix    && slices.fleetPrefix.length    > 0) parts.push(slices.fleetPrefix)
   if (slices.agentPrompt    && slices.agentPrompt.length    > 0) parts.push(slices.agentPrompt)
   if (slices.notesFramed    && slices.notesFramed.length    > 0) parts.push(slices.notesFramed)
+  if (slices.filesFramed    && slices.filesFramed.length    > 0) parts.push(slices.filesFramed)
   if (slices.contextSources && slices.contextSources.length > 0) parts.push(slices.contextSources)
 
   // Everything pushed so far is the STABLE prefix. The byte offset where

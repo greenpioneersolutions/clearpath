@@ -29,7 +29,13 @@ interface SkillItem {
   cli?: 'copilot' | 'claude' | 'both'
 }
 
-export type ContextPickerTab = 'agents' | 'notes' | 'skills' | 'templates' | 'files'
+export type ContextPickerTab = 'agents' | 'notes' | 'skills' | 'templates' | 'files' | 'attach'
+
+interface AttachedFile {
+  id: string
+  name: string
+  relPath: string
+}
 
 interface Props {
   cli: BackendId
@@ -52,6 +58,13 @@ interface Props {
 
   // Optional template select (fill-in template with variables → opens TemplateForm)
   onTemplateSelect?: (template: PromptTemplate) => void
+
+  // Optional mid-session file attach (Slice 29 parity). When provided AND the
+  // showFileAttachments flag is on, an "Files" tab lets the user stage files
+  // into the active session's uploads dir for the next turn.
+  attachedFiles?: AttachedFile[]
+  onAttachFiles?: () => void
+  onRemoveAttachedFile?: (id: string) => void
 
   /** Initial tab to land on. */
   defaultTab?: ContextPickerTab
@@ -88,9 +101,14 @@ export default function ContextPicker({
   onToggleContextSource,
   onRemoveContextSource,
   onTemplateSelect,
+  attachedFiles,
+  onAttachFiles,
+  onRemoveAttachedFile,
   defaultTab = 'agents',
 }: Props): JSX.Element | null {
   const showNotes = useFlag('showNotes')
+  const showFileAttachments = useFlag('showFileAttachments')
+  const showAttachTab = showFileAttachments && !!onAttachFiles
   // When showNotes is off, the Notes tab cannot be the initial tab — fall
   // back to Agents so deep-linked callers don't land on a hidden tab.
   const initialTab: ContextPickerTab = !showNotes && defaultTab === 'notes' ? 'agents' : defaultTab
@@ -198,6 +216,7 @@ export default function ContextPicker({
             ...(showNotes ? [['notes', 'Notes']] as const : []),
             ['skills', 'Skills'],
             ['templates', 'Templates'],
+            ...(showAttachTab ? [['attach', 'Files']] as const : []),
             ['files', 'Sources'],
           ] as const
         ).map(([key, label]) => (
@@ -221,8 +240,8 @@ export default function ContextPicker({
         ))}
       </div>
 
-      {/* Search bar (not shown on Files — has its own UI) */}
-      {tab !== 'files' && (
+      {/* Search bar (not shown on Sources / Files attach — they have their own UI) */}
+      {tab !== 'files' && tab !== 'attach' && (
         <div className="px-2 pt-2">
           <input
             type="text"
@@ -279,6 +298,14 @@ export default function ContextPicker({
               onClose()
               onTemplateSelect?.(t)
             }}
+          />
+        )}
+
+        {tab === 'attach' && (
+          <AttachFilesList
+            files={attachedFiles ?? []}
+            onAttach={() => onAttachFiles?.()}
+            onRemove={(id) => onRemoveAttachedFile?.(id)}
           />
         )}
 
@@ -475,6 +502,52 @@ function TemplatesList({
           {t.category && <span className="text-gray-500 ml-auto">{t.category}</span>}
         </button>
       ))}
+    </div>
+  )
+}
+
+// ── Files (real attachments staged into the session) ──────────────────────────
+
+function AttachFilesList({
+  files,
+  onAttach,
+  onRemove,
+}: {
+  files: AttachedFile[]
+  onAttach: () => void
+  onRemove: (id: string) => void
+}): JSX.Element {
+  return (
+    <div className="p-2">
+      <p className="px-1 pb-2 text-[11px] text-gray-500">
+        Attach files for the AI to read, edit, or run. They're copied into
+        {' '}<code>.clear-path/uploads/</code> in your project so the CLI can reach them.
+      </p>
+      {files.length > 0 && (
+        <ul className="mb-2 space-y-1 max-h-48 overflow-y-auto">
+          {files.map((f) => (
+            <li key={f.id} className="flex items-center gap-2 px-2 py-1 rounded-md bg-gray-800/50 text-xs text-gray-200">
+              <span className="flex-1 truncate" title={f.relPath}>{f.name}</span>
+              <button
+                type="button"
+                aria-label={`Remove ${f.name}`}
+                onClick={() => onRemove(f.id)}
+                className="text-gray-500 hover:text-red-400 transition-colors"
+              >
+                ✕
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <button
+        type="button"
+        data-testid="context-picker-attach-files"
+        onClick={onAttach}
+        className="w-full px-2.5 py-1.5 rounded-md text-xs text-gray-200 border border-dashed border-gray-700 hover:bg-gray-800 transition-colors"
+      >
+        + Add files
+      </button>
     </div>
   )
 }

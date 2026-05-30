@@ -50,7 +50,7 @@ export function storeSecret(key: string, value: string): void {
 export function retrieveSecret(key: string): string {
   const stored = store.get(`credentials.${key}` as keyof CredentialStoreSchema) as string | undefined
   if (!stored) {
-    log.warn('[credentialStore] retrieveSecret("%s"): No value found in store. Keys present: [%s]',
+    log.debug('[credentialStore] retrieveSecret("%s"): No value found in store. Keys present: [%s]',
       key, Object.keys(store.get('credentials') ?? {}).join(', '))
     return ''
   }
