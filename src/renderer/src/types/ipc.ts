@@ -180,6 +180,16 @@ export interface SessionOptions {
   attachedAgent?: { id: string; name: string }
   /** Skills the user tagged this chat with. Frozen for chip display. */
   attachedSkills?: Array<{ id: string; name: string }>
+  /**
+   * Files the user attached when starting this session. Name + workspace-relative
+   * path are frozen with the user message for the in-chat "N files" chip. The
+   * bytes live under `.clear-path/uploads/<sessionId>/`; this carries no content.
+   */
+  attachedFiles?: Array<{ id: string; name: string; relPath: string }>
+  // NOTE: a caller-provided session id reuses the existing `sessionId` field
+  // (declared above, mapped to `--session-id UUID`). The launchpad pre-generates
+  // it so files can be staged into `.clear-path/uploads/<sessionId>/` *before*
+  // the session starts (the upload dir is keyed by session id).
 
   /**
    * Per-slice prompt breakdown for accurate cost attribution. Captured by the

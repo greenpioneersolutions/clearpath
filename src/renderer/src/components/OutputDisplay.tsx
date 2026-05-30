@@ -12,7 +12,7 @@ export interface OutputMessage {
   timestamp?: number  // ms since epoch — when the message was added
   /**
    * Optional inline annotation rendered below a user message — e.g.
-   * "Sent with Prompt: Coach + 2 notes attached". Used to make injected
+   * "Sent with Agent: Coach + 2 notes attached". Used to make injected
    * context visible to the user.
    */
   contextAnnotation?: string
@@ -28,6 +28,12 @@ export interface OutputMessage {
   attachedAgent?: { id: string; name: string }
   /** Skills the user tagged this chat with. Names only — no body content. */
   attachedSkills?: Array<{ id: string; name: string }>
+  /**
+   * Files attached when this user message was sent. Name + workspace-relative
+   * path are frozen here; file CONTENT is never persisted on the message (the
+   * chip only ever knows the name). Survives file deletion + flag toggling.
+   */
+  attachedFiles?: Array<{ id: string; name: string; relPath: string }>
   /**
    * Id of the CLI turn this message belongs to. Propagated from
    * `ParsedOutput.turnId` when a `cli:output` event is ingested. Used by
@@ -183,8 +189,8 @@ export default function OutputDisplay({ messages, onPermissionResponse, onSaveAs
                   : null
                 usageIdx++
                 return badge
-                  ? <div key={`turn-${first.id}`}>{badge}<UserBubble content={first.output.content} timestamp={first.timestamp} contextAnnotation={first.contextAnnotation} attachedNotes={first.attachedNotes} attachedAgent={first.attachedAgent} attachedSkills={first.attachedSkills} /></div>
-                  : <UserBubble key={first.id} content={first.output.content} timestamp={first.timestamp} contextAnnotation={first.contextAnnotation} attachedNotes={first.attachedNotes} attachedAgent={first.attachedAgent} attachedSkills={first.attachedSkills} />
+                  ? <div key={`turn-${first.id}`}>{badge}<UserBubble content={first.output.content} timestamp={first.timestamp} contextAnnotation={first.contextAnnotation} attachedNotes={first.attachedNotes} attachedAgent={first.attachedAgent} attachedSkills={first.attachedSkills} attachedFiles={first.attachedFiles} /></div>
+                  : <UserBubble key={first.id} content={first.output.content} timestamp={first.timestamp} contextAnnotation={first.contextAnnotation} attachedNotes={first.attachedNotes} attachedAgent={first.attachedAgent} attachedSkills={first.attachedSkills} attachedFiles={first.attachedFiles} />
               }
 
               // Grouped AI text messages (only groups streaming fragments from same response)
@@ -229,21 +235,24 @@ function formatTime(ts?: number): string {
   return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
 }
 
-function UserBubble({ content, timestamp, contextAnnotation, attachedNotes, attachedAgent, attachedSkills }: {
+function UserBubble({ content, timestamp, contextAnnotation, attachedNotes, attachedAgent, attachedSkills, attachedFiles }: {
   content: string
   timestamp?: number
   contextAnnotation?: string
   attachedNotes?: Array<{ id: string; title: string }>
   attachedAgent?: { id: string; name: string }
   attachedSkills?: Array<{ id: string; name: string }>
+  attachedFiles?: Array<{ id: string; name: string; relPath: string }>
 }): JSX.Element {
   // Notes flag gates RENDERING only — the message metadata is always
   // preserved. Toggling showNotes off then on restores chips on existing
-  // transcripts.
+  // transcripts. Same contract for the files flag.
   const showNotes = useFlag('showNotes')
+  const showFiles = useFlag('showFileAttachments')
   const notesToShow = showNotes && attachedNotes && attachedNotes.length > 0 ? attachedNotes : null
   const skillsToShow = attachedSkills && attachedSkills.length > 0 ? attachedSkills : null
-  const hasAnyChip = !!(attachedAgent || skillsToShow || notesToShow)
+  const filesToShow = showFiles && attachedFiles && attachedFiles.length > 0 ? attachedFiles : null
+  const hasAnyChip = !!(attachedAgent || skillsToShow || notesToShow || filesToShow)
 
   return (
     <div className="flex flex-col items-end animate-fadeIn">
@@ -273,6 +282,7 @@ function UserBubble({ content, timestamp, contextAnnotation, attachedNotes, atta
           )}
           {skillsToShow && <AttachedListChip kind="skill" items={skillsToShow.map((s) => s.name)} />}
           {notesToShow && <AttachedListChip kind="note" items={notesToShow.map((n) => n.title)} />}
+          {filesToShow && <AttachedListChip kind="file" items={filesToShow.map((f) => f.name)} />}
         </div>
       )}
       {contextAnnotation && (
@@ -288,9 +298,11 @@ function UserBubble({ content, timestamp, contextAnnotation, attachedNotes, atta
   )
 }
 
-function AttachedListChip({ kind, items }: { kind: 'note' | 'skill'; items: string[] }): JSX.Element {
+function AttachedListChip({ kind, items }: { kind: 'note' | 'skill' | 'file'; items: string[] }): JSX.Element {
   // No "expand" affordance — body text was never persisted; this chip is the
-  // entire audit-trail surface for attached context. Title/name only.
+  // entire audit-trail surface for attached context. Title/name only. For files
+  // this is name-only too: the file CONTENT never reaches the DOM (we inject
+  // paths, not bytes), so there is nothing to leak here.
   const MAX = 2
   const shown = items.slice(0, MAX)
   const overflow = items.length - shown.length
@@ -298,9 +310,13 @@ function AttachedListChip({ kind, items }: { kind: 'note' | 'skill'; items: stri
   const summary = overflow > 0 ? `${shown.join(' · ')} · +${overflow}` : shown.join(' · ')
   const styles = kind === 'note'
     ? { bg: 'bg-teal-900/30', border: 'border-teal-700/50', text: 'text-teal-200', label: 'text-teal-400' }
+    : kind === 'file'
+    ? { bg: 'bg-gray-800/40', border: 'border-gray-600/50', text: 'text-gray-200', label: 'text-gray-400' }
     : { bg: 'bg-indigo-900/30', border: 'border-indigo-700/50', text: 'text-indigo-200', label: 'text-indigo-400' }
   const labelText = kind === 'note'
     ? `${items.length} note${items.length === 1 ? '' : 's'}`
+    : kind === 'file'
+    ? `${items.length} file${items.length === 1 ? '' : 's'}`
     : `${items.length} skill${items.length === 1 ? '' : 's'}`
   return (
     <span
@@ -344,7 +360,7 @@ function AIBubble({ content, onSaveAsNote, timestamp }: { content: string; onSav
               <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]}>{content}</ReactMarkdown>
             </div>
           </div>
-          {/* Save as memory button — appears on hover */}
+          {/* Save as note button — appears on hover */}
           {onSaveAsNote && (
             <button
               onClick={handleSave}
@@ -353,7 +369,7 @@ function AIBubble({ content, onSaveAsNote, timestamp }: { content: string; onSav
                   ? 'bg-green-900/80 text-green-300 opacity-100'
                   : 'bg-gray-800/80 text-gray-500 hover:text-gray-300 hover:bg-gray-700/80 opacity-0 group-hover/ai:opacity-100'
               }`}
-              title="Save this response as a memory note"
+              title="Save this response as a note"
             >
               {saved ? (
                 <>
@@ -363,7 +379,7 @@ function AIBubble({ content, onSaveAsNote, timestamp }: { content: string; onSav
               ) : (
                 <>
                   <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" /></svg>
-                  Save as Memory
+                  Save as Note
                 </>
               )}
             </button>

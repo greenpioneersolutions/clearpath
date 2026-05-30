@@ -17,6 +17,8 @@ export interface PromptSlices {
   agentPrompt?: string
   /** Notes framing block produced by `notes:get-bundle-for-prompt`. */
   notesFramed?: string
+  /** File-attachment reference block produced by `files:get-bundle-for-prompt`. */
+  filesFramed?: string
   /** Concatenated context-source blocks (`context-sources:fetch-multi`). */
   contextSources?: string
   /** Fleet-mode instruction prefix. */

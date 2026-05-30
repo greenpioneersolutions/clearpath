@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { BackendId } from '../../../../shared/backends'
-import { providerOf } from '../../../../shared/backends'
+import { providerOf, pickReadyBackend } from '../../../../shared/backends'
 import type { AgentDef, AgentListResult } from '../../types/ipc'
 import type { PromptSuggestion } from '../../types/starter-pack'
-import { useAuthStatus } from '../../hooks/useAuthStatus'
+import { useAuthStatus, readyBackendsOf } from '../../hooks/useAuthStatus'
 import HomeOptionsPopover, { backendPillLabel } from './HomeOptionsPopover'
 
 export interface QuickStartSubmit {
@@ -31,12 +31,6 @@ interface Props {
 
 const FALLBACK_BACKEND: BackendId = 'copilot-cli'
 
-function pickInitialBackend(ready: BackendId[]): BackendId {
-  if (ready.includes('copilot-cli')) return 'copilot-cli'
-  if (ready.length > 0) return ready[0]
-  return FALLBACK_BACKEND
-}
-
 export default function HomeQuickStartBar({ onSubmit, colorButtonPrimary, initialPrompt }: Props): JSX.Element {
   const auth = useAuthStatus()
   const [prompt, setPrompt] = useState(initialPrompt ?? '')
@@ -55,22 +49,16 @@ export default function HomeQuickStartBar({ onSubmit, colorButtonPrimary, initia
   const [suggestions, setSuggestions] = useState<PromptSuggestion[]>([])
   const inputRef = useRef<HTMLInputElement>(null)
 
-  const readyBackends = useMemo<BackendId[]>(() => {
-    if (!auth.loaded) return []
-    const out: BackendId[] = []
-    if (auth.copilot.cli.installed && auth.copilot.cli.authenticated) out.push('copilot-cli')
-    if (auth.copilot.sdk.installed && auth.copilot.sdk.authenticated) out.push('copilot-sdk')
-    if (auth.claude.cli.installed && auth.claude.cli.authenticated) out.push('claude-cli')
-    if (auth.claude.sdk.installed && auth.claude.sdk.authenticated) out.push('claude-sdk')
-    return out
-  }, [auth])
+  const readyBackends = useMemo<BackendId[]>(() => readyBackendsOf(auth), [auth])
 
   // Initialize backend once readiness lands. After init, respect the user's
   // explicit pick — don't reshuffle just because readiness changes.
   useEffect(() => {
     if (backendInitialized) return
     if (!auth.loaded) return
-    setBackend(pickInitialBackend(readyBackends))
+    // Home keeps its optimistic fallback (no block-CTA here) — when nothing is
+    // ready yet we still seed Copilot so the bar renders a sensible default.
+    setBackend(pickReadyBackend(readyBackends) ?? FALLBACK_BACKEND)
     setBackendInitialized(true)
   }, [auth.loaded, readyBackends, backendInitialized])
 

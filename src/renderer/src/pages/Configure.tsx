@@ -14,8 +14,9 @@ import AccessibilitySettings from '../components/settings/AccessibilitySettings'
 import PricingSettings from '../components/settings/PricingSettings'
 import Agents from './Agents'
 import Tools from './Tools'
+import LocalSetup from './LocalSetup'
 
-type Tab = 'setup' | 'accessibility' | 'settings' | 'policies' | 'tools' | 'memory' | 'agents' | 'skills' | 'wizard' | 'workspaces' | 'team' | 'scheduler' | 'branding' | 'pricing'
+type Tab = 'setup' | 'local-setup' | 'accessibility' | 'settings' | 'policies' | 'tools' | 'memory' | 'agents' | 'skills' | 'wizard' | 'workspaces' | 'team' | 'scheduler' | 'branding' | 'pricing'
 
 type TabGroup = {
   heading: string
@@ -28,15 +29,16 @@ const TAB_GROUPS: TabGroup[] = [
     heading: 'Getting Started',
     tabs: [
       { key: 'setup', label: 'Setup Wizard' },
+      { key: 'local-setup', label: 'Local Setup' },
       { key: 'accessibility', label: 'Accessibility' },
     ],
   },
   {
     heading: 'Your AI',
     tabs: [
-      { key: 'agents', label: 'Prompts' },
-      { key: 'skills', label: 'Playbooks' },
-      { key: 'memory', label: 'Notes & Context' },
+      { key: 'agents', label: 'Agents' },
+      { key: 'skills', label: 'Skills' },
+      { key: 'memory', label: 'Project Memory' },
     ],
   },
   {
@@ -153,6 +155,7 @@ export default function Configure(): JSX.Element {
       {/* Right: tab content */}
       <div className="flex-1 overflow-y-auto p-6 bg-gray-900" role="tabpanel" aria-labelledby={`tab-${tab}`}>
         {tab === 'setup' && <SetupWizardFull />}
+        {tab === 'local-setup' && <LocalSetup />}
         {tab === 'accessibility' && <AccessibilitySettings />}
         {tab === 'settings' && <Settings />}
         {tab === 'policies' && <Policies />}

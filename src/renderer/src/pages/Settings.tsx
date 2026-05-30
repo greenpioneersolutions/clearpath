@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import type { AppSettings } from '../types/settings'
 import { DEFAULT_SETTINGS } from '../types/settings'
 import FlagBuilder from '../components/settings/FlagBuilder'
@@ -12,6 +12,7 @@ import DataManagement from '../components/settings/DataManagement'
 import FeatureFlagSettings from '../components/settings/FeatureFlagSettings'
 import RoutingSettings from '../components/settings/RoutingSettings'
 import { useFlag } from '../contexts/FeatureFlagContext'
+import { providerOf } from '../../../shared/backends'
 
 type Tab = 'flags' | 'model' | 'limits' | 'profiles' | 'notifications' | 'data' | 'features' | 'routing'
 
@@ -41,10 +42,20 @@ export default function Settings(): JSX.Element {
 
   // ── Load settings from electron-store ─────────────────────────────────────
 
+  // On first load only, sync the CLI toggle to the saved preferred backend so a
+  // Claude-primary user lands on Claude instead of always defaulting to Copilot.
+  // A ref guard keeps later reloads (e.g. applying a profile) from yanking the
+  // toggle back while the user is mid-configuration.
+  const cliInitialized = useRef(false)
+
   const loadSettings = useCallback(async () => {
     setLoading(true)
     const result = await window.electronAPI.invoke('settings:get') as AppSettings
     setSettings(result)
+    if (!cliInitialized.current) {
+      cliInitialized.current = true
+      if (result.preferredBackend) setCli(providerOf(result.preferredBackend))
+    }
     setLoading(false)
   }, [])
 
@@ -73,19 +84,6 @@ export default function Settings(): JSX.Element {
     setSettings(result)
   }
 
-  const setLimits = async (updates: Partial<Pick<AppSettings, 'maxTurns' | 'verbose'>>) => {
-    // maxBudgetUsd is no longer surfaced in the UI; always keep it null so the
-    // dormant main-process `settings:set-budget` handler still receives a
-    // well-formed payload without any cost-related controls in the renderer.
-    const merged = {
-      maxBudgetUsd: null,
-      maxTurns: updates.maxTurns !== undefined ? updates.maxTurns : settings.maxTurns,
-      verbose: updates.verbose !== undefined ? updates.verbose : settings.verbose,
-    }
-    const result = await window.electronAPI.invoke('settings:set-budget', merged) as AppSettings
-    setSettings(result)
-  }
-
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -105,22 +103,26 @@ export default function Settings(): JSX.Element {
           </p>
         </div>
 
-        {/* CLI selector */}
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-gray-500">CLI:</span>
-          {(['copilot', 'claude'] as const).map((c) => (
-            <button
-              key={c}
-              onClick={() => setCli(c)}
-              className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
-                cli === c
-                  ? 'bg-indigo-600 text-white'
-                  : 'bg-white text-gray-600 border border-gray-300 hover:bg-gray-50'
-              }`}
-            >
-              {c === 'copilot' ? 'Copilot' : 'Claude'}
-            </button>
-          ))}
+        {/* CLI selector — scopes the Flags, Model, and Launch Preview below to
+            the chosen backend. Promoted to a labelled segmented control so the
+            (full) Claude configuration surface is obvious, not hidden. */}
+        <div className="flex flex-col items-end gap-1">
+          <span className="text-xs font-medium text-gray-500">Configuring</span>
+          <div className="inline-flex rounded-lg border border-gray-300 bg-gray-100 p-0.5">
+            {(['copilot', 'claude'] as const).map((c) => (
+              <button
+                key={c}
+                onClick={() => setCli(c)}
+                className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                  cli === c
+                    ? 'bg-indigo-600 text-white shadow-sm'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                {c === 'copilot' ? 'Copilot' : 'Claude'}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -168,10 +170,7 @@ export default function Settings(): JSX.Element {
 
         {tab === 'limits' && (
           <SessionLimits
-            maxTurns={settings.maxTurns}
-            verbose={settings.verbose}
-            onTurnsChange={(v) => void setLimits({ maxTurns: v })}
-            onVerboseChange={(v) => void setLimits({ verbose: v })}
+            onOpenFlags={() => { setCli('claude'); setTab('flags') }}
           />
         )}
 

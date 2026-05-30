@@ -72,7 +72,7 @@ export function getStageFlagOverrides(stage: ProgressionStage): Partial<FeatureF
 
   if (stage === 'new') return newStage
 
-  // Exploring (1-4 sessions): unlock Insights, Prompts/Playbooks selection in chat
+  // Exploring (1-4 sessions): unlock Insights, Agents/Skills selection in chat
   const exploring: Partial<FeatureFlags> = {
     ...newStage,
     showInsights: true,

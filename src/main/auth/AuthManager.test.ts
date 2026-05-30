@@ -764,6 +764,89 @@ describe('AuthManager', () => {
       expect(result.claude.authenticated).toBe(true)
       expect(result.claude.tokenSource).toBe('auth-status')
     })
+
+    // Regression: on macOS the token lives in the login Keychain (no
+    // ~/.claude/*.json), and `claude auth status` can falsely report
+    // loggedIn:false when the spawn env is missing USER (GUI launch). The direct
+    // `security find-generic-password` probe must still detect the sign-in.
+    it('detects claude auth via macOS Keychain when auth status + config files miss', async () => {
+      const originalPlatform = process.platform
+      Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true })
+      try {
+        resolveInShellMock.mockImplementation(async (name: string) => {
+          if (name === 'claude') return '/usr/local/bin/claude'
+          return null
+        })
+        // auth status reports NOT logged in (the USER-missing failure mode);
+        // no ~/.claude/*.json exists (existsSync defaults to false).
+        execFileMock.mockImplementation(
+          (_cmd: string, args: string[], _opts: unknown, cb?: (err: Error | null, result: { stdout: string; stderr: string }) => void) => {
+            if (typeof cb === 'function') {
+              if (Array.isArray(args) && args.includes('auth')) {
+                cb(null, { stdout: '{"loggedIn": false}', stderr: '' })
+              } else {
+                cb(null, { stdout: '2.0.0\n', stderr: '' })
+              }
+            }
+            return { pid: 1234 }
+          },
+        )
+        // `security find-generic-password ...` exits 0 → item present.
+        spawnMock.mockImplementation((cmd: string) => {
+          const proc = new EventEmitter() as any
+          if (typeof cmd === 'string' && cmd.includes('security')) {
+            queueMicrotask(() => proc.emit('close', 0))
+          } else {
+            queueMicrotask(() => proc.emit('close', 1))
+          }
+          return proc
+        })
+
+        const mgr = new AuthManager(() => mockWc as any)
+        const result = await mgr.refresh()
+
+        expect(result.claude.authenticated).toBe(true)
+        expect(result.claude.tokenSource).toBe('config-file')
+      } finally {
+        Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true })
+      }
+    })
+
+    it('does NOT mark claude authed when the Keychain item is absent (security exits non-zero)', async () => {
+      const originalPlatform = process.platform
+      Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true })
+      try {
+        resolveInShellMock.mockImplementation(async (name: string) => {
+          if (name === 'claude') return '/usr/local/bin/claude'
+          return null
+        })
+        execFileMock.mockImplementation(
+          (_cmd: string, args: string[], _opts: unknown, cb?: (err: Error | null, result: { stdout: string; stderr: string }) => void) => {
+            if (typeof cb === 'function') {
+              if (Array.isArray(args) && args.includes('auth')) {
+                cb(null, { stdout: '{"loggedIn": false}', stderr: '' })
+              } else {
+                cb(null, { stdout: '2.0.0\n', stderr: '' })
+              }
+            }
+            return { pid: 1234 }
+          },
+        )
+        // security exits 44 (item not found)
+        spawnMock.mockImplementation(() => {
+          const proc = new EventEmitter() as any
+          queueMicrotask(() => proc.emit('close', 44))
+          return proc
+        })
+
+        const mgr = new AuthManager(() => mockWc as any)
+        const result = await mgr.refresh()
+
+        expect(result.claude.authenticated).toBe(false)
+      } finally {
+        Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true })
+      }
+    })
   })
 
   // ── Both CLIs checked in parallel ───────────────────────────────────────────

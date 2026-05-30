@@ -67,6 +67,7 @@ const FLAG_GROUPS: FlagGroup[] = [
     label: 'Session Features',
     flags: [
       { key: 'showNotes', label: 'Notes', description: 'Save reference material — meeting takeaways, recurring prompts, decisions — and attach them to new sessions for context.', learnPathId: 'notes' },
+      { key: 'showFileAttachments', label: 'File Attachments', description: 'Attach files to a session. They are copied into your project (.clear-path/uploads) so Copilot/Claude can read, edit, and run them — referenced by path, never pasted into the prompt.' },
       { key: 'showTokenMeter', label: 'Context Meter', description: 'Live token count + per-slice breakdown chip in the chat input. Helps you see how much your prompt costs before you send.' },
       { key: 'showUseContext', label: 'Use Context', description: 'Memory/agent/skill context in wizard' },
       { key: 'showAgentSelection', label: 'Agent Selection', description: 'Pick agents per session' },

@@ -6,20 +6,36 @@ interface Props {
   onModelChange: (model: string) => void
 }
 
-const COST_COLORS: Record<string, string> = {
-  'Free': 'bg-green-100 text-green-700',
-  '0.33x': 'bg-teal-100 text-teal-700',
-  '1x': 'bg-gray-100 text-gray-600',
-  '3x': 'bg-amber-100 text-amber-700',
+// Per-tier badge color + one-word descriptor, keyed by the raw `costTier`
+// string each model carries. Copilot tiers are request-credit multipliers;
+// Claude tiers are $/1M tokens (input / output). Both get the same grouped
+// treatment so neither backend looks like an undifferentiated list.
+const TIER_META: Record<string, { color: string; label: string }> = {
+  // Copilot — request credits
+  'Free': { color: 'bg-green-100 text-green-700', label: 'Included in plan' },
+  '0.33x': { color: 'bg-teal-100 text-teal-700', label: 'Budget' },
+  '1x': { color: 'bg-gray-100 text-gray-600', label: 'Standard' },
+  '3x': { color: 'bg-amber-100 text-amber-700', label: 'Premium' },
+  // Claude — $/1M tokens (input / output)
+  '$1 / $5': { color: 'bg-teal-100 text-teal-700', label: 'Budget' },
+  '$3 / $15': { color: 'bg-gray-100 text-gray-600', label: 'Standard' },
+  '$5 / $25': { color: 'bg-amber-100 text-amber-700', label: 'Premium' },
 }
 
-function groupModels(models: ModelDef[]): Map<string, ModelDef[]> {
+// Display order of tier groups, cheapest → most capable.
+const TIER_ORDER: Record<'copilot' | 'claude', string[]> = {
+  copilot: ['Free', '0.33x', '1x', '3x'],
+  claude: ['$1 / $5', '$3 / $15', '$5 / $25'],
+}
+
+function groupModelsByTier(models: ModelDef[], order: string[]): Map<string, ModelDef[]> {
   const groups = new Map<string, ModelDef[]>()
+  for (const tier of order) groups.set(tier, []) // seed so groups render in price order
   for (const m of models) {
-    const key = m.cli === 'copilot' ? m.costTier : m.provider
-    if (!groups.has(key)) groups.set(key, [])
-    groups.get(key)!.push(m)
+    if (!groups.has(m.costTier)) groups.set(m.costTier, [])
+    groups.get(m.costTier)!.push(m)
   }
+  for (const [tier, list] of groups) if (list.length === 0) groups.delete(tier)
   return groups
 }
 
@@ -28,9 +44,7 @@ export default function ModelSelector({ cli, selectedModel, onModelChange }: Pro
   const current = selectedModel || models.find((m) => m.isDefault)?.id || ''
   const currentModel = models.find((m) => m.id === current)
 
-  const groups = cli === 'copilot'
-    ? groupModels(models)
-    : new Map([['All Models', models as ModelDef[]]])
+  const groups = groupModelsByTier(models, TIER_ORDER[cli])
 
   return (
     <div className="space-y-4">
@@ -45,16 +59,14 @@ export default function ModelSelector({ cli, selectedModel, onModelChange }: Pro
 
       {Array.from(groups.entries()).map(([groupName, groupModels]) => (
         <div key={groupName}>
-          {cli === 'copilot' && (
-            <div className="flex items-center gap-2 mb-2">
-              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${COST_COLORS[groupName] ?? 'bg-gray-100 text-gray-600'}`}>
-                {groupName}
-              </span>
-              <span className="text-[10px] text-gray-400">
-                {groupName === 'Free' ? 'Included in plan' : groupName === '0.33x' ? 'Budget' : groupName === '3x' ? 'Premium' : 'Standard'}
-              </span>
-            </div>
-          )}
+          <div className="flex items-center gap-2 mb-2">
+            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${TIER_META[groupName]?.color ?? 'bg-gray-100 text-gray-600'}`}>
+              {groupName}
+            </span>
+            <span className="text-[10px] text-gray-400">
+              {TIER_META[groupName]?.label ?? 'Standard'}
+            </span>
+          </div>
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3" role="radiogroup" aria-label="Model selection">
             {groupModels.map((m) => {
               const isSelected = current === m.id
@@ -77,9 +89,6 @@ export default function ModelSelector({ cli, selectedModel, onModelChange }: Pro
                     <div className="flex items-center gap-1.5 flex-shrink-0">
                       {m.isDefault && (
                         <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-600 font-medium">default</span>
-                      )}
-                      {cli === 'claude' && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500 font-mono">{m.costTier}</span>
                       )}
                     </div>
                   </div>

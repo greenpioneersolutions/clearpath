@@ -56,7 +56,7 @@ export default function WorkflowsCard({ onOpenWorkflow }: Props): JSX.Element {
       <header className="flex items-center justify-between mb-3">
         <div>
           <h3 className="text-white text-sm font-semibold">Workflows</h3>
-          <p className="text-gray-500 text-xs mt-0.5">Recently used multi-step playbooks.</p>
+          <p className="text-gray-500 text-xs mt-0.5">Recently used multi-step workflows.</p>
         </div>
       </header>
 

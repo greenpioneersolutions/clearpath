@@ -34,6 +34,29 @@ describe('OutputDisplay', () => {
     expect(screen.getByText('Hello world')).toBeInTheDocument()
   })
 
+  it('never leaks an attached file path or content into the DOM', () => {
+    // The security-critical guarantee: even with files attached, only the
+    // message text (and, when the flag is on, the file NAME chip) renders. The
+    // workspace-relative path is frozen metadata and must never reach the DOM.
+    // (The flag-on chip-visible assertion is covered manually — the
+    // setup-coverage eager-load defeats vi.mock of useFlag here, same caveat as
+    // the Notes chip test.)
+    const messages: OutputMessage[] = [
+      {
+        id: '1',
+        sender: 'user',
+        output: { type: 'text', content: 'summarize these' },
+        attachedFiles: [
+          { id: 'f1', name: 'spec.pdf', relPath: '.clear-path/uploads/sess/spec.pdf' },
+          { id: 'f2', name: 'data.csv', relPath: '.clear-path/uploads/sess/data.csv' },
+        ],
+      },
+    ]
+    render(<OutputDisplay messages={messages} onPermissionResponse={onPermissionResponse} />)
+    expect(screen.getByText('summarize these')).toBeInTheDocument()
+    expect(screen.queryByText(/\.clear-path\/uploads/)).toBeNull()
+  })
+
   it('renders an AI text message with markdown', () => {
     const messages: OutputMessage[] = [
       { id: '1', sender: 'ai', output: { type: 'text', content: 'AI response here' } },

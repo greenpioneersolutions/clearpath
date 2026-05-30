@@ -81,6 +81,12 @@
       "enabled": false,
       "addedIn": "1.7.0"
     },
+    "showFileAttachments": {
+      "description": "Attach files to a session — copies them into the project (.clear-path/uploads) so Copilot/Claude can read, edit, and run them. Files are referenced by path, never inlined into the prompt.",
+      "experimental": false,
+      "enabled": true,
+      "addedIn": "1.15.0"
+    },
     "showSkillsManagement": {
       "description": "Skill creation, edit, and management UI.",
       "experimental": false,

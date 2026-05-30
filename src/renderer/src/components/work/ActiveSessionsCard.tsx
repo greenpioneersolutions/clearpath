@@ -2,21 +2,11 @@ import { useEffect, useState, useCallback, forwardRef } from 'react'
 import type { SessionInfo } from '../../types/ipc'
 import type { BackendId } from '../../../../shared/backends'
 import { providerOf } from '../../../../shared/backends'
+import { timeAgo } from '../../lib/relativeTime'
 
 interface Props {
   /** Click handler for a session row — typically opens the session in the Work view. */
   onOpenSession: (info: SessionInfo) => void
-}
-
-function timeAgo(ms: number): string {
-  const diff = Date.now() - ms
-  const mins = Math.floor(diff / 60000)
-  if (mins < 1) return 'just now'
-  if (mins < 60) return `${mins}m ago`
-  const hours = Math.floor(mins / 60)
-  if (hours < 24) return `${hours}h ago`
-  const days = Math.floor(hours / 24)
-  return `${days}d ago`
 }
 
 function CliBadge({ cli }: { cli: BackendId }): JSX.Element {
@@ -106,17 +96,13 @@ const ActiveSessionsCard = forwardRef<HTMLElement, Props>(function ActiveSession
               <button
                 data-testid="active-session-row"
                 onClick={() => onOpenSession(s)}
-                className="w-full text-left px-3 py-2.5 rounded-lg border border-gray-800 hover:border-teal-500/60 hover:bg-gray-800/40 transition-colors group"
+                className="w-full text-left px-3 py-2.5 rounded-lg border border-gray-800 hover:border-teal-500/60 hover:bg-gray-800/40 transition-colors group space-y-1"
               >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-sm font-medium text-gray-200 truncate group-hover:text-white">
-                    {s.name ?? `Session ${s.sessionId.slice(0, 8)}`}
-                  </span>
-                  <CliBadge cli={s.cli} />
-                </div>
-                <div className="flex items-center gap-2 mt-1 text-[10px] text-gray-500">
-                  <span>started {timeAgo(s.startedAt)}</span>
-                </div>
+                <span className="block text-sm font-medium text-gray-200 truncate group-hover:text-white">
+                  {s.name ?? `Session ${s.sessionId.slice(0, 8)}`}
+                </span>
+                <div><CliBadge cli={s.cli} /></div>
+                <div className="text-[11px] text-gray-500">started {timeAgo(s.startedAt)}</div>
               </button>
             </li>
           ))}

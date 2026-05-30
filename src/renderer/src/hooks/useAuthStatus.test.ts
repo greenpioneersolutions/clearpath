@@ -145,6 +145,23 @@ describe('useAuthStatus', () => {
     })
   })
 
+  it('forceRefresh hits auth:refresh (bypasses cache) and applies the fresh result', async () => {
+    // Cold-start probe wrongly reports nothing connected (the false-negative).
+    mockInvoke.mockImplementation((channel: string) => {
+      if (channel === 'auth:get-status') return Promise.resolve(authStatusFixture({ cli: false }, { cli: false }))
+      if (channel === 'auth:refresh')    return Promise.resolve(authStatusFixture({ cli: false }, { cli: true }))
+      return Promise.resolve(null)
+    })
+    const { result } = renderHook(() => useAuthStatus())
+    await waitFor(() => expect(result.current.loaded).toBe(true))
+    expect(result.current.claude.ready).toBe(false)
+
+    // Self-heal: force a fresh probe, which now sees the real CLI login.
+    await act(async () => { result.current.forceRefresh() })
+    await waitFor(() => expect(result.current.claude.ready).toBe(true))
+    expect(mockInvoke.mock.calls.some(([ch]) => ch === 'auth:refresh')).toBe(true)
+  })
+
   it('marks loaded=true even if both auth probes throw — UI must not hang forever', async () => {
     mockInvoke.mockImplementation((channel: string) => {
       if (channel === 'auth:get-status') return Promise.reject(new Error('boom'))

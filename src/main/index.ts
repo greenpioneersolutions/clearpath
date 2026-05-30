@@ -52,6 +52,8 @@ import { registerLearnHandlers } from './ipc/learnHandlers'
 import { registerSkillHandlers } from './ipc/skillHandlers'
 import { registerPluginHandlers } from './ipc/pluginHandlers'
 import { PluginManager } from './plugins/PluginManager'
+import { registerLocationHandlers } from './ipc/locationHandlers'
+import { LocationsManager } from './locations/LocationsManager'
 import { registerIntegrationHandlers } from './ipc/integrationHandlers'
 import { registerAtlassianHandlers } from './integrations/atlassian'
 import { registerServiceNowHandlers } from './integrations/servicenow'
@@ -62,6 +64,7 @@ import { registerDatadogHandlers } from './integrations/datadog'
 import { registerCustomIntegrationHandlers } from './ipc/customIntegrationHandlers'
 import { registerWizardHandlers } from './ipc/wizardHandlers'
 import { registerNoteHandlers } from './ipc/noteHandlers'
+import { registerFileAttachmentHandlers } from './ipc/fileAttachmentHandlers'
 import { registerDataManagementHandlers } from './ipc/dataManagementHandlers'
 import { registerFeatureFlagHandlers } from './ipc/featureFlagHandlers'
 import { registerBrandingHandlers } from './ipc/brandingHandlers'
@@ -115,8 +118,11 @@ featureFlagEvents.on('change:enableClaudeSdk', () => wireSdkAdapters())
 featureFlagEvents.on('change:enableCopilotSdk', () => wireSdkAdapters())
 
 const authManager = new AuthManager(getWebContents)
-const agentManager = new AgentManager()
-const pluginManager = new PluginManager()
+// Owns the user's "local setup" — approved folders, default working dir, and
+// the extra source folders that skill/agent/plugin discovery also scan.
+const locationsManager = new LocationsManager()
+const agentManager = new AgentManager(locationsManager)
+const pluginManager = new PluginManager(locationsManager)
 const notificationManager = new NotificationManager(getWebContents)
 const pricingService = new PricingService()
 // CLIManager uses pricingService.getEffectiveTable() for every cost record so
@@ -178,8 +184,9 @@ onRoutingRulesChange((rules) => {
 registerRoutingHandlers(ipcMain, { getRules: () => cliManager.getRoutingRules() })
 registerWorkflowHandlers(ipcMain)
 registerLearnHandlers(ipcMain)
-registerSkillHandlers(ipcMain)
+registerSkillHandlers(ipcMain, locationsManager)
 registerPluginHandlers(ipcMain, pluginManager)
+registerLocationHandlers(ipcMain, locationsManager)
 registerIntegrationHandlers(ipcMain)
 registerAtlassianHandlers(ipcMain)
 registerServiceNowHandlers(ipcMain)
@@ -190,6 +197,7 @@ registerDatadogHandlers(ipcMain)
 registerCustomIntegrationHandlers(ipcMain)
 registerWizardHandlers(ipcMain)
 registerNoteHandlers(ipcMain)
+registerFileAttachmentHandlers(ipcMain, () => cliManager.getPersistedSessions().map((s) => s.sessionId))
 registerDataManagementHandlers(ipcMain)
 registerFeatureFlagHandlers(ipcMain)
 registerBrandingHandlers(ipcMain)

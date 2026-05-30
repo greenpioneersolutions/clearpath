@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 // ─── Hoisted mock setup ───────────────────────────────────────────────────────
 // shellEnv.ts does `const execFileAsync = promisify(execFile)` at module load
@@ -179,6 +179,49 @@ describe('shellEnv', () => {
 
       // getSpawnEnv skips blank values explicitly
       expect(mod.getSpawnEnv().EMPTY_VAR).toBeUndefined()
+    })
+  })
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Regression: macOS GUI launches (Finder/Dock) hand Electron a stripped
+  // launchd env without USER/LOGNAME. Claude Code's Keychain lookup keys off
+  // USER — without it `claude auth status` reports loggedIn:false and the UI
+  // shows a bogus "Claude Code isn't signed in" banner. Both spawn-env getters
+  // must backfill the login identity from os.userInfo().
+  describe('login identity backfill (Claude Keychain regression)', () => {
+    const saved = {
+      USER: process.env.USER,
+      LOGNAME: process.env.LOGNAME,
+      HOME: process.env.HOME,
+    }
+    beforeEach(() => {
+      delete process.env.USER
+      delete process.env.LOGNAME
+    })
+    afterEach(() => {
+      if (saved.USER !== undefined) process.env.USER = saved.USER; else delete process.env.USER
+      if (saved.LOGNAME !== undefined) process.env.LOGNAME = saved.LOGNAME; else delete process.env.LOGNAME
+      if (saved.HOME !== undefined) process.env.HOME = saved.HOME; else delete process.env.HOME
+    })
+
+    it('getSpawnEnv backfills USER/LOGNAME when the GUI launch dropped them', async () => {
+      const { getSpawnEnv } = await freshShellEnv() // _env null → uses process.env
+      const env = getSpawnEnv()
+      // os.userInfo().username is non-empty on any real account
+      expect(env.USER).toBeTruthy()
+      expect(env.LOGNAME).toBeTruthy()
+    })
+
+    it('getScopedSpawnEnv("claude") backfills USER so the Keychain lookup resolves', async () => {
+      const { getScopedSpawnEnv } = await freshShellEnv()
+      const env = getScopedSpawnEnv('claude')
+      expect(env.USER).toBeTruthy()
+    })
+
+    it('does not clobber an existing USER', async () => {
+      process.env.USER = 'preset-user'
+      const { getSpawnEnv } = await freshShellEnv()
+      expect(getSpawnEnv().USER).toBe('preset-user')
     })
   })
 

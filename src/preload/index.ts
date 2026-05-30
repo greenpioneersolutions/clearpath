@@ -59,6 +59,11 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   // File Explorer
   'files:list', 'files:is-protected', 'files:watch', 'files:unwatch',
 
+  // Session File Attachments (Slice 29)
+  'files:pick', 'files:stage-paths', 'files:pick-and-stage', 'files:list-attachments',
+  'files:remove', 'files:get-bundle-for-prompt', 'files:open-folder',
+  'files:cleanup-session', 'files:sweep-orphans',
+
   // Git
   'git:status', 'git:log', 'git:diff', 'git:file-diff', 'git:revert-file',
   'git:worktrees', 'git:create-worktree', 'git:remove-worktree', 'git:branch-protection',
@@ -113,6 +118,12 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   // CLI Plugins (Copilot + Claude --plugin-dir auto-injection)
   'plugins:list', 'plugins:rescan', 'plugins:add-custom',
   'plugins:remove-custom', 'plugins:set-enabled', 'plugins:open-folder',
+
+  // Local Setup (approved folders, default working dir, source folders)
+  'locations:list-approved', 'locations:add-approved', 'locations:remove-approved',
+  'locations:get-default-cwd', 'locations:set-default-cwd',
+  'locations:list-sources', 'locations:add-source', 'locations:remove-source',
+  'locations:health', 'locations:open-path',
 
   // Templates & Workflows
   'templates:list', 'templates:get', 'templates:save', 'templates:delete',

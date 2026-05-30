@@ -45,6 +45,13 @@ export default function SkillsManagement(): JSX.Element {
   // Walkthrough state
   const [walkthroughSkill, setWalkthroughSkill] = useState<StarterSkill | null>(null)
 
+  // Active agent per CLI — drives which CLI a freshly-created starter skill
+  // targets, so a Claude-primary user doesn't silently get Copilot skill paths.
+  const [activeAgents, setActiveAgents] = useState<{ copilot: string | null; claude: string | null }>({
+    copilot: null,
+    claude: null,
+  })
+
   // Agent-based recommendations
   const [missingForAgents, setMissingForAgents] = useState<
     { skill: StarterSkill; agentNames: string[] }[]
@@ -53,14 +60,16 @@ export default function SkillsManagement(): JSX.Element {
   const load = useCallback(async () => {
     setLoading(true)
     const cwd = await window.electronAPI.invoke('app:get-cwd') as string
-    const [list, starters, starterAgents, agentList] = await Promise.all([
+    const [list, starters, starterAgents, agentList, active] = await Promise.all([
       window.electronAPI.invoke('skills:list', { workingDirectory: cwd }) as Promise<SkillInfo[]>,
       window.electronAPI.invoke('starter-pack:get-skills') as Promise<StarterSkill[]>,
       window.electronAPI.invoke('starter-pack:get-agents') as Promise<StarterAgent[]>,
       window.electronAPI.invoke('agent:list', {}) as Promise<AgentListResult>,
+      window.electronAPI.invoke('agent:get-active') as Promise<{ copilot: string | null; claude: string | null }>,
     ])
     setSkills(list)
     setStarterSkills(Array.isArray(starters) ? starters : [])
+    setActiveAgents(active ?? { copilot: null, claude: null })
 
     // Cross-reference: find skills that installed agents recommend but user doesn't have
     const installedSkillNames = new Set(list.map((s) => s.name.toLowerCase()))
@@ -94,6 +103,11 @@ export default function SkillsManagement(): JSX.Element {
   }, [])
 
   useEffect(() => { void load() }, [load])
+
+  // Mirror the Agents page tie-breaker: Claude only when it's the sole active
+  // provider, otherwise Copilot (the product default).
+  const activeCli: 'copilot' | 'claude' =
+    activeAgents.claude && !activeAgents.copilot ? 'claude' : 'copilot'
 
   const handleToggle = async (skill: SkillInfo) => {
     await window.electronAPI.invoke('skills:toggle', { path: skill.path, enabled: !skill.enabled })
@@ -369,7 +383,7 @@ export default function SkillsManagement(): JSX.Element {
       {walkthroughSkill && (
         <StarterSkillWalkthrough
           skill={walkthroughSkill}
-          activeCli="copilot"
+          activeCli={activeCli}
           isOpen={walkthroughSkill !== null}
           onClose={() => setWalkthroughSkill(null)}
           onCreated={() => void load()}

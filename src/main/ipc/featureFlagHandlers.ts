@@ -6,6 +6,7 @@ import {
   BUILD_FLAGS,
   BUILD_FLAGS_LOCKED,
   EXPERIMENTAL_FLAG_KEYS,
+  FEATURE_FLAG_KEYS,
   type FeatureFlags,
   type FeatureFlagKey,
 } from '../../shared/featureFlags.generated'
@@ -37,6 +38,17 @@ export interface FlagPreset {
   description: string
   flags: Partial<FeatureFlags>
 }
+
+// "Everything On" is computed from the full key list rather than hand-listed,
+// so a newly-added flag is automatically included and the preset can never go
+// stale. (The old hardcoded list silently missed flags added after it was
+// written — e.g. showFileAttachments / showPromptCache / showModelRouting /
+// showEfficiencyInsights — leaving them OFF even after the user clicked it.)
+// `clampToCompiledIn` still keeps any compiled-out experimental flags at false
+// on resolve, so this is safe even when a flag's code path isn't in the build.
+const ALL_ON_FLAGS: Partial<FeatureFlags> = Object.fromEntries(
+  FEATURE_FLAG_KEYS.map((key) => [key, true]),
+) as FeatureFlags
 
 const PRESETS: FlagPreset[] = [
   {
@@ -78,40 +90,7 @@ const PRESETS: FlagPreset[] = [
     id: 'all-on',
     name: 'Everything On',
     description: 'All features enabled — unlocks every section, tool, and experimental feature.',
-    flags: {
-      showPolicies: true,
-      showIntegrations: true,
-      showMemory: true,
-      showClearMemory: true,
-      showSkillsManagement: true,
-      showSessionWizard: true,
-      showWorkspaces: true,
-      showTeamHub: true,
-      showScheduler: true,
-      showComposer: true,
-      showSubAgents: true,
-      showTemplates: true,
-      showKnowledgeBase: true,
-      showVoice: true,
-      showUseContext: true,
-      showAgentSelection: true,
-      showCostTracking: true,
-      showComplianceLogs: true,
-      showDataManagement: true,
-      showBudgetLimits: true,
-      showPlugins: true,
-      showEnvVars: true,
-      showWebhooks: true,
-      enableExperimentalFeatures: true,
-      showPrScores: true,
-      prScoresAiReview: true,
-      showEfficiencyCoach: true,
-      showBackstageExplorer: true,
-      showMcpServers: true,
-      showExtensions: true,
-      enableClaudeSdk: true,
-      enableCopilotSdk: true,
-    },
+    flags: ALL_ON_FLAGS,
   },
   {
     id: 'essentials',

@@ -162,17 +162,17 @@ describe('Configure', () => {
 
   // ── Tab rendering ─────────────────────────────────────────────────────
 
-  it('renders Notes & Context tab content when clicked', async () => {
+  it('renders Project Memory tab content when clicked', async () => {
     renderConfigure()
-    fireEvent.click(screen.getByRole('tab', { name: 'Notes & Context' }))
-    // Memory.tsx was renamed "Memory & Context" → "Project Memory" when the
-    // Notes tab moved out to the Sessions sub-nav.
-    await waitFor(() => expect(screen.getByText('Project Memory')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('tab', { name: 'Project Memory' }))
+    // The Configure tab label was aligned to the page's own "Project Memory"
+    // heading (was "Notes & Context") so "Notes" only ever means user notes.
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Project Memory' })).toBeInTheDocument())
   })
 
-  it('renders Prompts tab content when clicked', async () => {
+  it('renders Agents tab content when clicked', async () => {
     renderConfigure()
-    fireEvent.click(screen.getByRole('tab', { name: 'Prompts' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Agents' }))
     // Agents.tsx calls agent:list with an empty object as second arg
     await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith('agent:list', expect.anything()))
   })
@@ -442,9 +442,9 @@ describe('Configure', () => {
     })
   })
 
-  it('renders Playbooks tab content when clicked', async () => {
+  it('renders Skills tab content when clicked', async () => {
     renderConfigure()
-    fireEvent.click(screen.getByRole('tab', { name: 'Playbooks' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Skills' }))
     await waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledWith('skills:list', expect.any(Object))
     })

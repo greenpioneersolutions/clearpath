@@ -146,7 +146,7 @@ export default function SetupWizardFull(): JSX.Element {
             <h2 className="text-xl font-bold text-gray-900">Welcome to ClearPath</h2>
             <p className="text-sm text-gray-600 leading-relaxed">
               A friendly home for the AI tools that help you work faster. We'll get your CLI connected
-              and capture your first note — then you can explore prompts and playbooks at your own pace.
+              and capture your first note — then you can explore agents and skills at your own pace.
             </p>
             <p className="text-xs text-gray-400">Takes about 3 minutes. Leave and come back anytime.</p>
             <button onClick={() => setStep('cli')}
@@ -429,7 +429,7 @@ export default function SetupWizardFull(): JSX.Element {
             <div className="text-5xl">🎉</div>
             <h2 className="text-xl font-bold text-gray-900">You're All Set!</h2>
             <p className="text-sm text-gray-600">
-              You're ready to go. Try a quick chat below — and explore prompts and playbooks
+              You're ready to go. Try a quick chat below — and explore agents and skills
               from the Configure page whenever you want to add more context for the AI.
             </p>
 

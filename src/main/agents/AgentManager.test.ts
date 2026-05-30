@@ -887,4 +887,21 @@ describe('AgentManager', () => {
       expect(mockStoreConstructor).toHaveBeenCalledOnce()
     })
   })
+
+  describe('source-folder discovery', () => {
+    it('scans an extra source folder for Claude agents under .claude/agents', () => {
+      const sourceFolder = '/work/pack'
+      const agentsDir = `${sourceFolder}/.claude/agents`
+      existsSyncMock.mockImplementation((p: string) => p === agentsDir)
+      readdirSyncMock.mockImplementation((p: string) => (p === agentsDir ? ['helper.md'] : []))
+      readFileSyncMock.mockReturnValue(makeAgentMd({ name: 'Packed Helper', description: 'from a pack' }))
+
+      const locations = { getExistingSourceFolders: () => [sourceFolder] } as unknown as import('../locations/LocationsManager').LocationsManager
+      const mgr = new AgentManager(locations)
+      const result = mgr.listAgents()
+
+      expect(result.claude).toHaveLength(1)
+      expect(result.claude[0]).toMatchObject({ name: 'Packed Helper', cli: 'claude-cli', source: 'file' })
+    })
+  })
 })

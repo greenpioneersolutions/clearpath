@@ -107,6 +107,16 @@ export class CopilotAdapter implements ICLIAdapter {
     // ── Plugin ────────────────────────────────────────────────────────────────
     for (const dir of options.pluginDirs ?? []) args.push('--plugin-dir', dir)
 
+    // ── Workspace / directory access ────────────────────────────────────────────
+    // NOTE: `options.additionalDirs` is intentionally NOT emitted here. Unlike
+    // Claude Code, Copilot CLI has no `--add-dir` launch flag — `/add-dir` is an
+    // in-session slash command whose grants are session-scoped (github/copilot-cli
+    // issues #1919, #2284), and ClearPath spawns a fresh headless `--prompt`
+    // process per turn (see CLIManager.runTurn), so there is no persistent session
+    // to inject it into. For Copilot the *working directory* (set via `cwd` in
+    // startSession below) is the trust boundary. The UI surfaces this so users
+    // pick a working folder rather than silently losing additional-directory access.
+
     // ── Output behaviour ──────────────────────────────────────────────────────
     if (options.stream === false) args.push('--stream', 'false')
     if (options.saveGist) args.push('--save-gist')

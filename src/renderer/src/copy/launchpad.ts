@@ -31,6 +31,8 @@ export const LAUNCHPAD_COPY = {
       note: '+ Note',
       files: 'Files (soon)',
       filesTooltip: 'File attachments are coming in a future update.',
+      /** Active label, shown when the showFileAttachments flag is on. */
+      filesActive: '+ Files',
     },
     /** Hint copy that sits under each picker's label. Kept on
      *  LAUNCHPAD_COPY so a designer or PM can tweak wording without
@@ -39,6 +41,7 @@ export const LAUNCHPAD_COPY = {
       agent: 'A persona for this chat — e.g. Senior Code Reviewer or Release Manager.',
       skills: 'Capabilities to use — e.g. summarize, find references, write release notes.',
       notes: 'Saved facts to include — e.g. team conventions, project glossary.',
+      files: 'Attach files for the AI to read, edit, or run — e.g. a spec PDF, a CSV, a screenshot.',
     },
     /** Plain-English permission mode hints (PR 1 of the redesign). The
      *  `value` strings themselves are NOT user copy — they flow unchanged to
@@ -57,6 +60,7 @@ export const LAUNCHPAD_COPY = {
       agentTitle: 'Pick an agent',
       skillTitle: 'Pick skills',
       noteTitle: 'Pick notes',
+      filesTitle: 'Attach files',
     },
   },
   pickUp: {

@@ -1,5 +1,5 @@
 import { spawn } from 'child_process'
-import { existsSync, readFileSync, createWriteStream, mkdtempSync, unlinkSync } from 'fs'
+import { existsSync, readFileSync, createWriteStream, mkdtempSync, unlinkSync, appendFileSync } from 'fs'
 import { homedir, tmpdir } from 'os'
 import { join } from 'path'
 import { request } from 'https'
@@ -49,6 +49,30 @@ interface StoreSchema {
 }
 
 const EMPTY_STATUS: AuthStatus = { installed: false, authenticated: false, checkedAt: 0 }
+
+/**
+ * macOS-only: does the Claude Code credential exist in the login Keychain?
+ *
+ * Claude Code stores its token as a generic-password Keychain item with service
+ * name "Claude Code-credentials" (there is no ~/.claude/*.json on macOS). Unlike
+ * `claude auth status`, the `security` lookup does NOT depend on the USER env
+ * var, so it works even from the stripped environment a GUI-launched Electron
+ * app inherits. Presence of the item ⇒ the user has signed in.
+ */
+function claudeKeychainTokenExists(): Promise<boolean> {
+  if (process.platform !== 'darwin') return Promise.resolve(false)
+  return new Promise((resolve) => {
+    try {
+      const child = spawn('/usr/bin/security',
+        ['find-generic-password', '-s', 'Claude Code-credentials'],
+        { stdio: 'ignore' })
+      child.on('error', () => resolve(false))
+      child.on('close', (code) => resolve(code === 0))
+    } catch {
+      resolve(false)
+    }
+  })
+}
 
 /**
  * Build a ProviderAuthState by projecting the `cli` status onto the top-level
@@ -246,8 +270,12 @@ export class AuthManager {
   }
 
   private async checkClaude(): Promise<AuthStatus> {
+    const dbg = (msg: string) => {
+      try { appendFileSync('/tmp/clearpath-auth-debug.log', `[${new Date().toISOString()}] ${msg}\n`) } catch { /* ignore */ }
+    }
     const binaryPath = await resolveInShell('claude')
-    if (!binaryPath) return { ...EMPTY_STATUS, checkedAt: Date.now() }
+    dbg(`checkClaude: binaryPath=${binaryPath ?? 'NULL'} USER=${process.env['USER'] ?? 'unset'} platform=${process.platform}`)
+    if (!binaryPath) { dbg('checkClaude: no binary → unauthenticated'); return { ...EMPTY_STATUS, checkedAt: Date.now() } }
 
     let version: string | undefined
     try {
@@ -272,11 +300,14 @@ export class AuthManager {
         const { execFile } = await import('child_process')
         const { promisify } = await import('util')
         const execAsync = promisify(execFile)
+        const spawnEnv = getScopedSpawnEnv('claude')
+        dbg(`checkClaude: spawnEnv has USER=${spawnEnv['USER'] ?? 'unset'} HOME=${spawnEnv['HOME'] ?? 'unset'}`)
         const { stdout, stderr } = await execAsync(binaryPath, ['auth', 'status'], {
           timeout: 10_000,
-          env: getScopedSpawnEnv('claude'),
+          env: spawnEnv,
         })
         const out = (stdout + stderr).toLowerCase().replace(ANSI_RE, '')
+        dbg(`checkClaude: auth status output: ${JSON.stringify((stdout + stderr).slice(0, 300))}`)
         if (
           out.includes('logged in') ||
           out.includes('authenticated') ||
@@ -285,7 +316,7 @@ export class AuthManager {
           authenticated = true
           tokenSource = 'auth-status'
         }
-      } catch { /* fall through */ }
+      } catch (e) { dbg(`checkClaude: auth status THREW: ${(e as Error).message}`) }
 
       if (!authenticated) {
         const claudeDir = join(homedir(), '.claude')
@@ -297,8 +328,27 @@ export class AuthManager {
           }
         }
       }
+
+      // macOS stores the Claude Code token in the login Keychain, NOT in a
+      // ~/.claude/*.json file — so the file fallback above always misses on Mac.
+      // `claude auth status` reads that same Keychain item, but its lookup keys
+      // off the USER env var, which a GUI-launched (Finder/Dock) Electron app
+      // is frequently missing — making the primary probe report loggedIn:false
+      // even though the user IS signed in. A direct `security find-generic-password`
+      // probe finds the item regardless of environment (no USER/HOME needed), so
+      // it's the reliable signal on macOS. (See ensureLoginIdentity in shellEnv.ts,
+      // which backfills USER so the actual session can also reach the Keychain.)
+      if (!authenticated && process.platform === 'darwin') {
+        const kc = await claudeKeychainTokenExists()
+        dbg(`checkClaude: keychain probe result=${kc}`)
+        if (kc) {
+          authenticated = true
+          tokenSource = 'config-file'
+        }
+      }
     }
 
+    dbg(`checkClaude: FINAL authenticated=${authenticated} tokenSource=${tokenSource ?? 'none'}`)
     return { installed: true, authenticated, binaryPath, version, tokenSource, checkedAt: Date.now() }
   }
 

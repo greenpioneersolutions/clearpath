@@ -49,7 +49,7 @@ describe('Memory', () => {
 
   it('renders all tab buttons', () => {
     render(<Memory />)
-    expect(screen.getByText('Templates')).toBeInTheDocument()
+    expect(screen.getByText('Starter Files')).toBeInTheDocument()
     expect(screen.getByText('Config Files')).toBeInTheDocument()
     expect(screen.getByText('Instructions')).toBeInTheDocument()
     expect(screen.getByText('CLI Memory')).toBeInTheDocument()

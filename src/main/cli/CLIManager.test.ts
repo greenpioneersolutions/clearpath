@@ -1234,6 +1234,61 @@ describe('CLIManager', () => {
   // startSession metadata
   // ═════════════════════════════════════════════════════════════════════════════
 
+  // ═════════════════════════════════════════════════════════════════════════════
+  // CLI-not-ready guard (defense in depth) + dead-on-arrival session
+  // ═════════════════════════════════════════════════════════════════════════════
+
+  describe('startSession readiness guard', () => {
+    it('returns CLI_NOT_READY and creates NO session when the CLI is not installed', async () => {
+      mockCopilotAdapter.isInstalled.mockResolvedValue(false)
+      const mgr = makeManager()
+      const result = await mgr.startSession({ cli: 'copilot', mode: 'prompt', prompt: 'hello' })
+
+      expect('error' in result).toBe(true)
+      expect((result as { code?: string }).code).toBe('CLI_NOT_READY')
+      // No phantom session — the map stays empty and the adapter never spawns.
+      expect(mgr.listSessions()).toHaveLength(0)
+      expect(mockCopilotAdapter.startSession).not.toHaveBeenCalled()
+    })
+
+    it('returns CLI_NOT_READY and creates NO session when the CLI is not authenticated', async () => {
+      mockClaudeAdapter.isInstalled.mockResolvedValue(true)
+      mockClaudeAdapter.isAuthenticated.mockResolvedValue(false)
+      const mgr = makeManager()
+      const result = await mgr.startSession({ cli: 'claude', mode: 'prompt', prompt: 'hello' })
+
+      expect('error' in result).toBe(true)
+      expect((result as { code?: string }).code).toBe('CLI_NOT_READY')
+      expect(mgr.listSessions()).toHaveLength(0)
+      expect(mockClaudeAdapter.startSession).not.toHaveBeenCalled()
+    })
+
+    it('starts normally when the CLI is installed + authenticated', async () => {
+      mockCopilotAdapter.startSession.mockReturnValue(createMockProcess())
+      const mgr = makeManager()
+      const result = await mgr.startSession({ cli: 'copilot', mode: 'prompt', prompt: 'hello' })
+
+      expect('sessionId' in result).toBe(true)
+      expect(mgr.listSessions()).toHaveLength(1)
+    })
+
+    it('marks a dead-on-arrival session (first-spawn error) as stopped, not running', async () => {
+      const proc = createMockProcess()
+      mockCopilotAdapter.startSession.mockReturnValue(proc)
+      const mgr = makeManager()
+      const result = await mgr.startSession({ cli: 'copilot', mode: 'prompt', prompt: 'hello' })
+      const sessionId = (result as { sessionId: string }).sessionId
+
+      // The very first spawn fails (e.g. binary vanished between check + spawn).
+      proc._emit('error', new Error('spawn copilot ENOENT'))
+
+      const info = mgr.getSession(sessionId)
+      expect(info!.status).toBe('stopped')
+      // It must not count as a running/active session anymore.
+      expect(mgr.listSessions().filter((s) => s.status === 'running')).toHaveLength(0)
+    })
+  })
+
   describe('startSession metadata', () => {
     it('returns a session ID and adds to listSessions', async () => {
       mockCopilotAdapter.startSession.mockReturnValue(createMockProcess())

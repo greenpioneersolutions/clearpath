@@ -37,7 +37,7 @@ const SELF_CONTAINED = new Set([
 export interface ChatContextConfig {
   /** Selected prompt persona name (was "agent"). */
   agent?: string
-  /** Selected playbook (skill) name. */
+  /** Selected skill name. */
   skill?: string
   /** Sub-agent delegation: 'sub-agent' or 'background'. */
   delegate?: 'sub-agent' | 'background'
@@ -123,7 +123,7 @@ interface Props {
  *
  * Layout:
  *   ┌──────────────────────────────────────────────────────────────────┐
- *   │ [Prompt: Coach] [2 notes] [Playbook: Email] [Parallel]      x   │  ← context strip
+ *   │ [Agent: Coach] [2 notes] [Skill: Email] [Parallel]          x   │  ← context strip
  *   ├──────────────────────────────────────────────────────────────────┤
  *   │ [+] [model]                                                      │
  *   │     ┌──────────────────────────────────────────────────────┐ [→] │
@@ -163,7 +163,7 @@ export default function ChatInputArea(props: Props): JSX.Element {
 
   // Picker state
   const [pickerOpen, setPickerOpen] = useState(false)
-  const [pickerTab, setPickerTab] = useState<ContextPickerTab>('prompts')
+  const [pickerTab, setPickerTab] = useState<ContextPickerTab>('agents')
 
   // Textarea + slash-command state
   const [value, setValue] = useState('')
@@ -349,8 +349,8 @@ export default function ChatInputArea(props: Props): JSX.Element {
           {config.agent && (
             <Badge
               color="bg-green-900/40 text-green-300 border-green-700/50"
-              label={`Prompt: ${config.agent}`}
-              tooltip="This prompt's instructions will guide the AI's response."
+              label={`Agent: ${config.agent}`}
+              tooltip="This agent's instructions will guide the AI's response."
               onRemove={() => removeBadge('agent')}
             />
           )}
@@ -365,8 +365,8 @@ export default function ChatInputArea(props: Props): JSX.Element {
           {config.skill && (
             <Badge
               color="bg-amber-900/40 text-amber-300 border-amber-700/50"
-              label={`Playbook: ${config.skill}`}
-              tooltip="This playbook will be injected to guide the response."
+              label={`Skill: ${config.skill}`}
+              tooltip="This skill will be injected to guide the response."
               onRemove={() => removeBadge('skill')}
             />
           )}
@@ -444,11 +444,11 @@ export default function ChatInputArea(props: Props): JSX.Element {
             <button
               type="button"
               onClick={() => {
-                setPickerTab('prompts')
+                setPickerTab('agents')
                 setPickerOpen((o) => !o)
               }}
               disabled={disabled}
-              title="Attach prompts, notes, playbooks, or files"
+              title="Attach agents, notes, skills, templates, or sources"
               aria-label="Attach context"
               className={`w-8 h-8 rounded-xl flex items-center justify-center transition-colors border ${
                 pickerOpen
@@ -555,7 +555,7 @@ export default function ChatInputArea(props: Props): JSX.Element {
         </div>
         <div className="flex items-center justify-between mt-1.5">
           <button
-            onClick={() => openPickerOn('prompts')}
+            onClick={() => openPickerOn('agents')}
             className="text-[10px] text-gray-600 hover:text-gray-400"
           >
             + Attach context

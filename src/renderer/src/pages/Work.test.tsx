@@ -83,6 +83,12 @@ beforeEach(() => {
   mockInvoke.mockImplementation((channel: string) => {
     if (channel === 'cli:list-sessions') return Promise.resolve([])
     if (channel === 'cli:get-persisted-sessions') return Promise.resolve([])
+    // Backend readiness — both providers connected by default so the launchpad
+    // and "+ New" can start a session. Individual tests override as needed.
+    if (channel === 'auth:get-status') return Promise.resolve({
+      copilot: { installed: true, authenticated: true, checkedAt: 0, cli: { installed: true, authenticated: true, checkedAt: 0 }, sdk: { installed: false, authenticated: false, checkedAt: 0 } },
+      claude:  { installed: true, authenticated: true, checkedAt: 0, cli: { installed: true, authenticated: true, checkedAt: 0 }, sdk: { installed: false, authenticated: false, checkedAt: 0 } },
+    })
     if (channel === 'wizard:get-state') return Promise.resolve({ hasCompletedWizard: true })
     if (channel === 'cli:start-session') return Promise.resolve({ sessionId: 'new-123' })
     if (channel === 'starter-pack:record-interaction') return Promise.resolve(null)
@@ -1159,10 +1165,10 @@ describe('Work', () => {
     renderWork({ sessionId: 'tmpl-sess' })
     await waitFor(() => screen.getByLabelText('Message input'))
 
-    // Open the ContextPicker, switch to the Playbooks tab (which hosts templates), click the template.
+    // Open the ContextPicker, switch to the Templates tab, click the template.
     fireEvent.click(screen.getByLabelText('Attach context'))
-    await waitFor(() => screen.getByRole('tab', { name: 'Playbooks' }))
-    fireEvent.click(screen.getByRole('tab', { name: 'Playbooks' }))
+    await waitFor(() => screen.getByRole('tab', { name: 'Templates' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Templates' }))
 
     await waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledWith('templates:list', expect.anything())
@@ -1290,6 +1296,36 @@ describe('Work', () => {
     localCleanup()
   })
 
+  it('starts exactly one session under StrictMode double-invoked effects (no duplicate)', async () => {
+    // Regression: the Home→Work handoff used to fire startSession twice under
+    // React StrictMode (deep-link effect re-seeded the ref before navigate
+    // committed), producing two identical "active" sessions. The location.key
+    // guard makes it idempotent.
+    const { StrictMode } = await import('react')
+    const { render: localRender, cleanup: localCleanup } = await import('@testing-library/react')
+    const { MemoryRouter: LocalRouter } = await import('react-router-dom')
+    const WorkPage = (await import('./Work')).default
+    const { unmount } = localRender(
+      <StrictMode>
+        <LocalRouter initialEntries={[{ pathname: '/work', state: { quickPrompt: 'Once only', quickPromptCli: 'claude-cli' } }]}>
+          <WorkPage />
+        </LocalRouter>
+      </StrictMode>
+    )
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith('cli:start-session', expect.objectContaining({ prompt: 'Once only' }))
+    })
+    // Scope to this test's unique prompt so an unrelated leftover call from a
+    // sibling test can't mask a real duplicate — a true StrictMode double-fire
+    // would surface as TWO 'Once only' starts here.
+    const startCalls = mockInvoke.mock.calls.filter(
+      ([ch, payload]) => ch === 'cli:start-session' && (payload as { prompt?: string })?.prompt === 'Once only',
+    )
+    expect(startCalls).toHaveLength(1)
+    unmount()
+    localCleanup()
+  })
+
   // ── Compose / Schedule mode tabs ─────────────────────────────────────
   // Note: showComposer and showScheduler default to false in ALL_ON context defaults.
   // These tabs are conditionally rendered — tests use queryByText and skip gracefully
@@ -1374,10 +1410,10 @@ describe('Work', () => {
     renderWork({ sessionId: 'tmpl-var-sess' })
     await waitFor(() => screen.getByLabelText('Message input'))
 
-    // Open the ContextPicker, switch to the Playbooks tab (templates), click the template.
+    // Open the ContextPicker, switch to the Templates tab, click the template.
     fireEvent.click(screen.getByLabelText('Attach context'))
-    await waitFor(() => screen.getByRole('tab', { name: 'Playbooks' }))
-    fireEvent.click(screen.getByRole('tab', { name: 'Playbooks' }))
+    await waitFor(() => screen.getByRole('tab', { name: 'Templates' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Templates' }))
 
     await waitFor(() => screen.getByText('Template With Vars'))
     fireEvent.click(screen.getByText('Template With Vars'))
@@ -1409,7 +1445,7 @@ describe('Work', () => {
     renderWork({ sessionId: 'note-sess' })
     await waitFor(() => screen.getByText('AI response to save'))
 
-    // Trigger the "Save as Memory" action from OutputDisplay
+    // Trigger the "Save as Note" action from OutputDisplay
     // The OutputDisplay renders a "Save as Note" button on hover — use the IPC-fired path instead
     // by invoking cli:output to add a message and checking the save note flow via IPC
     // Since we can't easily hover in jsdom, fire the action via IPC event

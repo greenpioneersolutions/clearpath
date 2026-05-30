@@ -80,3 +80,25 @@ export const BACKEND_GRID_ORDER: BackendId[] = [
   'claude-cli',
   'claude-sdk',
 ]
+
+/**
+ * Choose which backend a new session should launch with, given the set of
+ * backends that are actually installed + authenticated (`ready`).
+ *
+ * Preference order: an explicit `preferred` choice → the `lastUsed` backend →
+ * Copilot (the product default) → any ready backend. Returns `null` when
+ * nothing is ready, which the caller should treat as "block the launch and
+ * route the user to authentication" rather than spawning a doomed process.
+ *
+ * `preferred`/`lastUsed` only win when they themselves are ready — a stale
+ * preference for an uninstalled CLI never forces a failing spawn.
+ */
+export function pickReadyBackend(
+  ready: BackendId[],
+  opts?: { preferred?: BackendId; lastUsed?: BackendId },
+): BackendId | null {
+  if (opts?.preferred && ready.includes(opts.preferred)) return opts.preferred
+  if (opts?.lastUsed && ready.includes(opts.lastUsed)) return opts.lastUsed
+  if (ready.includes('copilot-cli')) return 'copilot-cli'
+  return ready[0] ?? null
+}
