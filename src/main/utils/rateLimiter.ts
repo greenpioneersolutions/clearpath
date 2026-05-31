@@ -26,6 +26,12 @@ export function defineRateLimit(name: string, maxCalls: number, windowMs: number
  * Returns { allowed: true } if within limits, { allowed: false, retryAfterMs } if throttled.
  */
 export function checkRateLimit(name: string): { allowed: boolean; retryAfterMs?: number } {
+  // The Playwright e2e harness (CLEARPATH_E2E=1) legitimately starts many
+  // sessions in quick succession across specs. The limiter is abuse-prevention
+  // for real users; in tests it just causes flaky cross-test contamination, so
+  // disable it there.
+  if (process.env['CLEARPATH_E2E'] === '1') return { allowed: true }
+
   const entry = limits.get(name)
   if (!entry) return { allowed: true } // No limit defined = always allowed
 

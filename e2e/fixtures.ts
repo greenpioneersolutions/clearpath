@@ -70,6 +70,10 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
         if (typeof v === 'string') env[k] = v
       }
       env.NODE_ENV = 'test'
+      // Signals the main process that we're under the e2e harness. CLIManager
+      // uses it to bypass the install/auth guard in startSession so specs can
+      // seed sessions on CI runners that have no CLI binary installed.
+      env.CLEARPATH_E2E = '1'
       delete env.ELECTRON_RUN_AS_NODE
 
       const args = [

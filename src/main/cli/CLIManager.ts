@@ -637,11 +637,18 @@ export class CLIManager {
     // message instead of a `spawn copilot ENOENT` and a phantom "active"
     // session. `isInstalled()` also resolves+caches the binary path the spawn
     // relies on, so this replaces the bare resolve call that lived here.
+    // The Playwright e2e harness (CLEARPATH_E2E=1) seeds sessions on CI runners
+    // where no CLI binary is installed. It only needs the session record + a
+    // sessionId — the child spawn failing with ENOENT is expected and handled.
+    // Skip the early-return guard there, but still call isInstalled() for its
+    // binary-path-resolve side effect. Production keeps the full guard.
+    const e2eBypass = process.env['CLEARPATH_E2E'] === '1'
     const providerLabel = providerOf(options.cli) === 'copilot' ? 'GitHub Copilot' : 'Claude Code'
-    if (!(await adapter.isInstalled())) {
+    const installed = await adapter.isInstalled()
+    if (!installed && !e2eBypass) {
       return { error: `${providerLabel} isn't installed. Connect it in Configure → Authentication.`, code: 'CLI_NOT_READY' }
     }
-    if (!(await adapter.isAuthenticated())) {
+    if (!e2eBypass && !(await adapter.isAuthenticated())) {
       return { error: `${providerLabel} isn't signed in. Connect it in Configure → Authentication.`, code: 'CLI_NOT_READY' }
     }
 
