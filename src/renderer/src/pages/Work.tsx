@@ -6,6 +6,7 @@ import type { BackendId } from '../../../shared/backends'
 import { providerOf, migrateLegacyBackendId, pickReadyBackend } from '../../../shared/backends'
 import { useAuthStatus, readyBackendsOf } from '../hooks/useAuthStatus'
 import OutputDisplay, { type OutputMessage, type UsageStats } from '../components/OutputDisplay'
+import SessionActivityPanel from '../components/activity/SessionActivityPanel'
 import ChatInputArea, { type ChatContextConfig } from '../components/ChatInputArea'
 import ModeIndicator, { type SessionMode, MODE_CYCLE } from '../components/ModeIndicator'
 import SessionSettingsModal, { type SessionSettingsEditChanges } from '../components/SessionSettingsModal'
@@ -93,6 +94,8 @@ export default function Work(): JSX.Element {
   const [activeTemplate, setActiveTemplate] = useState<PromptTemplate | null>(null)
   const [showSessionManager, setShowSessionManager] = useState(false)
   const [viewingStoppedSession, setViewingStoppedSession] = useState(false)
+  // Session id whose "Files & activity" drawer is open (null = closed).
+  const [activitySessionId, setActivitySessionId] = useState<string | null>(null)
   const [selectedNoteIds, setSelectedNoteIds] = useState<Set<string>>(new Set())
   // Mid-session file attachments, staged into the active session's uploads dir
   // and framed onto the NEXT send. Keyed by sessionId so switching sessions
@@ -1178,6 +1181,13 @@ export default function Work(): JSX.Element {
               {selectedSession && (
                 <>
                   <ModeIndicator mode={selectedSession.mode} onToggle={handleModeToggle} />
+                  <button
+                    onClick={() => setActivitySessionId(selectedSession.info.sessionId)}
+                    title="Files this session read/created, sites it fetched, commands it ran"
+                    className="px-2 py-1 text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-700 rounded-md"
+                  >
+                    Files &amp; activity
+                  </button>
                   {selectedSession.processing && (
                     <span className="flex items-center gap-1.5 text-xs text-yellow-400">
                       <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse" /> Thinking...
@@ -1564,6 +1574,14 @@ export default function Work(): JSX.Element {
           sessionName={selectedSession?.info.name}
           sessionId={selectedSession?.info.sessionId}
           onClose={() => setShowSaveNoteModal(null)}
+        />
+      )}
+
+      {activitySessionId && (
+        <SessionActivityPanel
+          sessionId={activitySessionId}
+          open={true}
+          onClose={() => setActivitySessionId(null)}
         />
       )}
     </div>
