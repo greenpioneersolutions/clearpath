@@ -132,8 +132,8 @@ describe('LoginModal', () => {
       })
     })
 
-    // Friendly panel + device code block
-    expect(screen.getByText('Device code')).toBeInTheDocument()
+    // Friendly panel + device code block (Copilot uses a code-entry label)
+    expect(screen.getByText('Enter this code in your browser')).toBeInTheDocument()
     expect(screen.getByText('ABCD-1234')).toBeInTheDocument()
     expect(screen.getByText('Copy')).toBeInTheDocument()
   })

@@ -41,6 +41,9 @@ export default function SetupWizardFull(): JSX.Element {
   // Login state
   const [loginOutput, setLoginOutput] = useState<string[]>([])
   const [loginStatus, setLoginStatus] = useState<'idle' | 'running' | 'success' | 'failed'>('idle')
+  const [loginCli, setLoginCli] = useState<'copilot' | 'claude' | null>(null)
+  const [loginUrl, setLoginUrl] = useState<string | null>(null)
+  const [showLoginLog, setShowLoginLog] = useState(false)
 
   // Install modal state — replaces the old "copy-paste this npm command" strings
   const [installTarget, setInstallTarget] = useState<'copilot' | 'claude' | null>(null)
@@ -73,8 +76,22 @@ export default function SetupWizardFull(): JSX.Element {
       setLoginStatus(data.success ? 'success' : 'failed')
       if (data.success) void refreshAuth()
     })
-    return () => { unsub1(); unsub2() }
+    // The main process auto-opens the browser; capture the URL so we can offer
+    // a manual "Open sign-in page" fallback if the OS blocked the auto-open.
+    const unsub3 = window.electronAPI.on('auth:login-browser-opened', (data: { url: string }) => {
+      setLoginUrl(data.url)
+    })
+    return () => { unsub1(); unsub2(); unsub3() }
   }, [])
+
+  // Device code (GitHub prints XXXX-XXXX) parsed from the streamed login output.
+  const deviceCode = (() => {
+    for (const line of loginOutput) {
+      const m = line.match(/\b([A-Z0-9]{4}-[A-Z0-9]{4})\b/)
+      if (m) return m[1]
+    }
+    return null
+  })()
 
   const updateStep = async (updates: Partial<SetupState>) => {
     const result = await window.electronAPI.invoke('setup-wizard:update-step', updates) as SetupState
@@ -96,8 +113,15 @@ export default function SetupWizardFull(): JSX.Element {
   const startLogin = async (cli: 'copilot' | 'claude') => {
     setLoginOutput([])
     setLoginStatus('running')
+    setLoginCli(cli)
+    setLoginUrl(null)
+    setShowLoginLog(false)
     await window.electronAPI.invoke('auth:login-start', { cli })
   }
+
+  // The GitHub device-code entry page (used as the manual-open fallback target).
+  const loginFallbackUrl =
+    loginUrl ?? (loginCli === 'copilot' ? 'https://github.com/login/device' : null)
 
   const stepIndex = STEPS.findIndex((s) => s.key === step)
 
@@ -114,23 +138,35 @@ export default function SetupWizardFull(): JSX.Element {
         </p>
       </div>
 
-      {/* Progress bar */}
-      <div className="flex items-center gap-1">
+      {/* Progress bar — circles with the stage name labelled underneath */}
+      <div className="flex items-start gap-1 pb-6">
         {STEPS.map((s, i) => (
-          <div key={s.key} className="flex items-center flex-1">
-            <button
-              onClick={() => setStep(s.key)}
-              className={`w-8 h-8 rounded-full flex items-center justify-center text-sm flex-shrink-0 transition-all ${
-                i < stepIndex ? 'bg-green-500 text-white' :
-                i === stepIndex ? 'bg-indigo-600 text-white ring-2 ring-indigo-300' :
-                'bg-gray-200 text-gray-500'
-              }`}
-              title={s.label}
-            >
-              {i < stepIndex ? '✓' : s.icon}
-            </button>
+          <div key={s.key} className="flex items-start flex-1">
+            <div className="relative flex flex-col items-center flex-shrink-0">
+              <button
+                onClick={() => setStep(s.key)}
+                className={`w-8 h-8 rounded-full flex items-center justify-center text-sm transition-all ${
+                  i < stepIndex ? 'bg-green-500 text-white' :
+                  i === stepIndex ? 'bg-indigo-600 text-white ring-2 ring-indigo-300' :
+                  'bg-gray-200 text-gray-500'
+                }`}
+                title={s.label}
+              >
+                {i < stepIndex ? '✓' : s.icon}
+              </button>
+              {/* Absolutely centered under the circle so a long label never
+                  shifts the circle or its connector line. */}
+              <span
+                className={`absolute top-9 left-1/2 -translate-x-1/2 w-24 text-center text-[10px] leading-tight ${
+                  i === stepIndex ? 'text-gray-900 font-semibold' :
+                  i < stepIndex ? 'text-gray-500' : 'text-gray-400'
+                }`}
+              >
+                {s.label}
+              </span>
+            </div>
             {i < STEPS.length - 1 && (
-              <div className={`flex-1 h-0.5 mx-1 rounded ${i < stepIndex ? 'bg-green-400' : 'bg-gray-200'}`} />
+              <div className={`flex-1 h-0.5 mx-1 mt-4 rounded ${i < stepIndex ? 'bg-green-400' : 'bg-gray-200'}`} />
             )}
           </div>
         ))}
@@ -243,55 +279,111 @@ export default function SetupWizardFull(): JSX.Element {
               <p className="text-sm text-gray-500 mt-1">Sign in to the CLI tools you have installed.</p>
             </div>
 
-            <div className="space-y-4">
+            <div className="space-y-3">
+              {!authState.copilot.installed && !authState.claude.installed && (
+                <div className="border border-gray-200 rounded-xl px-5 py-4 text-sm text-gray-500">
+                  No CLI is installed yet. Go back to Step 1 to install GitHub Copilot or Claude Code.
+                </div>
+              )}
+
               {authState.copilot.installed && (
-                <div className={`border rounded-xl p-5 ${authState.copilot.authenticated ? 'border-green-300 bg-green-50' : 'border-gray-200'}`}>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className={`w-3 h-3 rounded-full ${authState.copilot.authenticated ? 'bg-green-500' : 'bg-amber-400'}`} />
-                      <h3 className="text-sm font-semibold text-gray-800">GitHub Copilot</h3>
-                      {authState.copilot.authenticated && <span className="text-xs text-green-600">Connected</span>}
-                    </div>
-                    {!authState.copilot.authenticated && (
-                      <button onClick={() => void startLogin('copilot')} disabled={loginStatus === 'running'}
-                        className="px-4 py-1.5 text-xs bg-gray-900 text-white rounded-lg hover:bg-gray-700 disabled:opacity-40 transition-colors">
-                        Sign In with GitHub
-                      </button>
-                    )}
-                  </div>
-                  {!authState.copilot.authenticated && (
-                    <p className="text-[10px] text-gray-400 mt-2">
-                      This will open a GitHub device code flow. You'll get a code to enter at github.com/login/device.
+                <AuthRow
+                  name="GitHub Copilot"
+                  monogram="GH"
+                  monogramClass="bg-[#24292f] text-white"
+                  connected={authState.copilot.authenticated}
+                  tokenSource={authState.copilot.tokenSource}
+                  busy={loginStatus === 'running'}
+                  signInLabel="Sign in with GitHub"
+                  signInHint="Opens a GitHub device-code flow — you'll get a short code to enter at github.com/login/device."
+                  onSignIn={() => void startLogin('copilot')}
+                />
+              )}
+
+              {authState.claude.installed && (
+                <AuthRow
+                  name="Claude Code"
+                  monogram="C"
+                  monogramClass="bg-orange-500 text-white"
+                  connected={authState.claude.authenticated}
+                  tokenSource={authState.claude.tokenSource}
+                  busy={loginStatus === 'running'}
+                  signInLabel="Sign in with Anthropic"
+                  signInHint="Opens your browser to sign in to your Anthropic account."
+                  onSignIn={() => void startLogin('claude')}
+                />
+              )}
+
+              {/* Friendly login progress panel */}
+              {loginStatus === 'running' && (
+                <div className="border border-indigo-200 bg-indigo-50 rounded-xl px-5 py-4 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <span className="inline-block w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
+                    <p className="text-sm font-medium text-gray-800">
+                      {deviceCode || loginFallbackUrl
+                        ? 'Waiting for you to authorize in the browser…'
+                        : 'Starting sign-in…'}
                     </p>
+                  </div>
+
+                  {deviceCode && (
+                    <div className="bg-white border border-gray-200 rounded-lg px-4 py-3 flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-[10px] text-gray-500 uppercase tracking-wide">Enter this code in your browser</p>
+                        <p className="text-lg font-mono font-semibold text-gray-900 tracking-widest mt-0.5">{deviceCode}</p>
+                      </div>
+                      <button
+                        onClick={() => void navigator.clipboard?.writeText(deviceCode).catch(() => {})}
+                        className="px-3 py-1.5 text-xs font-medium rounded-md bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 transition-colors flex-shrink-0"
+                      >
+                        Copy
+                      </button>
+                    </div>
+                  )}
+
+                  {loginFallbackUrl && (
+                    <button
+                      onClick={() => void window.electronAPI.invoke('auth:open-external', { url: loginFallbackUrl })}
+                      className="text-xs text-indigo-600 hover:text-indigo-800 underline underline-offset-2"
+                    >
+                      {loginUrl ? "Didn't see your browser open? Open the sign-in page" : 'Open the sign-in page'}
+                    </button>
                   )}
                 </div>
               )}
 
-              {authState.claude.installed && (
-                <div className={`border rounded-xl p-5 ${authState.claude.authenticated ? 'border-green-300 bg-green-50' : 'border-gray-200'}`}>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className={`w-3 h-3 rounded-full ${authState.claude.authenticated ? 'bg-green-500' : 'bg-amber-400'}`} />
-                      <h3 className="text-sm font-semibold text-gray-800">Claude Code</h3>
-                      {authState.claude.authenticated && <span className="text-xs text-green-600">Connected</span>}
-                    </div>
-                    {!authState.claude.authenticated && (
-                      <button onClick={() => void startLogin('claude')} disabled={loginStatus === 'running'}
-                        className="px-4 py-1.5 text-xs bg-orange-500 text-white rounded-lg hover:bg-orange-400 disabled:opacity-40 transition-colors">
-                        Sign In with Anthropic
-                      </button>
-                    )}
-                  </div>
+              {loginStatus === 'failed' && (
+                <div className="border border-red-200 bg-red-50 rounded-xl px-5 py-4 space-y-2">
+                  <p className="text-sm font-medium text-red-700">Sign-in didn't complete.</p>
+                  <p className="text-xs text-red-600">
+                    The login was cancelled or timed out. You can try again, or use a token instead
+                    (GH_TOKEN for Copilot) under Settings → Environment.
+                  </p>
+                  {loginCli && (
+                    <button onClick={() => void startLogin(loginCli)}
+                      className="px-3 py-1.5 text-xs bg-red-600 text-white rounded-lg hover:bg-red-500 transition-colors">
+                      Try again
+                    </button>
+                  )}
                 </div>
               )}
 
-              {/* Login terminal output */}
+              {/* Collapsible raw output for the curious / for debugging */}
               {loginOutput.length > 0 && (
-                <div className="bg-gray-900 rounded-lg px-4 py-3 max-h-40 overflow-y-auto">
-                  {loginOutput.map((line, i) => (
-                    <p key={i} className="text-[11px] text-gray-300 font-mono leading-relaxed">{line}</p>
-                  ))}
-                  {loginStatus === 'running' && <span className="inline-block w-2 h-3 bg-green-400 animate-pulse" />}
+                <div>
+                  <button
+                    onClick={() => setShowLoginLog((v) => !v)}
+                    className="text-[11px] text-gray-500 hover:text-gray-700"
+                  >
+                    {showLoginLog ? 'Hide details' : 'Show details'}
+                  </button>
+                  {showLoginLog && (
+                    <div className="mt-2 bg-gray-900 rounded-lg px-4 py-3 max-h-40 overflow-y-auto">
+                      {loginOutput.map((line, i) => (
+                        <p key={i} className="text-[11px] text-gray-300 font-mono leading-relaxed break-all">{line}</p>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -499,19 +591,85 @@ interface BackendCardProps {
   showTokenHint?: boolean
 }
 
+// Human-friendly explanation of how a CLI is authenticated, used as a subtitle
+// so two "Connected" rows read as distinct, informative states.
+function tokenSourceLabel(source?: 'env-var' | 'config-file' | 'auth-status'): string {
+  switch (source) {
+    case 'env-var':     return 'Connected · using an access token'
+    case 'config-file': return 'Connected · signed in'
+    case 'auth-status': return 'Connected · signed in'
+    default:            return 'Connected'
+  }
+}
+
+/**
+ * One authentication row in the wizard's Step 2. Uses translucent green
+ * surfaces (not static `bg-green-50`) and the theme-aware gray text scale so
+ * the CLI name stays readable in both light and dark mode — the static
+ * light-green + remapped-light-text combo previously rendered the name
+ * invisible on dark backgrounds.
+ */
+function AuthRow({
+  name, monogram, monogramClass, connected, tokenSource, busy, signInLabel, signInHint, onSignIn,
+}: {
+  name: string
+  monogram: string
+  monogramClass: string
+  connected: boolean
+  tokenSource?: 'env-var' | 'config-file' | 'auth-status'
+  busy: boolean
+  signInLabel: string
+  signInHint: string
+  onSignIn: () => void
+}): JSX.Element {
+  return (
+    <div className={`border rounded-xl p-4 ${connected ? 'border-green-500/40 bg-green-500/10' : 'border-gray-200'}`}>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0">
+          <span className={`flex-shrink-0 w-9 h-9 rounded-lg flex items-center justify-center text-xs font-bold ${monogramClass}`}>
+            {monogram}
+          </span>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-gray-900 truncate">{name}</p>
+            <p className="text-xs text-gray-500 truncate">
+              {connected ? tokenSourceLabel(tokenSource) : 'Not connected'}
+            </p>
+          </div>
+        </div>
+
+        {connected ? (
+          <span className="flex-shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-green-500/15 text-green-600 text-xs font-medium">
+            <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+            Connected
+          </span>
+        ) : (
+          <button onClick={onSignIn} disabled={busy}
+            className="flex-shrink-0 px-4 py-1.5 text-xs bg-gray-900 text-white rounded-lg hover:bg-gray-700 disabled:opacity-40 transition-colors">
+            {signInLabel}
+          </button>
+        )}
+      </div>
+
+      {!connected && (
+        <p className="text-[11px] text-gray-400 mt-2 leading-relaxed">{signInHint}</p>
+      )}
+    </div>
+  )
+}
+
 function BackendCard({
   label, status, readyText, installLabel, onInstall, tokenHint, showTokenHint,
 }: BackendCardProps): JSX.Element {
   const ready = status.installed
   return (
-    <div className={`border rounded-xl p-5 space-y-3 ${ready ? 'border-green-300 bg-green-50' : 'border-gray-200'}`}>
+    <div className={`border rounded-xl p-5 space-y-3 ${ready ? 'border-green-500/40 bg-green-500/10' : 'border-gray-200'}`}>
       <div className="flex items-center gap-2">
         <span className={`w-3 h-3 rounded-full ${ready ? 'bg-green-500' : 'bg-gray-300'}`} />
-        <h4 className="text-sm font-semibold text-gray-800">{label}</h4>
+        <h4 className="text-sm font-semibold text-gray-900">{label}</h4>
       </div>
       {ready ? (
         <div className="space-y-1">
-          <p className="text-xs text-green-700">{readyText}</p>
+          <p className="text-xs text-green-600">{readyText}</p>
           {status.binaryPath && <p className="text-[10px] text-gray-400 font-mono truncate">{status.binaryPath}</p>}
           {status.version && <p className="text-[10px] text-gray-400">v{status.version}</p>}
         </div>
