@@ -342,22 +342,27 @@ export function registerFileAttachmentHandlers(
 
   // Copy already-picked source paths into a session's uploads dir.
   ipcMain.handle('files:stage-paths', (_e, args: { workingDirectory?: string; sessionId: string; sourcePaths: string[] }): PickAndStageResult => {
+    const usedFallback = !(args.workingDirectory && existsSync(args.workingDirectory))
     const baseDir = ensureBaseDir(args.workingDirectory)
-    return stagePaths(baseDir, args.sessionId, args.sourcePaths ?? [])
+    return { ...stagePaths(baseDir, args.sessionId, args.sourcePaths ?? []), baseDir, usedFallback }
   })
 
   // Convenience for mid-session attach (existing session → cwd + id are known):
-  // pick + copy in one round-trip.
+  // pick + copy in one round-trip. Mirrors the launchpad's `ensureBaseDir` safety
+  // net so attaching mid-session never hard-fails for a user without a configured
+  // workspace — it falls back to the app-managed scratch dir and reports
+  // `usedFallback` so the renderer can nudge them to pick a real workspace.
   ipcMain.handle('files:pick-and-stage', async (_e, args: { workingDirectory?: string; sessionId: string }): Promise<PickAndStageResult> => {
-    if (!args.workingDirectory) return { attachments: [], errors: ['Select a workspace folder before attaching files.'] }
+    const usedFallback = !(args.workingDirectory && existsSync(args.workingDirectory))
+    const baseDir = ensureBaseDir(args.workingDirectory)
     const win = BrowserWindow.getFocusedWindow()
     const dialogOpts = {
       properties: ['openFile' as const, 'multiSelections' as const],
       filters: [{ name: 'All Files', extensions: ['*'] }],
     }
     const result = await (win ? dialog.showOpenDialog(win, dialogOpts) : dialog.showOpenDialog(dialogOpts))
-    if (result.canceled || result.filePaths.length === 0) return { canceled: true, attachments: [], errors: [] }
-    return stagePaths(args.workingDirectory, args.sessionId, result.filePaths)
+    if (result.canceled || result.filePaths.length === 0) return { canceled: true, attachments: [], errors: [], baseDir, usedFallback }
+    return { ...stagePaths(baseDir, args.sessionId, result.filePaths), baseDir, usedFallback }
   })
 
   // List files staged for a session.
