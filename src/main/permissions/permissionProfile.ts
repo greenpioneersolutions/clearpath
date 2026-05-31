@@ -151,7 +151,7 @@ export function toolMatchesBlocked(toolName: string, input: unknown, blocked: st
 export function extractCommand(input: unknown): string | undefined {
   if (!input || typeof input !== 'object') return undefined
   const o = input as Record<string, unknown>
-  for (const k of ['command', 'cmd', 'script', 'path', 'file_path', 'filePath', 'file', 'target']) {
+  for (const k of ['command', 'cmd', 'script', 'url', 'uri', 'path', 'file_path', 'filePath', 'file', 'target']) {
     const v = o[k]
     if (typeof v === 'string' && v) return v
   }

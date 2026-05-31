@@ -2,11 +2,16 @@
 /**
  * ClearPath permission hook for GitHub Copilot CLI (bundled resource).
  *
- * Registered as a `permissionRequest` hook (the hook GitHub documents for CLI
- * pipe/`-p` mode where no interactive prompt is available). Copilot writes the
- * tool request as JSON on stdin; we forward it to ClearPath's PermissionBroker
- * over loopback HTTP and print the decision as JSON on stdout:
- *   { "behavior": "allow" | "deny", "message": "..." }
+ * Registered as a `preToolUse` hook — unlike `permissionRequest` (which only
+ * gets `{sessionId, cwd, toolName}`), preToolUse receives the full `toolArgs`
+ * (the URL for fetch, the path for write, the command for shell), which we need
+ * both to show a meaningful approval prompt and to record session activity.
+ *
+ * Copilot writes the tool request as JSON on stdin; we forward it to ClearPath's
+ * PermissionBroker over loopback HTTP and print the decision on stdout:
+ *   { "permissionDecision": "allow" | "deny", "permissionDecisionReason": "..." }
+ * (We also emit `behavior` for compatibility if Copilot reads it as a
+ * permissionRequest hook.)
  *
  * Config via env: BROKER_URL, BROKER_TOKEN, BROKER_SESSION.
  */
@@ -15,9 +20,11 @@ const BROKER_URL = process.env.BROKER_URL || ''
 const BROKER_TOKEN = process.env.BROKER_TOKEN || ''
 const BROKER_SESSION = process.env.BROKER_SESSION || ''
 
-function out(behavior, message) {
-  process.stdout.write(JSON.stringify(message ? { behavior, message } : { behavior }))
-  process.exit(behavior === 'allow' ? 0 : 0) // exit 0; behavior carries the decision
+function out(decision, reason) {
+  const payload = { permissionDecision: decision, behavior: decision }
+  if (reason && decision === 'deny') { payload.permissionDecisionReason = reason; payload.message = reason }
+  process.stdout.write(JSON.stringify(payload))
+  process.exit(0) // exit 0; the decision field carries allow/deny
 }
 
 async function main() {
@@ -46,8 +53,8 @@ async function main() {
         sessionId: BROKER_SESSION,
         cli: 'copilot',
         toolName: req.toolName ?? req.tool ?? '',
-        // permissionRequest input carries no args; pass what we have for matching.
-        input: req.toolArgs ?? req.arguments ?? { cwd: req.cwd },
+        // preToolUse carries the real arguments; fall back gracefully.
+        input: req.toolArgs ?? req.arguments ?? req.input ?? { cwd: req.cwd },
       }),
     })
     const data = await res.json()

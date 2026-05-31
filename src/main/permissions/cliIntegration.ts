@@ -64,11 +64,14 @@ function copilotSettingsPath(): string {
 
 interface CopilotSettings {
   version?: number
-  hooks?: { permissionRequest?: Array<Record<string, unknown>>; [k: string]: unknown }
+  hooks?: { [event: string]: Array<Record<string, unknown>> | unknown }
   [k: string]: unknown
 }
 
 const HOOK_MARKER = 'clearpath-permission'
+// preToolUse (not permissionRequest): it carries the full toolArgs (URL / path /
+// command) we need for a meaningful prompt + activity log, and still gates the call.
+const HOOK_EVENT = 'preToolUse'
 
 /** Build the hook entry that runs our bundled hook script via node. */
 function hookEntry(scriptPath: string): Record<string, unknown> {
@@ -101,13 +104,23 @@ function writeCopilotSettings(path: string, data: CopilotSettings): void {
  */
 export function ensureCopilotHook(scriptPath: string, path = copilotSettingsPath()): string | null {
   const settings = readCopilotSettings(path)
-  const hooks = settings.hooks ?? {}
-  const list = Array.isArray(hooks.permissionRequest) ? hooks.permissionRequest : []
+  const hooks: Record<string, unknown> = { ...(settings.hooks ?? {}) }
+  // Migration: strip any stale ClearPath entry from a previously-used event
+  // (we moved permissionRequest → preToolUse) so it doesn't double-fire.
+  for (const ev of ['permissionRequest']) {
+    const prev = hooks[ev]
+    if (Array.isArray(prev)) {
+      const kept = prev.filter((h) => (h as Record<string, unknown>)?.['name'] !== HOOK_MARKER)
+      if (kept.length === 0) delete hooks[ev]
+      else hooks[ev] = kept
+    }
+  }
+  const list = Array.isArray(hooks[HOOK_EVENT]) ? (hooks[HOOK_EVENT] as Array<Record<string, unknown>>) : []
   const others = list.filter((h) => h?.['name'] !== HOOK_MARKER)
   const next: CopilotSettings = {
     ...settings,
     version: settings.version ?? 1,
-    hooks: { ...hooks, permissionRequest: [...others, hookEntry(scriptPath)] },
+    hooks: { ...hooks, [HOOK_EVENT]: [...others, hookEntry(scriptPath)] },
   }
   writeCopilotSettings(path, next)
   return path
@@ -117,11 +130,11 @@ export function ensureCopilotHook(scriptPath: string, path = copilotSettingsPath
 export function removeCopilotHook(path = copilotSettingsPath()): void {
   if (!existsSync(path)) return
   const settings = readCopilotSettings(path)
-  const list = settings.hooks?.permissionRequest
+  const list = settings.hooks?.[HOOK_EVENT]
   if (!Array.isArray(list)) return
   const others = list.filter((h) => h?.['name'] !== HOOK_MARKER)
   const hooks: Record<string, unknown> = { ...settings.hooks }
-  if (others.length === 0) delete hooks['permissionRequest']
-  else hooks['permissionRequest'] = others
+  if (others.length === 0) delete hooks[HOOK_EVENT]
+  else hooks[HOOK_EVENT] = others
   writeCopilotSettings(path, { ...settings, hooks })
 }

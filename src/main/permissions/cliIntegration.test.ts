@@ -52,53 +52,65 @@ describe('Copilot hook merge', () => {
   beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'cp-hook-')); settingsPath = join(dir, 'settings.json') })
   afterEach(() => rmSync(dir, { recursive: true, force: true }))
 
-  it('creates settings.json with exactly one ClearPath hook', () => {
+  it('creates settings.json with exactly one ClearPath preToolUse hook', () => {
     ensureCopilotHook('/x/hook.mjs', settingsPath)
     const s = JSON.parse(readFileSync(settingsPath, 'utf8'))
     expect(s.version).toBe(1)
-    expect(s.hooks.permissionRequest).toHaveLength(1)
-    expect(s.hooks.permissionRequest[0].bash).toBe("node '/x/hook.mjs'")
-    expect(s.hooks.permissionRequest[0].name).toBe('clearpath-permission')
+    expect(s.hooks.preToolUse).toHaveLength(1)
+    expect(s.hooks.preToolUse[0].bash).toBe("node '/x/hook.mjs'")
+    expect(s.hooks.preToolUse[0].name).toBe('clearpath-permission')
   })
 
   it('is idempotent — re-running does not duplicate the hook', () => {
     ensureCopilotHook('/x/hook.mjs', settingsPath)
     ensureCopilotHook('/x/hook2.mjs', settingsPath)
     const s = JSON.parse(readFileSync(settingsPath, 'utf8'))
-    expect(s.hooks.permissionRequest).toHaveLength(1)
-    expect(s.hooks.permissionRequest[0].bash).toBe("node '/x/hook2.mjs'")
+    expect(s.hooks.preToolUse).toHaveLength(1)
+    expect(s.hooks.preToolUse[0].bash).toBe("node '/x/hook2.mjs'")
   })
 
   it('preserves the user’s other hooks and top-level keys', () => {
     writeFileSync(settingsPath, JSON.stringify({
       version: 1,
       protectedBranches: ['main'],
-      hooks: { permissionRequest: [{ type: 'command', bash: 'user-thing', name: 'mine' }], preToolUse: [{ x: 1 }] },
+      hooks: { permissionRequest: [{ x: 1 }], preToolUse: [{ type: 'command', bash: 'user-thing', name: 'mine' }] },
     }))
     ensureCopilotHook('/x/hook.mjs', settingsPath)
     const s = JSON.parse(readFileSync(settingsPath, 'utf8'))
     expect(s.protectedBranches).toEqual(['main'])
-    expect(s.hooks.preToolUse).toEqual([{ x: 1 }])
-    const names = s.hooks.permissionRequest.map((h: { name?: string }) => h.name)
+    expect(s.hooks.permissionRequest).toEqual([{ x: 1 }])
+    const names = s.hooks.preToolUse.map((h: { name?: string }) => h.name)
     expect(names).toContain('mine')
     expect(names).toContain('clearpath-permission')
   })
 
   it('removeCopilotHook drops only our entry', () => {
     writeFileSync(settingsPath, JSON.stringify({
-      hooks: { permissionRequest: [{ name: 'mine', bash: 'x' }] },
+      hooks: { preToolUse: [{ name: 'mine', bash: 'x' }] },
     }))
     ensureCopilotHook('/x/hook.mjs', settingsPath)
     removeCopilotHook(settingsPath)
     const s = JSON.parse(readFileSync(settingsPath, 'utf8'))
-    expect(s.hooks.permissionRequest).toEqual([{ name: 'mine', bash: 'x' }])
+    expect(s.hooks.preToolUse).toEqual([{ name: 'mine', bash: 'x' }])
   })
 
-  it('removeCopilotHook removes the empty permissionRequest array entirely', () => {
+  it('removeCopilotHook removes the empty preToolUse array entirely', () => {
     ensureCopilotHook('/x/hook.mjs', settingsPath)
     removeCopilotHook(settingsPath)
     const s = JSON.parse(readFileSync(settingsPath, 'utf8'))
-    expect(s.hooks.permissionRequest).toBeUndefined()
+    expect(s.hooks.preToolUse).toBeUndefined()
+  })
+
+  it('migrates a stale permissionRequest entry from the prior version to preToolUse', () => {
+    writeFileSync(settingsPath, JSON.stringify({
+      hooks: { permissionRequest: [{ name: 'clearpath-permission', bash: "node '/old.mjs'" }, { name: 'mine', bash: 'x' }] },
+    }))
+    ensureCopilotHook('/x/hook.mjs', settingsPath)
+    const s = JSON.parse(readFileSync(settingsPath, 'utf8'))
+    // our stale entry removed from permissionRequest, user's kept
+    expect(s.hooks.permissionRequest).toEqual([{ name: 'mine', bash: 'x' }])
+    // and our hook now lives under preToolUse
+    expect(s.hooks.preToolUse.map((h: { name?: string }) => h.name)).toEqual(['clearpath-permission'])
   })
 
   it('removeCopilotHook is a no-op when settings.json is absent', () => {
