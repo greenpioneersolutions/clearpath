@@ -225,14 +225,13 @@ hook entry on disable/quit (merge-don't-clobber, ClearMemory precedent).
 - [x] `grantsStore.ts` — persisted always-allow/deny (8 tests)
 - [x] `PermissionBroker.ts` — loopback HTTP, decideStatic, prompt/respond/timeout, audit (13 tests)
 - [x] Bundled clients: `resources/permission/claude-mcp-server.mjs`, `copilot-hook.mjs`
-- [ ] `cliIntegration.ts` — resource path resolve (dev/packaged) + Claude mcpConfig merge builder + Copilot settings.json merge/teardown (+ tests)
-- [ ] CLIManager lifecycle: start broker, mint token/session, inject `BROKER_*` env into spawn, set Claude `mcpConfig`(merged)+`permissionPromptTool`, ensure Copilot hook registered; `releaseSession` on stop/delete; `setAuditCallback` → `tool-approval`
-- [ ] `permissionHandlers.ts` IPC: `permission:respond`, `permission:list-pending`
-- [ ] index.ts wiring: construct broker with `getActivePolicy` (read `clear-path-policy`), `getWebContents`, audit, grants (electron-store backend), `getSessionMeta` (from CLIManager)
-- [ ] Renderer: rewrite `PermissionRequestHandler.tsx` + `PermissionCard.tsx` to the new request shape + `permission:respond` (Allow / Deny / Always-session / Always-workspace); drop the dead `cli:send-input 'y'/'n'` path
-- [ ] `package.json` `build.extraResources` for `resources/permission/**`
-- [ ] e2e (`permission:respond` round-trip like `file-attachments.pw.spec.ts`)
-- [ ] Set Standard policy's `requiredPermissionMode` to `default` (so edits route through the broker — plan §8 #6)
+- [x] `cliIntegration.ts` — resource resolve (dev/packaged via app.asar.unpacked) + Claude mcpConfig merge + Copilot settings.json merge/teardown (11 tests)
+- [x] CLIManager lifecycle: `setPermissionBroker`; `runTurn` adds Claude `mcpConfig`(merged)+`permissionPromptTool` or Copilot `brokerEnv`; `releaseSession` on stop/delete; `getSessionMeta`
+- [x] `permissionHandlers.ts` IPC: `permission:respond`, `permission:list-pending`
+- [x] index.ts wiring: broker built with exported `getActivePolicy`, `getWebContents`, shared audit sink, grants (`clear-path-tool-grants`), `getSessionMeta`; started + Copilot hook registered at boot; torn down on quit
+- [x] Renderer response surface: `PermissionRequestHandler.tsx` (Tools panel) → `permission:respond` (Allow once / Always this session / Deny / Always deny); recovers via `permission:list-pending`; legacy `y/n` path removed (8 tests)
+- [x] Packaging: covered by electron-builder `files: resources/**` + `asarUnpack`
+- [ ] **Remaining (Phase 1b tail):** surface the prompt inline in the **chat** (Work.tsx/OutputDisplay) too — today it shows in the Tools & Permissions panel; e2e for the `permission:respond` round-trip; verify the Standard `acceptEdits` interaction doesn't bypass the broker (plan §8 #6)
 
 ## 9. Out of scope (this plan)
 - Full ACP session mode for Copilot (Phase 4 candidate only).
