@@ -24,11 +24,17 @@ const INSTRUCTIONS = {
 /** Device code pattern like "ABCD-1234" that GitHub prints in login output. */
 const DEVICE_CODE_RE = /\b([A-Z0-9]{4}-[A-Z0-9]{4})\b/
 
+/** First https URL in a line — used as a manual "open sign-in page" fallback. */
+const AUTH_URL_RE = /https:\/\/[^\s)]+/
+
 export function LoginModal({ cli, isOpen, onClose }: Props): JSX.Element | null {
   const panelRef = useRef<HTMLDivElement>(null)
   const [lines, setLines] = useState<string[]>([])
   const [status, setStatus] = useState<'running' | 'success' | 'failed' | 'cancelled'>('running')
   const [browserUrl, setBrowserUrl] = useState<string | null>(null)
+  // URL scraped from the CLI output, used as a fallback "Open sign-in page"
+  // target when the OS browser auto-open didn't fire (browserUrl stays null).
+  const [detectedUrl, setDetectedUrl] = useState<string | null>(null)
   const [deviceCode, setDeviceCode] = useState<string | null>(null)
   const [showDetails, setShowDetails] = useState(false)
   const [codeCopied, setCodeCopied] = useState(false)
@@ -50,6 +56,7 @@ export function LoginModal({ cli, isOpen, onClose }: Props): JSX.Element | null 
     setLines([])
     setStatus('running')
     setBrowserUrl(null)
+    setDetectedUrl(null)
     setDeviceCode(null)
     setShowDetails(false)
     setCodeCopied(false)
@@ -64,6 +71,13 @@ export function LoginModal({ cli, isOpen, onClose }: Props): JSX.Element | null 
         if (m && !deviceCodeRef.current) {
           deviceCodeRef.current = m[1]
           setDeviceCode(m[1])
+        }
+        // Scrape the first auth URL as a manual-open fallback (independent of
+        // whether the main process managed to auto-open the OS browser).
+        const u = payload.line.match(AUTH_URL_RE)
+        if (u && !detectedUrlRef.current) {
+          detectedUrlRef.current = u[0]
+          setDetectedUrl(u[0])
         }
       },
     )
@@ -96,12 +110,14 @@ export function LoginModal({ cli, isOpen, onClose }: Props): JSX.Element | null 
       cleanupComplete()
       cleanupBrowser()
       deviceCodeRef.current = null
+      detectedUrlRef.current = null
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, cli])
 
-  // Local ref so the IPC handler captures the latest device code even before state commits
+  // Local refs so the IPC handler captures the latest values even before state commits
   const deviceCodeRef = useRef<string | null>(null)
+  const detectedUrlRef = useRef<string | null>(null)
 
   const handleCancel = () => {
     void window.electronAPI.invoke('auth:login-cancel')
@@ -120,15 +136,20 @@ export function LoginModal({ cli, isOpen, onClose }: Props): JSX.Element | null 
     }
   }
 
+  const openUrl = browserUrl ?? detectedUrl
+
   const handleReopenBrowser = () => {
-    if (!browserUrl) return
-    void window.electronAPI.invoke('auth:open-external', { url: browserUrl })
+    if (!openUrl) return
+    void window.electronAPI.invoke('auth:open-external', { url: openUrl })
   }
 
   if (!isOpen) return null
 
-  // Show the friendly browser-opened panel when we've auto-opened the URL
-  const showFriendlyPanel = status === 'running' && browserUrl !== null
+  // Show the friendly panel once we have *something* actionable — either we
+  // auto-opened the browser, or we've parsed a sign-in URL / device code the
+  // user can act on manually (covers the case where auto-open was blocked).
+  const showFriendlyPanel = status === 'running' && (openUrl !== null || deviceCode !== null)
+  const autoOpened = browserUrl !== null
 
   return (
     /* Backdrop */
@@ -154,7 +175,9 @@ export function LoginModal({ cli, isOpen, onClose }: Props): JSX.Element | null 
             </h2>
             <p className="text-xs text-gray-500 mt-0.5">
               {showFriendlyPanel
-                ? 'We opened your browser — sign in to finish.'
+                ? autoOpened
+                  ? 'We opened your browser — sign in to finish.'
+                  : 'Open the sign-in page to finish.'
                 : INSTRUCTIONS[cli]}
             </p>
           </div>
@@ -164,6 +187,9 @@ export function LoginModal({ cli, isOpen, onClose }: Props): JSX.Element | null 
         {/* Body */}
         {showFriendlyPanel ? (
           <FriendlyBrowserPanel
+            cli={cli}
+            autoOpened={autoOpened}
+            hasUrl={openUrl !== null}
             deviceCode={deviceCode}
             codeCopied={codeCopied}
             onCopyCode={handleCopyCode}
@@ -266,16 +292,25 @@ export function LoginModal({ cli, isOpen, onClose }: Props): JSX.Element | null 
 // ── Sub-components ───────────────────────────────────────────────────────────
 
 function FriendlyBrowserPanel({
+  cli,
+  autoOpened,
+  hasUrl,
   deviceCode,
   codeCopied,
   onCopyCode,
   onReopenBrowser,
 }: {
+  cli: 'copilot' | 'claude'
+  autoOpened: boolean
+  hasUrl: boolean
   deviceCode: string | null
   codeCopied: boolean
   onCopyCode: () => void
   onReopenBrowser: () => void
 }): JSX.Element {
+  // Copilot uses GitHub's device flow: the user enters the code shown below on
+  // the opened page. Claude uses a redirect flow with no separate code.
+  const codeLabel = cli === 'copilot' ? 'Enter this code in your browser' : 'Device code'
   return (
     <div className="px-6 py-6 space-y-4">
       <div className="flex items-start gap-4">
@@ -283,9 +318,13 @@ function FriendlyBrowserPanel({
           <BrowserIcon />
         </div>
         <div className="flex-1 min-w-0">
-          <h3 className="text-base font-semibold text-gray-900">We opened your browser</h3>
+          <h3 className="text-base font-semibold text-gray-900">
+            {autoOpened ? 'We opened your browser' : 'Almost there — open the sign-in page'}
+          </h3>
           <p className="text-sm text-gray-500 mt-1">
-            Finish signing in there. This window will close automatically once you are authenticated.
+            {autoOpened
+              ? 'Finish signing in there. This window will close automatically once you are authenticated.'
+              : 'Open the sign-in page to authorize, then come back here. This window will close automatically once you are authenticated.'}
           </p>
         </div>
       </div>
@@ -294,8 +333,8 @@ function FriendlyBrowserPanel({
         <div className="bg-gray-50 border border-gray-200 rounded-lg px-4 py-3">
           <div className="flex items-center justify-between gap-3">
             <div className="flex-1 min-w-0">
-              <p className="text-xs text-gray-500 uppercase tracking-wide">Device code</p>
-              <p className="text-lg font-mono font-semibold text-gray-900 mt-0.5">{deviceCode}</p>
+              <p className="text-xs text-gray-500 uppercase tracking-wide">{codeLabel}</p>
+              <p className="text-lg font-mono font-semibold text-gray-900 mt-0.5 tracking-widest">{deviceCode}</p>
             </div>
             <button
               onClick={onCopyCode}
@@ -307,12 +346,22 @@ function FriendlyBrowserPanel({
         </div>
       )}
 
-      <button
-        onClick={onReopenBrowser}
-        className="text-xs text-gray-500 hover:text-gray-700 underline underline-offset-2"
-      >
-        Didn't see your browser open? Click here.
-      </button>
+      {hasUrl &&
+        (autoOpened ? (
+          <button
+            onClick={onReopenBrowser}
+            className="text-xs text-gray-500 hover:text-gray-700 underline underline-offset-2"
+          >
+            Didn't see your browser open? Click here.
+          </button>
+        ) : (
+          <button
+            onClick={onReopenBrowser}
+            className="w-full px-4 py-2.5 text-sm font-medium rounded-lg bg-[#5B4FC4] text-white hover:bg-[#4d42a8] transition-colors"
+          >
+            Open sign-in page
+          </button>
+        ))}
     </div>
   )
 }

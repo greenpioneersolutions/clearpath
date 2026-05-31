@@ -75,6 +75,11 @@ beforeEach(() => {
       { id: 'doc',  name: 'Doc',  description: 'docs',       enabled: true,  scope: 'project' },
     ],
     'skills:toggle': null,
+    'locations:list-approved': [
+      { id: 'f-foo', label: 'Foo', path: '/foo', addedAt: 0 },
+      { id: 'f-bar', label: 'Bar', path: '/bar', addedAt: 0 },
+      { id: 'f-x',   label: 'X',   path: '/x',   addedAt: 0 },
+    ],
   })
 })
 
@@ -105,16 +110,12 @@ describe('QuickStartCard', () => {
     const ta = screen.getByTestId('quick-start-textarea') as HTMLTextAreaElement
     fireEvent.change(ta, { target: { value: 'Hello world' } })
     fireEvent.click(screen.getByTestId('quick-start-submit'))
-    expect(onSubmit).toHaveBeenCalledWith({
+    // The payload now also carries attachment + per-session-toggle fields, so we
+    // assert the core values rather than an exact object.
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({
       prompt: 'Hello world',
-      displayPrompt: undefined,
       cli: 'copilot-cli',
-      model: undefined,
-      agent: undefined,
-      permissionMode: undefined,
-      additionalDirs: undefined,
-      contextSummary: undefined,
-    })
+    }))
   })
 
   it('switches Provider dropdown selection and forwards the new backend id', () => {
@@ -148,19 +149,53 @@ describe('QuickStartCard', () => {
     expect(claudeOpt).toBeDisabled()
   })
 
-  it('falls back to cli:check-installed when auth:get-status has no provider shape', async () => {
-    // Same single-ready-provider scenario as above, but reached via the legacy
-    // cli:check-installed fallback in useAuthStatus.
+  it('shows the connect CTA when only the legacy cli:check-installed fallback is available', async () => {
+    // auth:get-status returns no provider shape, so useAuthStatus falls back to
+    // cli:check-installed — which reports install state only and deliberately
+    // treats "installed but unknown auth" as not-ready. With neither provider
+    // ready, the launchpad blocks with the connect CTA instead of the picker.
     setupElectronAPI({
       'auth:get-status': null,
       'cli:check-installed': { copilot: true, claude: false },
     })
     render(<QuickStartCard onSubmit={vi.fn()} />)
-    const pill = await screen.findByTestId('quick-start-provider-pill') as HTMLButtonElement
-    fireEvent.click(pill)
-    const popover = await screen.findByTestId('quick-start-provider-popover')
-    const claudeOpt = within(popover).getByRole('menuitemradio', { name: /Claude/i }) as HTMLButtonElement
-    expect(claudeOpt).toBeDisabled()
+    expect(await screen.findByTestId('quick-start-connect-cta')).toBeInTheDocument()
+    // The composer (and its provider picker) is replaced by the CTA.
+    expect(screen.queryByTestId('quick-start-provider-pill')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('quick-start-textarea')).not.toBeInTheDocument()
+  })
+
+  it('auto-corrects a Copilot default to the ready Claude provider (fresh-install case)', async () => {
+    // The exact bug: defaultCli is the hardcoded copilot-cli but only Claude is
+    // connected. The provider must self-correct to Claude so the launch targets
+    // a CLI that can actually spawn — and submit must forward claude-cli.
+    const onSubmit = vi.fn()
+    setupElectronAPI({
+      'auth:get-status': authStatusFixture({ cli: false, sdk: false }, { cli: true, sdk: false }),
+    })
+    render(<QuickStartCard onSubmit={onSubmit} defaultCli="copilot-cli" />)
+    // Once readiness lands, the single-ready pill should read "Claude".
+    await waitFor(() => {
+      expect(screen.getByTestId('quick-start-provider-pill').textContent).toMatch(/Claude/)
+    })
+    fireEvent.change(screen.getByTestId('quick-start-textarea'), { target: { value: 'hello' } })
+    fireEvent.click(screen.getByTestId('quick-start-submit'))
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ cli: 'claude-cli' }))
+  })
+
+  it('blocks submit and shows the connect CTA when neither provider is authenticated', async () => {
+    const onSubmit = vi.fn()
+    setupElectronAPI({
+      'auth:get-status': authStatusFixture({ cli: false, sdk: false }, { cli: false, sdk: false }),
+    })
+    render(<QuickStartCard onSubmit={onSubmit} />)
+    expect(await screen.findByTestId('quick-start-connect-cta')).toBeInTheDocument()
+    // The connect button is a hash anchor into the setup wizard.
+    const cta = screen.getByTestId('quick-start-connect-cta-button') as HTMLAnchorElement
+    expect(cta.getAttribute('href')).toBe('#/configure?tab=setup')
+    // No composer means no way to submit a doomed launch.
+    expect(screen.queryByTestId('quick-start-submit')).not.toBeInTheDocument()
+    expect(onSubmit).not.toHaveBeenCalled()
   })
 
   it('does not render the Connection picker (CLI vs SDK lives in Configure → Backends now)', async () => {
@@ -281,12 +316,16 @@ describe('QuickStartCard', () => {
     })
   })
 
-  it('reveals permission mode + additional dirs when Customize is expanded', async () => {
+  it('reveals permission mode + session toggles when Customize is expanded; folders live in the +Folder chip', async () => {
     render(<QuickStartCard onSubmit={vi.fn()} />)
     fireEvent.click(screen.getByTestId('quick-start-customize-toggle'))
     expect(screen.getByTestId('quick-start-customize')).toBeInTheDocument()
     expect(screen.getByTestId('quick-start-permission-mode')).toBeInTheDocument()
-    expect(screen.getByTestId('quick-start-additional-dirs')).toBeInTheDocument()
+    // Per-session CLI toggles now live in Customize (folders moved out).
+    expect(screen.getByTestId('quick-start-cli-toggles')).toBeInTheDocument()
+    // Folders are reached via the +Folder chip popover.
+    fireEvent.click(screen.getByTestId('attachment-chip:folder'))
+    expect(await screen.findByTestId('quick-start-folder-picker')).toBeInTheDocument()
   })
 
   it('forwards attachment + customize values to onSubmit', async () => {
@@ -297,10 +336,14 @@ describe('QuickStartCard', () => {
     const agentPicker = await screen.findByTestId('quick-start-agent-picker')
     const reviewerBtn = await within(agentPicker).findByText('Reviewer')
     fireEvent.click(reviewerBtn)
-    // Switch to the Customize disclosure (separate surface).
+    // Switch to the Customize disclosure (separate surface) for permission mode.
     fireEvent.click(screen.getByTestId('quick-start-customize-toggle'))
     fireEvent.change(screen.getByTestId('quick-start-permission-mode'), { target: { value: 'plan' } })
-    fireEvent.change(screen.getByTestId('quick-start-additional-dirs'), { target: { value: '/foo, /bar ,, ' } })
+    // Folders now live in the +Folder chip popover (order determines array order).
+    fireEvent.click(screen.getByTestId('attachment-chip:folder'))
+    const dirPicker = await screen.findByTestId('quick-start-folder-picker')
+    fireEvent.click(within(dirPicker).getByText('Foo'))
+    fireEvent.click(within(dirPicker).getByText('Bar'))
     fireEvent.change(screen.getByTestId('quick-start-textarea'), { target: { value: 'do thing' } })
     fireEvent.click(screen.getByTestId('quick-start-submit'))
 
@@ -319,15 +362,18 @@ describe('QuickStartCard', () => {
     const agentPicker = await screen.findByTestId('quick-start-agent-picker')
     const reviewerBtn = await within(agentPicker).findByText('Reviewer')
     fireEvent.click(reviewerBtn)
-    // Switch to Customize for the per-session knobs.
+    // Switch to Customize for the permission mode.
     fireEvent.click(screen.getByTestId('quick-start-customize-toggle'))
     fireEvent.change(screen.getByTestId('quick-start-permission-mode'), { target: { value: 'acceptEdits' } })
-    fireEvent.change(screen.getByTestId('quick-start-additional-dirs'), { target: { value: '/x' } })
+    // Folder selection lives in the +Folder chip popover now.
+    fireEvent.click(screen.getByTestId('attachment-chip:folder'))
+    const dirPicker = await screen.findByTestId('quick-start-folder-picker')
+    fireEvent.click(within(dirPicker).getByText('X'))
 
     const stored = window.localStorage.getItem('quickStartAdvanced')
     expect(stored).toBeTruthy()
-    const parsed = JSON.parse(stored!) as { agent: string; permissionMode: string; additionalDirsRaw: string }
-    expect(parsed).toEqual({ agent: 'reviewer', permissionMode: 'acceptEdits', additionalDirsRaw: '/x' })
+    const parsed = JSON.parse(stored!) as { agent: string; permissionMode: string; additionalDirs: string[] }
+    expect(parsed).toEqual({ agent: 'reviewer', permissionMode: 'acceptEdits', additionalDirs: ['/x'] })
 
     unmount()
     render(<QuickStartCard onSubmit={vi.fn()} />)
@@ -335,7 +381,12 @@ describe('QuickStartCard', () => {
     await waitFor(() => {
       expect((screen.getByTestId('quick-start-permission-mode') as HTMLSelectElement).value).toBe('acceptEdits')
     })
-    expect((screen.getByTestId('quick-start-additional-dirs') as HTMLInputElement).value).toBe('/x')
+    // The previously-selected folder is restored as selected (aria-pressed) in the chip popover.
+    fireEvent.click(screen.getByTestId('attachment-chip:folder'))
+    const restoredPicker = await screen.findByTestId('quick-start-folder-picker')
+    await waitFor(() => {
+      expect(within(restoredPicker).getByText('X').closest('button')).toHaveAttribute('aria-pressed', 'true')
+    })
   })
 
   // ── Advanced: skills + notes selection ──────────────────────────────────
@@ -505,6 +556,10 @@ describe('QuickStartCard', () => {
 
   it('renders the three example chips when input is empty and first-prompt flag is unset', async () => {
     setupElectronAPI({
+      // A provider must be connected or the both-red connect CTA replaces the
+      // composer (and its example chips). setupElectronAPI resets the mock, so
+      // re-supply a ready auth fixture here.
+      'auth:get-status': authStatusFixture({ cli: true, sdk: false }, { cli: true, sdk: false }),
       'starter-pack:get-all-prompts': [
         { id: 'l1', displayText: "Explain this project like I'm new",  targetAgentId: 'a', category: 'launchpad-spotlight', displayOrder: 1, followUpQuestions: [] },
         { id: 'l2', displayText: 'Summarize what changed this week',    targetAgentId: 'b', category: 'launchpad-spotlight', displayOrder: 2, followUpQuestions: [] },
@@ -714,13 +769,14 @@ describe('QuickStartCard', () => {
     expect(badge).toHaveTextContent('1')
   })
 
-  it('Files chip is disabled and clicking it does not open a popover', () => {
+  it('Files chip is active (showFileAttachments default-on) and opens a popover', async () => {
     render(<QuickStartCard onSubmit={vi.fn()} />)
     const filesChip = screen.getByTestId('attachment-chip:files') as HTMLButtonElement
-    expect(filesChip).toBeDisabled()
-    expect(filesChip).toHaveAttribute('title', LAUNCHPAD_COPY.quickStart.chips.filesTooltip)
+    // File attachments now ship enabled by default, so the chip is interactive.
+    expect(filesChip).not.toBeDisabled()
+    expect(filesChip).toHaveTextContent(LAUNCHPAD_COPY.quickStart.chips.filesActive)
     fireEvent.click(filesChip)
-    expect(screen.queryByTestId('attachment-popover')).not.toBeInTheDocument()
+    expect(await screen.findByTestId('quick-start-files-picker')).toBeInTheDocument()
   })
 
   // ── PR 3: centralized launchpad copy ─────────────────────────────────────
@@ -753,8 +809,9 @@ describe('QuickStartCard', () => {
       .toHaveTextContent(LAUNCHPAD_COPY.quickStart.chips.skill)
     expect(screen.getByTestId('attachment-chip:note'))
       .toHaveTextContent(LAUNCHPAD_COPY.quickStart.chips.note)
+    // Files ships enabled by default now → active label, not the "(soon)" placeholder.
     expect(screen.getByTestId('attachment-chip:files'))
-      .toHaveTextContent(LAUNCHPAD_COPY.quickStart.chips.files)
+      .toHaveTextContent(LAUNCHPAD_COPY.quickStart.chips.filesActive)
   })
 
   // ── Gap coverage: end-to-end and resilience ─────────────────────────────────
@@ -798,6 +855,15 @@ describe('QuickStartCard', () => {
     const notePicker = await screen.findByTestId('quick-start-note-picker')
     fireEvent.click(await within(notePicker).findByText('Team conventions'))
 
+    // Sanity (BEFORE submit): the selected-attachment chips above the input
+    // reflect all three. Submit clears the draft (skills/notes), so this must
+    // be asserted while the selections are still live.
+    const refs = screen.getByTestId('quick-start-refs')
+    expect(within(refs).getByText('Planner')).toBeInTheDocument()
+    expect(within(refs).getByText('Lint')).toBeInTheDocument()
+    expect(within(refs).getByText('Doc')).toBeInTheDocument()
+    expect(within(refs).getByText('Team conventions')).toBeInTheDocument()
+
     // Submit. All three attachment kinds plus the prompt must land on onSubmit.
     fireEvent.change(screen.getByTestId('quick-start-textarea'), { target: { value: 'do everything' } })
     fireEvent.click(screen.getByTestId('quick-start-submit'))
@@ -812,12 +878,6 @@ describe('QuickStartCard', () => {
       ]),
       attachedNotes: [{ id: 'n-conv', title: 'Team conventions' }],
     }))
-    // Sanity: the selected-attachment chips above the input reflect all three.
-    const refs = screen.getByTestId('quick-start-refs')
-    expect(within(refs).getByText('Planner')).toBeInTheDocument()
-    expect(within(refs).getByText('Lint')).toBeInTheDocument()
-    expect(within(refs).getByText('Doc')).toBeInTheDocument()
-    expect(within(refs).getByText('Team conventions')).toBeInTheDocument()
   })
 
   it('does NOT persist skill or note selections to ADVANCED_KEY (those are per-session only)', async () => {
@@ -838,11 +898,11 @@ describe('QuickStartCard', () => {
     fireEvent.click(await within(await screen.findByTestId('quick-start-note-picker')).findByText('A note'))
 
     // The localStorage shape pins down what's allowed to persist: agent +
-    // permissionMode + additionalDirsRaw only. Skills and notes are session
+    // permissionMode + additionalDirs only. Skills and notes are session
     // scoped on purpose — a stale persisted skill id could silently rejoin
     // the next chat with no UI signal.
     const stored = JSON.parse(window.localStorage.getItem('quickStartAdvanced') ?? '{}') as Record<string, unknown>
-    expect(Object.keys(stored).sort()).toEqual(['additionalDirsRaw', 'agent', 'permissionMode'])
+    expect(Object.keys(stored).sort()).toEqual(['additionalDirs', 'agent', 'permissionMode'])
     expect(stored).not.toHaveProperty('selectedSkillIds')
     expect(stored).not.toHaveProperty('selectedNoteIds')
     expect(stored).not.toHaveProperty('skills')
@@ -944,5 +1004,55 @@ describe('QuickStartCard', () => {
     fireEvent.change(screen.getByTestId('quick-start-textarea'), { target: { value: 'go' } })
     fireEvent.click(screen.getByTestId('quick-start-submit'))
     expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ cli: 'claude-cli' }))
+  })
+
+  describe('draft persistence', () => {
+    it('persists the typed prompt to localStorage and restores it on remount', async () => {
+      const { unmount } = render(<QuickStartCard onSubmit={vi.fn()} />)
+      fireEvent.change(screen.getByTestId('quick-start-textarea'), {
+        target: { value: 'half-written thought' },
+      })
+      // Persisted synchronously via the draft effect.
+      await waitFor(() => {
+        expect(window.localStorage.getItem('quickStartDraft')).toContain('half-written thought')
+      })
+
+      // Navigating away unmounts Work + QuickStartCard…
+      unmount()
+      // …and coming back restores the draft from localStorage.
+      render(<QuickStartCard onSubmit={vi.fn()} />)
+      expect((screen.getByTestId('quick-start-textarea') as HTMLTextAreaElement).value)
+        .toBe('half-written thought')
+    })
+
+    it('"Start something new" clears the draft and removes the saved blob', async () => {
+      render(<QuickStartCard onSubmit={vi.fn()} />)
+      fireEvent.change(screen.getByTestId('quick-start-textarea'), {
+        target: { value: 'scrap this' },
+      })
+      await waitFor(() => {
+        expect(window.localStorage.getItem('quickStartDraft')).toContain('scrap this')
+      })
+
+      fireEvent.click(screen.getByTestId('quick-start-clear-draft'))
+      expect((screen.getByTestId('quick-start-textarea') as HTMLTextAreaElement).value).toBe('')
+      await waitFor(() => {
+        expect(window.localStorage.getItem('quickStartDraft')).toBeNull()
+      })
+    })
+
+    it('clears the saved draft after a successful submit', async () => {
+      render(<QuickStartCard onSubmit={vi.fn()} defaultCli="copilot-cli" />)
+      fireEvent.change(screen.getByTestId('quick-start-textarea'), {
+        target: { value: 'send me' },
+      })
+      await waitFor(() => {
+        expect(window.localStorage.getItem('quickStartDraft')).toContain('send me')
+      })
+      fireEvent.click(screen.getByTestId('quick-start-submit'))
+      await waitFor(() => {
+        expect(window.localStorage.getItem('quickStartDraft')).toBeNull()
+      })
+    })
   })
 })

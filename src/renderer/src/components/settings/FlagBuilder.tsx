@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { FlagDef } from '../../types/settings'
 import { getFlagsForCli, getCategoriesForCli } from './flagDefs'
+import { SESSION_DEFAULT_FLAG_KEYS } from '../../../../shared/sessionDefaultFlags'
 
 interface Props {
   cli: 'copilot' | 'claude'
@@ -58,12 +59,14 @@ export default function FlagBuilder({ cli, values, onChange, onReset, onResetAll
           const key = flagKey(flag)
           const val = values[key]
           const isSet = val !== undefined && val !== null && val !== ''
+          const appliesInApp = SESSION_DEFAULT_FLAG_KEYS[cli].has(flag.key)
           return (
             <FlagControl
               key={key}
               flag={flag}
               value={val}
               isSet={isSet}
+              appliesInApp={appliesInApp}
               onChange={(v) => onChange(key, v)}
               onReset={() => onReset(key)}
             />
@@ -80,12 +83,14 @@ function FlagControl({
   flag,
   value,
   isSet,
+  appliesInApp,
   onChange,
   onReset,
 }: {
   flag: FlagDef
   value: unknown
   isSet: boolean
+  appliesInApp: boolean
   onChange: (v: unknown) => void
   onReset: () => void
 }): JSX.Element {
@@ -97,6 +102,21 @@ function FlagControl({
         <div className="flex items-center gap-2 mb-1">
           <span className="text-sm font-medium text-gray-800">{flag.label}</span>
           <code className="text-xs text-gray-400 font-mono">{flag.flag}</code>
+          {appliesInApp ? (
+            <span
+              className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-teal-100 text-teal-700"
+              title="Applied automatically when you start a session in ClearPath"
+            >
+              Applies in-app
+            </span>
+          ) : (
+            <span
+              className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-400"
+              title="Shown in the Launch Command Preview only — not applied to in-app sessions"
+            >
+              Preview only
+            </span>
+          )}
         </div>
         <p className="text-xs text-gray-500">{flag.description}</p>
       </div>

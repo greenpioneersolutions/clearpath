@@ -17,6 +17,7 @@ import type {
   NodeCheckResult,
 } from '../../renderer/src/types/install'
 import { resolveInShell, getScopedSpawnEnv, getSpawnEnv } from '../utils/shellEnv'
+import { claudeKeychainTokenExists } from '../utils/claudeKeychain'
 import { parseBrowserUrl } from './urlDetector'
 import {
   canResolveClaudeSdk,
@@ -27,6 +28,47 @@ import {
 } from './SdkAuthProbe'
 
 const ANSI_RE = /\x1b(?:[@-Z\\-_]|\[[0-9;]*[ -/]*[@-~])/g
+
+/**
+ * Parse JSON that may contain comments (JSONC). Copilot CLI writes
+ * `~/.copilot/config.json` with leading `//` banner comments
+ * ("// This file is managed automatically."), which the stock `JSON.parse`
+ * rejects with "Unexpected token '/'" — silently dropping us into the
+ * unauthenticated branch even when the user is fully logged in.
+ *
+ * Strips `//` line comments and `/* *\/` block comments before parsing. The
+ * scan is string-aware so values containing `//` (e.g. "https://github.com")
+ * are never clobbered.
+ */
+function parseJsonc(raw: string): unknown {
+  let out = ''
+  let inString = false
+  let inLineComment = false
+  let inBlockComment = false
+  for (let i = 0; i < raw.length; i++) {
+    const ch = raw[i]
+    const next = raw[i + 1]
+    if (inLineComment) {
+      if (ch === '\n') { inLineComment = false; out += ch }
+      continue
+    }
+    if (inBlockComment) {
+      if (ch === '*' && next === '/') { inBlockComment = false; i++ }
+      continue
+    }
+    if (inString) {
+      out += ch
+      if (ch === '\\') { out += next ?? ''; i++ } // keep escaped char verbatim
+      else if (ch === '"') inString = false
+      continue
+    }
+    if (ch === '"') { inString = true; out += ch; continue }
+    if (ch === '/' && next === '/') { inLineComment = true; i++; continue }
+    if (ch === '/' && next === '*') { inBlockComment = true; i++; continue }
+    out += ch
+  }
+  return JSON.parse(out)
+}
 
 const AUTH_CACHE_TTL    = 5  * 60 * 1000  // 5 min
 const INSTALL_CACHE_TTL = 10 * 60 * 1000  // 10 min
@@ -88,6 +130,16 @@ export class AuthManager {
   // ── Public API ─────────────────────────────────────────────────────────────
 
   async getStatus(forceRefresh = false): Promise<AuthState> {
+    // Under the Playwright e2e harness (CLEARPATH_E2E=1) no CLI binary is
+    // installed on the runner, so report Copilot as connected. This keeps the
+    // renderer's auth-gated surfaces (e.g. the launchpad quick-start textarea,
+    // which otherwise shows a "Connect a CLI" CTA) usable, and matches the
+    // CLIManager start-session bypass that lets specs seed real sessions.
+    if (process.env['CLEARPATH_E2E'] === '1') {
+      const ready: AuthStatus = { installed: true, authenticated: true, checkedAt: Date.now() }
+      return { copilot: buildProviderState(ready, { ...EMPTY_STATUS }), claude: buildProviderState({ ...EMPTY_STATUS }, { ...EMPTY_STATUS }) }
+    }
+
     const cache = this.migrateCache(this.store.get('authCache'))
     const now = Date.now()
 
@@ -229,7 +281,9 @@ export class AuthManager {
       if (existsSync(configPath)) {
         try {
           const raw = readFileSync(configPath, 'utf8')
-          const parsed = JSON.parse(raw) as Record<string, unknown>
+          // config.json is JSONC (managed-by-CLI banner comments at the top),
+          // so a plain JSON.parse throws — use the comment-tolerant parser.
+          const parsed = parseJsonc(raw) as Record<string, unknown>
           // Copilot CLI stores logged-in accounts under `loggedInUsers`
           // (camelCase). Older builds wrote `logged_in_users` — accept both
           // so users on either version are detected as authenticated.
@@ -296,6 +350,20 @@ export class AuthManager {
             break
           }
         }
+      }
+
+      // macOS stores the Claude Code token in the login Keychain, NOT in a
+      // ~/.claude/*.json file — so the file fallback above always misses on Mac.
+      // `claude auth status` reads that same Keychain item, but its lookup keys
+      // off the USER env var, which a GUI-launched (Finder/Dock) Electron app
+      // is frequently missing — making the primary probe report loggedIn:false
+      // even though the user IS signed in. A direct `security find-generic-password`
+      // probe finds the item regardless of environment (no USER/HOME needed), so
+      // it's the reliable signal on macOS. (See ensureLoginIdentity in shellEnv.ts,
+      // which backfills USER so the actual session can also reach the Keychain.)
+      if (!authenticated && process.platform === 'darwin' && await claudeKeychainTokenExists()) {
+        authenticated = true
+        tokenSource = 'config-file'
       }
     }
 
@@ -782,21 +850,28 @@ export class AuthManager {
   // ── Login flows ────────────────────────────────────────────────────────────
 
   private loginCopilot(): void {
-    this.runLoginFlow('copilot', () => ({
-      command: (binaryPath: string) => ({ cmd: binaryPath, args: ['--no-experimental'] }),
-      sendLoginCommand: true,
-    }))
+    // Use the dedicated `copilot login` subcommand — it runs the GitHub OAuth
+    // device flow as a plain, non-interactive process: it prints the device
+    // URL + code to stdout, polls ("Waiting for authorization…"), then exits 0
+    // once the user authorizes in the browser.
+    //
+    // The previous approach spawned the full interactive TUI
+    // (`copilot --no-experimental`) and tried to type `/login` into its piped
+    // stdin. Copilot's TUI reads keystrokes from a real TTY in raw mode, so the
+    // piped input was ignored, no device code was ever emitted, the browser
+    // never opened, and the login modal hung forever with no progress/error.
+    this.runLoginFlow('copilot', (binaryPath) => ({ cmd: binaryPath, args: ['login'] }))
   }
 
   private loginClaude(): void {
-    this.runLoginFlow('claude', () => ({
-      command: (binaryPath: string) => ({ cmd: binaryPath, args: ['auth', 'login'] }),
-      sendLoginCommand: false,
-    }))
+    this.runLoginFlow('claude', (binaryPath) => ({ cmd: binaryPath, args: ['auth', 'login'] }))
   }
 
   /**
-   * Shared implementation for copilot / claude login. Handles:
+   * Shared implementation for copilot / claude login. Both CLIs expose a
+   * non-interactive login subcommand (`copilot login`, `claude auth login`)
+   * that streams a device URL + code to stdout and exits when done — so we
+   * never have to drive an interactive REPL over pipes. Handles:
    * - Binary resolution via login-shell PATH
    * - Process spawn + stdout/stderr streaming
    * - First-URL browser auto-open via shell.openExternal (once per session)
@@ -805,10 +880,7 @@ export class AuthManager {
    */
   private runLoginFlow(
     cli: 'copilot' | 'claude',
-    configFactory: () => {
-      command: (binaryPath: string) => { cmd: string; args: string[] }
-      sendLoginCommand: boolean
-    },
+    command: (binaryPath: string) => { cmd: string; args: string[] },
   ): void {
     const wc = this.getWebContents()
     const emit = (line: string) => {
@@ -838,8 +910,7 @@ export class AuthManager {
         return
       }
 
-      const cfg = configFactory()
-      const { cmd, args } = cfg.command(binaryPath)
+      const { cmd, args } = command(binaryPath)
       const proc = spawn(cmd, args, {
         shell: false,
         stdio: ['pipe', 'pipe', 'pipe'],
@@ -849,20 +920,9 @@ export class AuthManager {
       this.activeLogin = proc
       this.activeLoginCli = cli
 
-      // Copilot needs us to type /login into its REPL after startup
-      let loginCommandSent = false
-      const sendLogin = () => {
-        if (!cfg.sendLoginCommand || loginCommandSent) return
-        loginCommandSent = true
-        proc.stdin?.write('/login\n')
-        emit('Sending /login command…')
-      }
-      const startupTimer = cfg.sendLoginCommand
-        ? setTimeout(sendLogin, 2000)
-        : null
+      emit(`Starting ${cli} login…`)
 
       const onData = (chunk: Buffer) => {
-        if (cfg.sendLoginCommand) sendLogin()
         for (const line of chunk.toString().split('\n')) {
           const stripped = line.replace(ANSI_RE, '').trim()
           if (!stripped) continue
@@ -875,7 +935,6 @@ export class AuthManager {
       proc.stderr?.on('data', onData)
 
       proc.on('exit', (code) => {
-        if (startupTimer) clearTimeout(startupTimer)
         this.activeLogin = null
         this.activeLoginCli = null
         const success = code === 0
@@ -885,7 +944,6 @@ export class AuthManager {
       })
 
       proc.on('error', (err) => {
-        if (startupTimer) clearTimeout(startupTimer)
         emit(`Process error: ${err.message}`)
         if (!wc || wc.isDestroyed()) return
         wc.send('auth:login-complete', { cli, success: false, error: err.message })

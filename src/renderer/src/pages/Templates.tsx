@@ -87,7 +87,9 @@ export default function Templates(): JSX.Element {
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 max-w-2xl">
           <TemplateForm
             template={selected}
-            onSend={(prompt) => void handleSend(prompt)}
+            cli="copilot-cli"
+            context="session"
+            onSubmit={(r) => void handleSend(r.prompt)}
             onCancel={() => { setView('library'); setSelected(null) }}
           />
         </div>

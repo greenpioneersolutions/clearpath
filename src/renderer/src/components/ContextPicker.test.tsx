@@ -63,7 +63,7 @@ const noopHandlers = {
   onClose: vi.fn(),
 }
 
-function renderPicker(extra: { defaultTab?: 'prompts' | 'notes' | 'playbooks' | 'files' } = {}) {
+function renderPicker(extra: { defaultTab?: 'agents' | 'notes' | 'skills' | 'templates' | 'files' } = {}) {
   return render(
     <ContextPicker
       cli="copilot-cli"
@@ -71,7 +71,7 @@ function renderPicker(extra: { defaultTab?: 'prompts' | 'notes' | 'playbooks' | 
       selectedNoteIds={new Set()}
       selectedContextSources={[]}
       {...noopHandlers}
-      defaultTab={extra.defaultTab ?? 'prompts'}
+      defaultTab={extra.defaultTab ?? 'agents'}
     />,
   )
 }

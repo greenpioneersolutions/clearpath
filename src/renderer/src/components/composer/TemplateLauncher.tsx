@@ -1,11 +1,12 @@
 import { useState, useEffect, useMemo } from 'react'
-import type { PromptTemplate } from '../../types/template'
-import { TEMPLATE_CATEGORIES } from '../../types/template'
+import type { PromptTemplate, HydratedTemplate, TemplatePatch } from '../../types/template'
+import { TEMPLATE_CATEGORIES, isConfigVariable } from '../../types/template'
+import { hydrate, stripVariableTokens, isRequired } from '../../../../shared/templates/parse'
 
 interface Props {
-  onStartFromTemplate: (template: PromptTemplate, filledValues: Record<string, string>) => void
+  onStartFromTemplate: (template: PromptTemplate, hydrated: HydratedTemplate) => void
   onStartFromScratch: () => void
-  onRunNow: (hydratedPrompt: string) => void
+  onRunNow: (hydrated: HydratedTemplate) => void
 }
 
 export default function TemplateLauncher({ onStartFromTemplate, onStartFromScratch, onRunNow }: Props): JSX.Element {
@@ -31,20 +32,33 @@ export default function TemplateLauncher({ onStartFromTemplate, onStartFromScrat
   const selectTemplate = (t: PromptTemplate) => {
     setSelected(t)
     const init: Record<string, string> = {}
-    for (const v of t.variables) init[v] = ''
+    for (const v of t.variables) init[v.name] = v.default ?? ''
     setValues(init)
   }
 
-  const hydrated = useMemo(() => {
-    if (!selected) return ''
-    let result = selected.body
-    for (const [key, val] of Object.entries(values)) {
-      result = result.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), val || `{{${key}}}`)
+  // Build { prompt, patch }: config-type variables (model/agent/permissionMode)
+  // configure the workflow step instead of inlining; the rest substitute into
+  // the prompt text via the shared hydrator.
+  const result = useMemo<HydratedTemplate>(() => {
+    if (!selected) return { prompt: '', patch: {} }
+    const configNames = selected.variables.filter((v) => isConfigVariable(v.type)).map((v) => v.name)
+    const prompt = hydrate(stripVariableTokens(selected.body, configNames), values)
+    const patch: TemplatePatch = {}
+    for (const v of selected.variables) {
+      const val = values[v.name]?.trim()
+      if (!val) continue
+      if (v.type === 'model') patch.model = val
+      else if (v.type === 'agent') patch.agent = val
+      else if (v.type === 'permissionMode') patch.permissionMode = val
     }
-    return result
+    return { prompt, patch }
   }, [selected, values])
 
-  const allFilled = selected ? selected.variables.every((v) => values[v]?.trim()) : false
+  const hydrated = result.prompt
+
+  const allFilled = selected
+    ? selected.variables.every((v) => !isRequired(v) || values[v.name]?.trim())
+    : false
 
   // Template form view
   if (selected) {
@@ -72,14 +86,15 @@ export default function TemplateLauncher({ onStartFromTemplate, onStartFromScrat
           <div className="space-y-3">
             <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Fill in Variables</h3>
             {selected.variables.map((v) => (
-              <div key={v}>
+              <div key={v.name}>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  {v.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
+                  {v.label || v.name.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
+                  {isConfigVariable(v.type) && <span className="text-gray-400 font-normal"> · {v.type}</span>}
                 </label>
                 <input
-                  type="text" value={values[v] ?? ''}
-                  onChange={(e) => setValues((prev) => ({ ...prev, [v]: e.target.value }))}
-                  placeholder={v.toLowerCase().replace(/_/g, ' ')}
+                  type="text" value={values[v.name] ?? ''}
+                  onChange={(e) => setValues((prev) => ({ ...prev, [v.name]: e.target.value }))}
+                  placeholder={v.name.toLowerCase().replace(/_/g, ' ')}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
               </div>
@@ -104,14 +119,14 @@ export default function TemplateLauncher({ onStartFromTemplate, onStartFromScrat
         {/* Action buttons */}
         <div className="flex gap-3">
           <button
-            onClick={() => { onRunNow(hydrated); void window.electronAPI.invoke('templates:record-usage', { id: selected.id }) }}
+            onClick={() => { onRunNow(result); void window.electronAPI.invoke('templates:record-usage', { id: selected.id }) }}
             disabled={selected.variables.length > 0 && !allFilled}
             className="flex-1 py-2.5 bg-green-600 hover:bg-green-500 disabled:opacity-40 text-white text-sm font-medium rounded-lg transition-colors"
           >
             Run Now
           </button>
           <button
-            onClick={() => { onStartFromTemplate(selected, values); void window.electronAPI.invoke('templates:record-usage', { id: selected.id }) }}
+            onClick={() => { onStartFromTemplate(selected, result); void window.electronAPI.invoke('templates:record-usage', { id: selected.id }) }}
             disabled={selected.variables.length > 0 && !allFilled}
             className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white text-sm font-medium rounded-lg transition-colors"
           >

@@ -1,7 +1,36 @@
 import { execFile } from 'child_process'
 import { promisify } from 'util'
+import { userInfo } from 'os'
 
 const execFileAsync = promisify(execFile)
+
+/**
+ * Backfill the login identity (USER / LOGNAME / HOME) when missing.
+ *
+ * macOS GUI launches (Finder / Dock / Spotlight) hand Electron a stripped
+ * launchd environment that frequently omits USER and LOGNAME. Claude Code stores
+ * its credentials in the macOS Keychain, and its Keychain lookup keys off the
+ * USER env var — without it, `claude auth status` reports loggedIn:false even
+ * though the token is present, which surfaces as a bogus "Claude Code isn't
+ * signed in" banner. (Copilot stores auth in a plain ~/.copilot/config file that
+ * only needs HOME, which is why it never hit this.) Sourced from os.userInfo()
+ * so it's correct regardless of how the app was launched.
+ */
+function ensureLoginIdentity(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  if (env['USER'] && env['LOGNAME'] && env['HOME']) return env
+  let username: string | undefined
+  let home: string | undefined
+  try {
+    const info = userInfo()
+    username = info.username
+    home = info.homedir
+  } catch { /* os.userInfo can throw if the uid has no passwd entry — best effort */ }
+  const out = { ...env }
+  if (!out['USER'] && username) out['USER'] = username
+  if (!out['LOGNAME'] && username) out['LOGNAME'] = username
+  if (!out['HOME'] && home) out['HOME'] = home
+  return out
+}
 
 /** Cached env with the login-shell PATH merged in. */
 let _env: NodeJS.ProcessEnv | null = null
@@ -42,7 +71,7 @@ export function setCustomEnvVars(vars: Record<string, string>): void {
  * Merges any custom env vars set via setCustomEnvVars().
  */
 export function getSpawnEnv(): NodeJS.ProcessEnv {
-  const base = _env ?? { ...process.env }
+  const base = ensureLoginIdentity(_env ?? { ...process.env })
   // Only merge non-empty custom vars
   const extras: Record<string, string> = {}
   for (const [k, v] of Object.entries(_customEnv)) {
@@ -111,7 +140,7 @@ function getDisallowedKeys(cli: 'copilot' | 'claude' | 'local'): Set<string> {
  * if a child process is compromised.
  */
 export function getScopedSpawnEnv(cli: 'copilot' | 'claude' | 'local'): NodeJS.ProcessEnv {
-  const base = _env ?? { ...process.env }
+  const base = ensureLoginIdentity(_env ?? { ...process.env })
   const result: Record<string, string | undefined> = { ...base }
 
   // Only merge custom env vars that this adapter is allowed to see

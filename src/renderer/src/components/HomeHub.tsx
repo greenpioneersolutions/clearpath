@@ -4,6 +4,8 @@ import { useBranding } from '../contexts/BrandingContext'
 import ExtensionSlot from './extensions/ExtensionSlot'
 import HomeQuickStartBar, { type QuickStartSubmit } from './home/HomeQuickStartBar'
 import TryAnExampleModal from './home/TryAnExampleModal'
+import LocalSetupCard from './home/LocalSetupCard'
+import { timeAgo } from '../lib/relativeTime'
 
 interface RecentSession {
   sessionId: string
@@ -71,15 +73,6 @@ export default function HomeHub(): JSX.Element {
     setInjectNonce((n) => n + 1)
   }
 
-  const timeAgo = (ms: number): string => {
-    const mins = Math.floor((Date.now() - ms) / 60000)
-    if (mins < 1) return 'Just now'
-    if (mins < 60) return `${mins}m ago`
-    const hours = Math.floor(mins / 60)
-    if (hours < 24) return `${hours}h ago`
-    return `${Math.floor(hours / 24)}d ago`
-  }
-
   // The home renders the full surface on every visit. No setup gate — a
   // first-time user can immediately try the input, browse examples, browse
   // the Learn area, and customize. When the setup probe confirms the user
@@ -132,6 +125,8 @@ export default function HomeHub(): JSX.Element {
           onSubmit={handleQuickStart}
           colorButtonPrimary={brand.colorButtonPrimary}
         />
+
+        <LocalSetupCard />
 
         <div className="space-y-3">
           <button
@@ -190,21 +185,19 @@ export default function HomeHub(): JSX.Element {
               <span className="text-xs font-semibold text-gray-600">Pick up where you left off</span>
               <button onClick={() => navigate('/work')} className="text-[10px] text-gray-400 hover:text-gray-600 transition-colors">All sessions</button>
             </div>
-            <div className="flex gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {recentSessions.map((s) => (
                 <button
                   key={s.sessionId}
                   onClick={() => navigate('/work', { state: { sessionId: s.sessionId } })}
-                  className="flex-1 bg-white border border-gray-200 rounded-xl px-3 py-2.5 text-left hover:border-gray-300 hover:shadow-sm transition-all"
+                  className="bg-white border border-gray-200 rounded-xl px-3 py-2.5 text-left hover:border-gray-300 hover:shadow-sm transition-all space-y-1"
                 >
                   <div className="flex items-center gap-2">
                     <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${s.endedAt ? 'bg-gray-300' : 'bg-green-400'}`} />
                     <span className="text-xs font-medium text-gray-800 truncate">{s.name ?? 'Untitled'}</span>
                   </div>
-                  <div className="flex items-center gap-2 mt-1">
-                    <span className="text-[10px] text-gray-400">{s.cli === 'copilot' ? 'Copilot' : 'Claude'}</span>
-                    <span className="text-[10px] text-gray-400">{timeAgo(s.startedAt)}</span>
-                  </div>
+                  <div className="text-[11px] text-gray-400">{s.cli === 'copilot' ? 'Copilot' : 'Claude'}</div>
+                  <div className="text-[11px] text-gray-400">{timeAgo(s.startedAt)}</div>
                 </button>
               ))}
             </div>

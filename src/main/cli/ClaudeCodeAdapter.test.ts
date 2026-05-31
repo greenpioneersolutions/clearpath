@@ -25,6 +25,17 @@ vi.mock('fs', async (importOriginal) => {
   return { ...actual, existsSync: existsSyncMock }
 })
 
+// ─── Mock the macOS Keychain probe (used by isAuthenticated) ──────────────────
+// Default false so the file-based tests below aren't perturbed by a real
+// Claude Keychain item on the dev machine.
+const { claudeKeychainTokenExistsMock } = vi.hoisted(() => ({
+  claudeKeychainTokenExistsMock: vi.fn<() => Promise<boolean>>().mockResolvedValue(false),
+}))
+
+vi.mock('../utils/claudeKeychain', () => ({
+  claudeKeychainTokenExists: claudeKeychainTokenExistsMock,
+}))
+
 // ─── Test suite ───────────────────────────────────────────────────────────────
 describe('ClaudeCodeAdapter', () => {
   let adapter: ClaudeCodeAdapter
@@ -32,6 +43,7 @@ describe('ClaudeCodeAdapter', () => {
   beforeEach(() => {
     adapter = new ClaudeCodeAdapter()
     existsSyncMock.mockReturnValue(false)
+    claudeKeychainTokenExistsMock.mockResolvedValue(false)
   })
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -933,12 +945,22 @@ describe('ClaudeCodeAdapter', () => {
       expect(result).toBe(true)
     })
 
-    it('returns false when no API key and no credential files exist', async () => {
-      existsSyncMock.mockReturnValue(false)
-
-      const result = await adapter.isAuthenticated()
-
-      expect(result).toBe(false)
+    // NOTE: vi.mock('../utils/claudeKeychain') is NOT applied at runtime in this
+    // file (the setup-coverage.ts eager-load defeats vi.mock — see BUG-011 / the
+    // Notes-chip caveat in CLAUDE.md), so the REAL keychain probe runs. We pin
+    // process.platform to a non-darwin value so the keychain branch is skipped
+    // deterministically and this asserts the file-based path in isolation.
+    // The Keychain behaviour itself is covered in utils/claudeKeychain.test.ts.
+    it('returns false when no API key and no credential files exist (non-darwin)', async () => {
+      const original = process.platform
+      Object.defineProperty(process, 'platform', { value: 'linux', configurable: true })
+      try {
+        existsSyncMock.mockReturnValue(false)
+        const result = await adapter.isAuthenticated()
+        expect(result).toBe(false)
+      } finally {
+        Object.defineProperty(process, 'platform', { value: original, configurable: true })
+      }
     })
 
     /**

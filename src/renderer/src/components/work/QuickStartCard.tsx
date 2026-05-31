@@ -3,11 +3,14 @@ import type { BackendId, BackendProvider, BackendTransport } from '../../../../s
 import { providerOf, transportOf } from '../../../../shared/backends'
 import type { AgentDef, AgentListResult } from '../../types/ipc'
 import type { PromptSuggestion } from '../../types/starter-pack'
+import type { PromptTemplate, HydratedTemplate } from '../../types/template'
+import TemplateForm from '../templates/TemplateForm'
 import { MODEL_TIERS } from '../../data/modelTiers'
 import { useAuthStatus } from '../../hooks/useAuthStatus'
 import { LAUNCHPAD_COPY } from '../../copy/launchpad'
 import AttachmentChipToolbar, { type AttachmentChip } from './AttachmentChipToolbar'
 import AttachmentPopover from './AttachmentPopover'
+import { useFlag } from '../../contexts/FeatureFlagContext'
 
 interface ProviderReadiness {
   cli: boolean
@@ -47,6 +50,27 @@ const PERMISSION_MODES: ReadonlyArray<{ value: QuickStartPermissionMode; label: 
   { value: 'bypassPermissions', label: 'Full autonomy (advanced)',      hint: LAUNCHPAD_COPY.quickStart.permissionHints.bypassPermissions },
 ]
 
+/**
+ * Per-session CLI toggles shown in the Customize section, per provider. Each
+ * maps to a typed SessionOptions boolean field AND a global settings flag key
+ * `${provider}:${field}` (the same keys Settings → CLI Flags writes). The
+ * toggle DEFAULTS to the global value, and flipping it overrides ONLY this
+ * session — cli:start-session's merge lets an explicit caller value beat the
+ * stored default, and we never write back to settings. Fields chosen are all
+ * honored by the respective adapter's buildArgs and live on the
+ * session-default allowlist (src/shared/sessionDefaultFlags.ts).
+ */
+const SESSION_CLI_TOGGLES: Record<BackendProvider, ReadonlyArray<{ field: string; label: string; hint: string }>> = {
+  copilot: [
+    { field: 'experimental', label: 'Experimental features', hint: 'Autopilot, dynamic retrieval, and other opt-in Copilot features.' },
+    { field: 'streamerMode', label: 'Streamer mode', hint: 'Hide preview model names and quota details — good for recordings.' },
+  ],
+  claude: [
+    { field: 'verbose', label: 'Verbose output', hint: 'Full turn-by-turn detail from Claude — useful for debugging.' },
+    { field: 'chrome', label: 'Chrome browser', hint: 'Let Claude drive a Chrome browser for web tasks.' },
+  ],
+}
+
 const ADVANCED_KEY = 'quickStartAdvanced'
 /**
  * One-shot localStorage flag: once the user has submitted their first prompt
@@ -54,6 +78,13 @@ const ADVANCED_KEY = 'quickStartAdvanced'
  * after a reload. The chips only have value to first-time users.
  */
 const FIRST_PROMPT_KEY = 'quickStartFirstPromptSent'
+/**
+ * localStorage key for the in-progress compose draft (prompt + model +
+ * attachments + skill/note selections). Persisted on every change so the user
+ * never loses a half-written prompt by navigating away (the Work route fully
+ * unmounts) or closing the app. Cleared on submit and via "Start something new".
+ */
+const DRAFT_KEY = 'quickStartDraft'
 
 /** Hardcoded safety net used when the starter-pack IPC errors out or returns
  *  nothing. Keeps the UI helpful even when main-process state is wedged. */
@@ -66,13 +97,22 @@ const FALLBACK_EXAMPLE_PROMPTS: ReadonlyArray<string> = [
 interface AdvancedState {
   agent: string
   permissionMode: QuickStartPermissionMode
-  additionalDirsRaw: string
+  /** Absolute paths of approved folders selected for this session. */
+  additionalDirs: string[]
 }
 
 const DEFAULT_ADVANCED: AdvancedState = {
   agent: '',
   permissionMode: 'default',
-  additionalDirsRaw: '',
+  additionalDirs: [],
+}
+
+/** A reusable approved folder, mirrors main's LocationsManager.ApprovedFolder. */
+interface ApprovedFolder {
+  id: string
+  label: string
+  path: string
+  addedAt: number
 }
 
 interface SkillRow {
@@ -80,7 +120,7 @@ interface SkillRow {
   name: string
   description?: string
   enabled: boolean
-  scope: 'project' | 'global' | 'plugin' | 'team'
+  scope: 'project' | 'global' | 'plugin' | 'team' | 'custom'
   cli: 'copilot' | 'claude' | 'both'
 }
 
@@ -97,10 +137,13 @@ function loadAdvanced(): AdvancedState {
   try {
     const raw = window.localStorage.getItem(ADVANCED_KEY)
     if (!raw) return DEFAULT_ADVANCED
-    const parsed = JSON.parse(raw) as Partial<AdvancedState> & { additionalDirs?: string[] }
-    const dirsRaw = typeof parsed.additionalDirsRaw === 'string'
-      ? parsed.additionalDirsRaw
-      : Array.isArray(parsed.additionalDirs) ? parsed.additionalDirs.join(', ') : ''
+    const parsed = JSON.parse(raw) as Partial<AdvancedState> & { additionalDirsRaw?: string }
+    // Back-compat: older builds stored a comma-separated `additionalDirsRaw`.
+    const dirs = Array.isArray(parsed.additionalDirs)
+      ? parsed.additionalDirs.filter((d): d is string => typeof d === 'string')
+      : typeof parsed.additionalDirsRaw === 'string'
+        ? parsed.additionalDirsRaw.split(',').map((s) => s.trim()).filter(Boolean)
+        : []
     const mode: QuickStartPermissionMode =
       parsed.permissionMode && PERMISSION_MODES.some((m) => m.value === parsed.permissionMode)
         ? (parsed.permissionMode as QuickStartPermissionMode)
@@ -108,15 +151,50 @@ function loadAdvanced(): AdvancedState {
     return {
       agent: typeof parsed.agent === 'string' ? parsed.agent : '',
       permissionMode: mode,
-      additionalDirsRaw: dirsRaw,
+      additionalDirs: dirs,
     }
   } catch {
     return DEFAULT_ADVANCED
   }
 }
 
-function splitDirs(raw: string): string[] {
-  return raw.split(',').map((s) => s.trim()).filter((s) => s.length > 0)
+interface DraftState {
+  prompt: string
+  model: string
+  skillIds: string[]
+  noteIds: string[]
+  pickedFiles: Array<{ sourcePath: string; name: string; sizeBytes: number }>
+}
+
+const EMPTY_DRAFT: DraftState = { prompt: '', model: '', skillIds: [], noteIds: [], pickedFiles: [] }
+
+/**
+ * Restore the in-progress launchpad draft. Defensive parsing: a malformed or
+ * partial blob yields an empty draft rather than throwing. File entries keep
+ * SOURCE paths only — they re-stage into the workspace at launch, so persisting
+ * the path list across a restart is safe as long as the source files still exist.
+ */
+function loadDraft(): DraftState {
+  try {
+    const raw = window.localStorage.getItem(DRAFT_KEY)
+    if (!raw) return EMPTY_DRAFT
+    const p = JSON.parse(raw) as Partial<DraftState>
+    const strArr = (v: unknown): string[] =>
+      Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []
+    const files = Array.isArray(p.pickedFiles)
+      ? p.pickedFiles.filter((f): f is DraftState['pickedFiles'][number] =>
+          !!f && typeof f.sourcePath === 'string' && typeof f.name === 'string' && typeof f.sizeBytes === 'number')
+      : []
+    return {
+      prompt: typeof p.prompt === 'string' ? p.prompt : '',
+      model: typeof p.model === 'string' ? p.model : '',
+      skillIds: strArr(p.skillIds),
+      noteIds: strArr(p.noteIds),
+      pickedFiles: files,
+    }
+  } catch {
+    return EMPTY_DRAFT
+  }
 }
 
 interface Props {
@@ -145,6 +223,18 @@ interface Props {
     attachedAgent?: { id: string; name: string }
     attachedSkills?: Array<{ id: string; name: string }>
     attachedNotes?: Array<{ id: string; title: string }>
+    /**
+     * Files the user picked to attach. SOURCE paths only — the copy into the
+     * workspace happens at launch (Work.tsx), once the working directory + a
+     * session id exist. See Slice 29.
+     */
+    pickedFiles?: Array<{ sourcePath: string; name: string; sizeBytes: number }>
+    /**
+     * Per-session CLI toggle overrides for the active provider, keyed by the
+     * SessionOptions boolean field (e.g. `experimental`, `verbose`). Each is an
+     * explicit value that beats the stored global default; settings are untouched.
+     */
+    sessionFlags?: Record<string, boolean>
     /**
      * `true` when the user explicitly picked "No agent (default)" in the
      * Add-context popover. Forwarded to `cli:start-session` so the main
@@ -216,14 +306,16 @@ function SectionPicker({
 }
 
 export default function QuickStartCard({ onSubmit, defaultCli }: Props): JSX.Element {
-  const [prompt, setPrompt] = useState('')
+  // Restore any saved draft once, on first mount (lazy — runs a single parse).
+  const [initialDraft] = useState(loadDraft)
+  const [prompt, setPrompt] = useState(initialDraft.prompt)
   const [provider, setProvider] = useState<BackendProvider>(() => providerOf(defaultCli ?? 'copilot-cli'))
   // Transport state stays internal — the user-visible Connection picker was
   // removed from this surface (PR 1, change #2). Transport is derived from
   // `defaultCli` (which Work.tsx fills from the user's last-used backend) and
   // CLI-vs-SDK is chosen in Configure → Backends.
   const [transport, setTransport] = useState<BackendTransport>(() => transportOf(defaultCli ?? 'copilot-cli'))
-  const [model, setModel] = useState('')
+  const [model, setModel] = useState(initialDraft.model)
   // PR 3 swapped the "+ Add context" disclosure panel for a chip toolbar:
   // each attachment type is its own pill button that opens a focused popover
   // anchored beneath it. Only one popover may be open at a time — opening one
@@ -245,6 +337,9 @@ export default function QuickStartCard({ onSubmit, defaultCli }: Props): JSX.Ele
   const [agents, setAgents] = useState<AgentDef[]>([])
   const [skills, setSkills] = useState<SkillRow[]>([])
   const [notes, setNotes] = useState<NoteRow[]>([])
+  // Reusable approved folders the user has OK'd. The session's additional-dirs
+  // selection references these by path, so we keep the list fresh.
+  const [approvedFolders, setApprovedFolders] = useState<ApprovedFolder[]>([])
   const [exampleChips, setExampleChips] = useState<string[]>(() => [...FALLBACK_EXAMPLE_PROMPTS])
   // Initialized from localStorage so a returning user who already submitted at
   // least once never sees the chips again, even on a fresh mount.
@@ -261,8 +356,8 @@ export default function QuickStartCard({ onSubmit, defaultCli }: Props): JSX.Ele
   const [providerPopoverOpen, setProviderPopoverOpen] = useState(false)
   // Per-session multi-select state. These do NOT mutate global skill or note
   // state — they only mark what gets attached to the next session.
-  const [selectedSkillIds, setSelectedSkillIds] = useState<Set<string>>(new Set())
-  const [selectedNoteIds, setSelectedNoteIds] = useState<Set<string>>(new Set())
+  const [selectedSkillIds, setSelectedSkillIds] = useState<Set<string>>(() => new Set(initialDraft.skillIds))
+  const [selectedNoteIds, setSelectedNoteIds] = useState<Set<string>>(() => new Set(initialDraft.noteIds))
   // Search filters per picker so the user can find an item without scrolling.
   const [agentSearch, setAgentSearch] = useState('')
   const [skillSearch, setSkillSearch] = useState('')
@@ -274,6 +369,35 @@ export default function QuickStartCard({ onSubmit, defaultCli }: Props): JSX.Ele
   const agentChipRef = useRef<HTMLButtonElement>(null)
   const skillChipRef = useRef<HTMLButtonElement>(null)
   const noteChipRef  = useRef<HTMLButtonElement>(null)
+  const fileChipRef  = useRef<HTMLButtonElement>(null)
+  const folderChipRef = useRef<HTMLButtonElement>(null)
+  const templateChipRef = useRef<HTMLButtonElement>(null)
+
+  // Templates at launch (Phase 3). A template can both fill the prompt AND
+  // configure the session (model / agent / skills / notes / files / dirs) via
+  // its `patch`. Picking a template with variables opens TemplateForm in a
+  // modal; a variable-free template applies its body directly.
+  const [templates, setTemplates] = useState<PromptTemplate[]>([])
+  const [templateSearch, setTemplateSearch] = useState('')
+  const [templateModal, setTemplateModal] = useState<PromptTemplate | null>(null)
+  // Navigate via the hash (the app uses HashRouter) so this component stays
+  // router-hook-free and unit-testable without a Router wrapper.
+  const goToLocalSetup = () => { window.location.hash = '#/configure?tab=local-setup' }
+
+  // File attachments (Slice 29). Gated behind the showFileAttachments flag;
+  // when off, the Files chip stays the disabled "soon" placeholder. We hold
+  // only SOURCE paths here — the copy into `.clear-path/uploads/` happens at
+  // launch in Work.tsx, once the working directory + session id are known.
+  const showFileAttachments = useFlag('showFileAttachments')
+  const [pickedFiles, setPickedFiles] = useState<Array<{ sourcePath: string; name: string; sizeBytes: number }>>(initialDraft.pickedFiles)
+
+  // Per-session CLI toggles (Customize section). Each defaults to the user's
+  // GLOBAL setting and can be flipped for THIS session only — the override
+  // wins in cli:start-session's flag merge (caller value beats stored default)
+  // and never writes back to settings. Keyed by SessionOptions field name for
+  // the active provider; re-initialized from settings whenever they load or the
+  // provider changes.
+  const [sessionToggles, setSessionToggles] = useState<Record<string, boolean>>({})
 
   // Readiness comes from the shared useAuthStatus hook so the sessions
   // launchpad chip and the sidebar dot can never disagree. Before the first
@@ -372,6 +496,63 @@ export default function QuickStartCard({ onSubmit, defaultCli }: Props): JSX.Ele
     return () => { cancelled = true }
   }, [])
 
+  // Approved folders are global — load once. We also prune any selected dirs
+  // that are no longer approved so a deleted folder never reaches the CLI.
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        const list = await window.electronAPI.invoke('locations:list-approved') as ApprovedFolder[] | null
+        if (cancelled) return
+        const folders = Array.isArray(list) ? list : []
+        setApprovedFolders(folders)
+        const validPaths = new Set(folders.map((f) => f.path))
+        setAdvanced((a) => {
+          const next = a.additionalDirs.filter((p) => validPaths.has(p))
+          return next.length === a.additionalDirs.length ? a : { ...a, additionalDirs: next }
+        })
+      } catch {
+        if (!cancelled) setApprovedFolders([])
+      }
+    })()
+    return () => { cancelled = true }
+  }, [])
+
+  // Initialize the per-session CLI toggles from the user's GLOBAL settings so
+  // they "match what's turned on/off in Settings" by default. Re-runs when the
+  // provider changes (toggles are provider-specific). Flipping a toggle after
+  // this only mutates the per-session state — it never writes to settings.
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      let flags: Record<string, unknown> = {}
+      try {
+        const s = await window.electronAPI.invoke('settings:get') as { flags?: Record<string, unknown> } | null
+        flags = s?.flags ?? {}
+      } catch { /* settings unavailable — default everything off */ }
+      if (cancelled) return
+      const defaults: Record<string, boolean> = {}
+      for (const t of SESSION_CLI_TOGGLES[provider]) {
+        defaults[t.field] = flags[`${provider}:${t.field}`] === true
+      }
+      setSessionToggles(defaults)
+    })()
+    return () => { cancelled = true }
+  }, [provider])
+
+  const toggleSessionFlag = (field: string) => {
+    setSessionToggles((prev) => ({ ...prev, [field]: !prev[field] }))
+  }
+
+  const toggleDirSelection = (path: string) => {
+    setAdvanced((a) => ({
+      ...a,
+      additionalDirs: a.additionalDirs.includes(path)
+        ? a.additionalDirs.filter((p) => p !== path)
+        : [...a.additionalDirs, path],
+    }))
+  }
+
   // Cold-start example chips. We only fetch when the chips would actually
   // render (first-prompt flag unset) so we don't pay for an IPC roundtrip
   // on every Sessions visit for returning users. Errors / empty responses
@@ -417,6 +598,20 @@ export default function QuickStartCard({ onSubmit, defaultCli }: Props): JSX.Ele
     else if (transport === 'cli' && r.sdk) setTransport('sdk')
   }, [provider, transport, readiness, authStatus.loaded])
 
+  // Provider-level self-correction. The transport effect above only re-picks
+  // cli↔sdk *within* a provider — it can't rescue us when the selected
+  // provider (e.g. the hardcoded Copilot default on a fresh install) has
+  // neither transport ready. Once readiness lands, fall through to the other
+  // provider if that's the one actually connected, so the launchpad defaults
+  // to a CLI that can actually spawn instead of failing with ENOENT.
+  useEffect(() => {
+    if (!authStatus.loaded) return
+    const r = readiness[provider]
+    if (r.cli || r.sdk) return
+    const other: BackendProvider = provider === 'copilot' ? 'claude' : 'copilot'
+    if (readiness[other].cli || readiness[other].sdk) setProvider(other)
+  }, [provider, readiness, authStatus.loaded])
+
   // Clear any saved model id that doesn't exist in the new provider's tier
   // list. Same reason as the agent guard above: a controlled <select> with no
   // matching option silently keeps the stale value in state and submits it.
@@ -435,6 +630,27 @@ export default function QuickStartCard({ onSubmit, defaultCli }: Props): JSX.Ele
     }
   }, [advanced])
 
+  // Persist the compose draft on every change so it survives navigation + app
+  // restart. Remove the key entirely when the draft is empty so a returning
+  // user starts on a clean slate rather than an empty-but-present blob.
+  useEffect(() => {
+    try {
+      const draft: DraftState = {
+        prompt,
+        model,
+        skillIds: [...selectedSkillIds],
+        noteIds: [...selectedNoteIds],
+        pickedFiles,
+      }
+      const isEmpty = !draft.prompt && !draft.model && draft.skillIds.length === 0
+        && draft.noteIds.length === 0 && draft.pickedFiles.length === 0
+      if (isEmpty) window.localStorage.removeItem(DRAFT_KEY)
+      else window.localStorage.setItem(DRAFT_KEY, JSON.stringify(draft))
+    } catch {
+      // localStorage unavailable — best effort
+    }
+  }, [prompt, model, selectedSkillIds, selectedNoteIds, pickedFiles])
+
   useEffect(() => {
     const ta = textareaRef.current
     if (!ta) return
@@ -443,9 +659,94 @@ export default function QuickStartCard({ onSubmit, defaultCli }: Props): JSX.Ele
   }, [prompt])
 
   const trimmed = prompt.trim()
-  const canSubmit = trimmed.length > 0
+  // True once readiness has landed and at least one provider is connected.
+  // Before the probe completes (`!loaded`) we stay optimistic so the composer
+  // doesn't flash the "connect a CLI" state on every fresh mount.
+  const anyReady = useMemo(
+    () => PROVIDERS.some((p) => readiness[p.id].cli || readiness[p.id].sdk),
+    [readiness],
+  )
+  // Block submit when nothing is connected — firing would spawn a doomed
+  // process (ENOENT). The both-red CTA below replaces the composer in that case.
+  const canSubmit = trimmed.length > 0 && (!authStatus.loaded || anyReady)
+
+  // True when there's anything worth keeping/clearing in the draft. Drives the
+  // "Start something new" affordance.
+  const hasDraft = trimmed.length > 0 || model.trim().length > 0
+    || pickedFiles.length > 0 || selectedSkillIds.size > 0 || selectedNoteIds.size > 0
+
+  // ── Self-heal a stale "not connected" verdict ──────────────────────────────
+  // Main caches auth status for 5 min; a cold-start probe that briefly missed a
+  // valid CLI login would otherwise strand the user on the "Connect a CLI"
+  // screen until they opened Settings (which force-refreshes). When we're about
+  // to show that screen, silently force ONE fresh re-probe — if the user really
+  // is signed in, the banner resolves itself. Re-armed when a connection
+  // appears, and on window focus (they may have just run `claude auth login` in
+  // a terminal and tabbed back).
+  const healAttempted = useRef(false)
+  const anyReadyRef = useRef(anyReady)
+  anyReadyRef.current = anyReady
+  useEffect(() => {
+    if (!authStatus.loaded) return
+    if (anyReady) { healAttempted.current = false; return }
+    if (healAttempted.current) return
+    healAttempted.current = true
+    authStatus.forceRefresh()
+  }, [authStatus.loaded, anyReady, authStatus.forceRefresh])
+  useEffect(() => {
+    const onFocus = (): void => { if (!anyReadyRef.current) authStatus.forceRefresh() }
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [authStatus.forceRefresh])
 
   const cli: BackendId = `${provider}-${transport}` as BackendId
+
+  // Load templates when the Templates chip opens (search re-queries).
+  useEffect(() => {
+    if (openChipId !== 'template') return
+    void (window.electronAPI.invoke('templates:list', { search: templateSearch || undefined }) as Promise<PromptTemplate[]>)
+      .then((r) => setTemplates(r ?? []))
+      .catch(() => setTemplates([]))
+  }, [openChipId, templateSearch])
+
+  /** Apply a hydrated template's prompt + patch into the launchpad state. */
+  const applyTemplate = (hydrated: HydratedTemplate): void => {
+    const p = hydrated.patch
+    if (hydrated.prompt) setPrompt(hydrated.prompt)
+    if (p.model) setModel(p.model)
+    if (p.agent !== undefined) {
+      setAgentTouched(true)
+      setAdvanced((a) => ({ ...a, agent: p.agent ?? '' }))
+    }
+    if (p.permissionMode) {
+      setAdvanced((a) => ({ ...a, permissionMode: p.permissionMode as AdvancedState['permissionMode'] }))
+    }
+    if (p.additionalDirs?.length) {
+      setAdvanced((a) => ({ ...a, additionalDirs: [...new Set([...a.additionalDirs, ...(p.additionalDirs ?? [])])] }))
+    }
+    if (p.attachedSkills?.length) {
+      setSelectedSkillIds((prev) => { const u = new Set(prev); for (const s of p.attachedSkills ?? []) u.add(s.id); return u })
+    }
+    if (p.attachedNotes?.length) {
+      setSelectedNoteIds((prev) => { const u = new Set(prev); for (const id of p.attachedNotes ?? []) u.add(id); return u })
+    }
+    if (p.pickedFiles?.length) {
+      setPickedFiles((prev) => [...prev, ...(p.pickedFiles ?? []).filter((f) => !prev.some((x) => x.sourcePath === f.sourcePath))])
+    }
+    setTemplateModal(null)
+    setOpenChipId(null)
+  }
+
+  /** Picking a template: variable-free ones apply immediately; others open the form. */
+  const onPickTemplate = (tpl: PromptTemplate): void => {
+    if (tpl.variables.length === 0) {
+      applyTemplate({ prompt: tpl.body, patch: {} })
+      void window.electronAPI.invoke('templates:record-usage', { id: tpl.id })
+    } else {
+      setOpenChipId(null)
+      setTemplateModal(tpl)
+    }
+  }
 
   const modelTiers = useMemo(() => MODEL_TIERS[provider] ?? [], [provider])
   // True when ≥2 providers have at least one transport ready. In that case we
@@ -464,7 +765,10 @@ export default function QuickStartCard({ onSubmit, defaultCli }: Props): JSX.Ele
 
   const handleSubmit = () => {
     if (!canSubmit) return
-    const dirs = splitDirs(advanced.additionalDirsRaw)
+    // Only send folders that are still approved (the loader prunes stale ones,
+    // but guard here too in case the list changed between load and submit).
+    const validPaths = new Set(approvedFolders.map((f) => f.path))
+    const dirs = advanced.additionalDirs.filter((p) => validPaths.has(p))
 
     // Resolve selection ids → display labels at submit time so the chat chips
     // are immune to subsequent rename / delete in the underlying registries.
@@ -489,6 +793,12 @@ export default function QuickStartCard({ onSubmit, defaultCli }: Props): JSX.Ele
       setFirstPromptSent(true)
     }
 
+    // Per-session CLI overrides for the active provider. Passed as explicit
+    // typed SessionOptions fields so they beat the stored global default in
+    // cli:start-session's merge (without ever writing back to settings).
+    const sessionFlags: Record<string, boolean> = {}
+    for (const t of SESSION_CLI_TOGGLES[provider]) sessionFlags[t.field] = !!sessionToggles[t.field]
+
     onSubmit({
       prompt: trimmed,
       cli,
@@ -499,10 +809,30 @@ export default function QuickStartCard({ onSubmit, defaultCli }: Props): JSX.Ele
       attachedAgent,
       attachedSkills: attachedSkills.length > 0 ? attachedSkills : undefined,
       attachedNotes: attachedNotes.length > 0 ? attachedNotes : undefined,
+      pickedFiles: pickedFiles.length > 0 ? pickedFiles : undefined,
+      sessionFlags,
       // Only signal explicit "no agent" when the user actually engaged the
       // picker. A user who never opened it gets the server's default-resolution.
       noAgent: agentTouched && !advanced.agent ? true : undefined,
     })
+    clearDraft()
+  }
+
+  // Clear the in-progress draft — prompt, model, files, and skill/note
+  // selections — without touching the user's saved agent / permission-mode /
+  // folder defaults (those live in `advanced`). Used on submit and by the
+  // "Start something new" button.
+  const clearDraft = () => {
+    setPrompt('')
+    setModel('')
+    setSelectedSkillIds(new Set())
+    setSelectedNoteIds(new Set())
+    setPickedFiles([])
+    try {
+      window.localStorage.removeItem(DRAFT_KEY)
+    } catch {
+      // localStorage unavailable — best effort
+    }
   }
 
   const handleExampleChipClick = (text: string) => {
@@ -552,6 +882,22 @@ export default function QuickStartCard({ onSubmit, defaultCli }: Props): JSX.Ele
     })
   }
 
+  // Open the native picker (dialog only — no copy yet) and add the chosen
+  // source files, de-duplicating by source path.
+  const handleAddFiles = async () => {
+    const res = await window.electronAPI.invoke('files:pick') as
+      { canceled?: boolean; files: Array<{ sourcePath: string; name: string; sizeBytes: number }> }
+    if (res.canceled || res.files.length === 0) return
+    setPickedFiles((prev) => {
+      const seen = new Set(prev.map((f) => f.sourcePath))
+      return [...prev, ...res.files.filter((f) => !seen.has(f.sourcePath))]
+    })
+  }
+
+  const removePickedFile = (sourcePath: string) => {
+    setPickedFiles((prev) => prev.filter((f) => f.sourcePath !== sourcePath))
+  }
+
   return (
     <section
       data-testid="quick-start-card"
@@ -561,13 +907,55 @@ export default function QuickStartCard({ onSubmit, defaultCli }: Props): JSX.Ele
         border: '1px solid rgba(127,119,221,0.25)',
       }}
     >
-      <div className="mb-4">
-        <h2 className="text-white text-lg font-semibold">{LAUNCHPAD_COPY.quickStart.title}</h2>
-        <p className="text-gray-400 text-sm mt-0.5">
-          {LAUNCHPAD_COPY.quickStart.subtitle}
-        </p>
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-white text-lg font-semibold">{LAUNCHPAD_COPY.quickStart.title}</h2>
+          <p className="text-gray-400 text-sm mt-0.5">
+            {LAUNCHPAD_COPY.quickStart.subtitle}
+          </p>
+        </div>
+        {hasDraft && (
+          <button
+            type="button"
+            data-testid="quick-start-clear-draft"
+            onClick={clearDraft}
+            title="Clear the prompt, files, notes, and skills you've selected and start fresh (keeps your saved agent and permission defaults)"
+            className="flex-shrink-0 inline-flex items-center gap-1 text-xs text-gray-400 hover:text-gray-100 transition-colors"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            Start something new
+          </button>
+        )}
       </div>
 
+      {authStatus.loaded && !anyReady ? (
+        // Both providers unauthenticated — block the launch and route the user
+        // to authentication instead of letting them fire a doomed spawn.
+        <div
+          data-testid="quick-start-connect-cta"
+          className="rounded-xl border border-amber-700/40 bg-amber-900/15 p-5 text-center"
+        >
+          <h3 className="text-amber-100 text-sm font-semibold">Connect a CLI to get started</h3>
+          <p className="text-amber-200/70 text-xs mt-1.5 max-w-md mx-auto">
+            Neither GitHub Copilot nor Claude Code is connected yet. Install and sign in to one of
+            them, then come back here to start chatting.
+          </p>
+          {/* Plain hash anchor rather than useNavigate(): QuickStartCard is
+              unit-tested without a Router wrapper, and the app uses HashRouter
+              so this navigates correctly in production. */}
+          <a
+            data-testid="quick-start-connect-cta-button"
+            href="#/configure?tab=setup"
+            className="mt-4 inline-flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-semibold text-white shadow-lg transition-all"
+            style={{ backgroundColor: '#5B4FC4' }}
+          >
+            Connect a CLI
+          </a>
+        </div>
+      ) : (
+      <>
       <textarea
         ref={textareaRef}
         data-testid="quick-start-textarea"
@@ -602,7 +990,7 @@ export default function QuickStartCard({ onSubmit, defaultCli }: Props): JSX.Ele
         </div>
       )}
 
-      {(advanced.agent || selectedSkillIds.size > 0 || selectedNoteIds.size > 0) && (
+      {(advanced.agent || selectedSkillIds.size > 0 || selectedNoteIds.size > 0 || advanced.additionalDirs.length > 0) && (
         <div data-testid="quick-start-refs" className="mt-2 flex flex-wrap gap-2">
           {advanced.agent && (() => {
             const a = agents.find((x) => x.id === advanced.agent)
@@ -648,6 +1036,21 @@ export default function QuickStartCard({ onSubmit, defaultCli }: Props): JSX.Ele
                   aria-label={`Remove note ${n.title}`}
                   onClick={() => toggleNoteSelection(id)}
                   className="text-teal-300 hover:text-white"
+                >×</button>
+              </span>
+            )
+          })}
+          {advanced.additionalDirs.map((path) => {
+            const name = path.split('/').filter(Boolean).pop() || path
+            return (
+              <span key={`d:${path}`} className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] bg-sky-900/30 border border-sky-700/50 text-sky-200" title={path}>
+                <span className="text-[9px] uppercase tracking-wider text-sky-400">Folder</span>
+                <span className="truncate max-w-[200px]">{name}</span>
+                <button
+                  type="button"
+                  aria-label={`Remove folder ${name}`}
+                  onClick={() => setAdvanced((s) => ({ ...s, additionalDirs: s.additionalDirs.filter((d) => d !== path) }))}
+                  className="text-sky-300 hover:text-white"
                 >×</button>
               </span>
             )
@@ -1009,12 +1412,192 @@ export default function QuickStartCard({ onSubmit, defaultCli }: Props): JSX.Ele
               </AttachmentPopover>
             ),
           },
+          showFileAttachments
+            ? {
+                id: 'files',
+                label: LAUNCHPAD_COPY.quickStart.chips.filesActive,
+                accent: 'gray' as const,
+                count: pickedFiles.length,
+                buttonRef: fileChipRef,
+                ariaControls: 'quick-start-files-popover',
+                popover: (
+                  <AttachmentPopover
+                    id="quick-start-files-popover"
+                    open={openChipId === 'files'}
+                    anchorRef={fileChipRef}
+                    onClose={() => setOpenChipId(null)}
+                    title={LAUNCHPAD_COPY.quickStart.popovers.filesTitle}
+                  >
+                    <div className="p-2" data-testid="quick-start-files-picker">
+                      <p className="px-1 pb-2 text-[11px] text-gray-500">
+                        {LAUNCHPAD_COPY.quickStart.hints.files}
+                      </p>
+                      {pickedFiles.length > 0 && (
+                        <ul className="mb-2 space-y-1 max-h-48 overflow-y-auto">
+                          {pickedFiles.map((f) => (
+                            <li
+                              key={f.sourcePath}
+                              className="flex items-center gap-2 px-2 py-1 rounded-md bg-gray-800/50 text-xs text-gray-200"
+                            >
+                              <span className="flex-1 truncate" title={f.sourcePath}>{f.name}</span>
+                              <span className="text-[10px] text-gray-500">
+                                {f.sizeBytes < 1024 ? `${f.sizeBytes}B` : f.sizeBytes < 1048576 ? `${Math.round(f.sizeBytes / 1024)}KB` : `${(f.sizeBytes / 1048576).toFixed(1)}MB`}
+                              </span>
+                              <button
+                                type="button"
+                                aria-label={`Remove ${f.name}`}
+                                onClick={() => removePickedFile(f.sourcePath)}
+                                className="text-gray-500 hover:text-red-400 transition-colors"
+                              >
+                                ✕
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      <button
+                        type="button"
+                        data-testid="quick-start-add-files"
+                        onClick={() => { void handleAddFiles() }}
+                        className="w-full px-2.5 py-1.5 rounded-md text-xs text-gray-200 border border-dashed border-gray-700 hover:bg-gray-800 transition-colors"
+                      >
+                        + Add files
+                      </button>
+                      <p className="px-1 pt-2 text-[10px] text-gray-600">
+                        Files are copied into <code>.clear-path/uploads/</code> in your project (gitignored) so the CLI can read them.
+                      </p>
+                    </div>
+                  </AttachmentPopover>
+                ),
+              }
+            : {
+                id: 'files',
+                label: LAUNCHPAD_COPY.quickStart.chips.files,
+                accent: 'gray' as const,
+                disabled: true,
+                tooltip: LAUNCHPAD_COPY.quickStart.chips.filesTooltip,
+              },
           {
-            id: 'files',
-            label: LAUNCHPAD_COPY.quickStart.chips.files,
-            accent: 'gray',
-            disabled: true,
-            tooltip: LAUNCHPAD_COPY.quickStart.chips.filesTooltip,
+            id: 'folder',
+            label: LAUNCHPAD_COPY.quickStart.chips.folder,
+            accent: 'sky' as const,
+            count: advanced.additionalDirs.length,
+            buttonRef: folderChipRef,
+            ariaControls: 'quick-start-folder-popover',
+            popover: (
+              <AttachmentPopover
+                id="quick-start-folder-popover"
+                open={openChipId === 'folder'}
+                anchorRef={folderChipRef}
+                onClose={() => setOpenChipId(null)}
+                title={LAUNCHPAD_COPY.quickStart.popovers.folderTitle}
+              >
+                <div className="p-2" data-testid="quick-start-folder-picker">
+                  <p className="px-1 pb-2 text-[11px] text-gray-500">
+                    {LAUNCHPAD_COPY.quickStart.hints.folders}
+                  </p>
+                  {approvedFolders.length > 0 ? (
+                    <div className="space-y-0.5 max-h-48 overflow-y-auto">
+                      {approvedFolders.map((f) => {
+                        const on = advanced.additionalDirs.includes(f.path)
+                        return (
+                          <button
+                            key={f.id}
+                            type="button"
+                            onClick={() => toggleDirSelection(f.path)}
+                            aria-pressed={on}
+                            title={f.path}
+                            className={`w-full text-left px-2.5 py-1.5 rounded-md text-xs transition-colors flex items-center gap-2 ${
+                              on
+                                ? 'bg-sky-900/30 text-sky-200 border border-sky-700'
+                                : 'text-gray-200 border border-transparent hover:bg-gray-800'
+                            }`}
+                          >
+                            <span
+                              className={`w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 ${
+                                on ? 'bg-sky-600 border-sky-600' : 'border-gray-600'
+                              }`}
+                            >
+                              {on && (
+                                <svg className="w-2 h-2 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                </svg>
+                              )}
+                            </span>
+                            <span className="flex-1 truncate">
+                              <span className="font-medium">{f.label}</span>
+                              <span className="block text-[10px] text-gray-500 truncate">{f.path}</span>
+                            </span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  ) : (
+                    <p className="px-1 py-2 text-[11px] text-gray-500">No folders set up yet.</p>
+                  )}
+                  <button
+                    type="button"
+                    data-testid="quick-start-manage-folders"
+                    onClick={() => { setOpenChipId(null); goToLocalSetup() }}
+                    className="w-full mt-2 px-2.5 py-1.5 rounded-md text-xs text-sky-300 border border-dashed border-sky-800/60 hover:bg-sky-900/20 transition-colors"
+                  >
+                    + Add more folders…
+                  </button>
+                  {provider === 'copilot' && (
+                    <p className="px-1 pt-2 text-[10px] text-amber-400/80">
+                      Copilot reads your working folder. Extra folders here apply to Claude sessions.
+                    </p>
+                  )}
+                </div>
+              </AttachmentPopover>
+            ),
+          },
+          {
+            id: 'template',
+            label: LAUNCHPAD_COPY.quickStart.chips.template,
+            accent: 'amber' as const,
+            buttonRef: templateChipRef,
+            ariaControls: 'quick-start-template-popover',
+            popover: (
+              <AttachmentPopover
+                id="quick-start-template-popover"
+                open={openChipId === 'template'}
+                anchorRef={templateChipRef}
+                onClose={() => setOpenChipId(null)}
+                title={LAUNCHPAD_COPY.quickStart.popovers.templateTitle}
+              >
+                <SectionPicker
+                  label="Template"
+                  hint={LAUNCHPAD_COPY.quickStart.hints.template}
+                  search={templateSearch}
+                  onSearch={setTemplateSearch}
+                  count={0}
+                  placeholder="Search templates…"
+                  empty="No templates yet. Build one in Configure → Templates."
+                  testId="quick-start-template-picker"
+                >
+                  {templates.map((t) => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => onPickTemplate(t)}
+                      title={t.description || t.name}
+                      className="w-full text-left px-2.5 py-1.5 rounded-md text-xs text-gray-200 border border-transparent hover:bg-gray-800 transition-colors flex items-center gap-2"
+                    >
+                      <span className="flex-1 truncate">
+                        <span className="font-medium">{t.name}</span>
+                        {t.description && <span className="block text-[10px] text-gray-500 truncate">{t.description}</span>}
+                      </span>
+                      {t.variables.length > 0 && (
+                        <span className="text-[10px] text-amber-400/80 flex-shrink-0">
+                          {t.variables.length} field{t.variables.length === 1 ? '' : 's'}
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </SectionPicker>
+              </AttachmentPopover>
+            ),
           },
         ]}
       />
@@ -1070,22 +1653,63 @@ export default function QuickStartCard({ onSubmit, defaultCli }: Props): JSX.Ele
                 )}
               </label>
 
-              <label className="flex flex-col gap-1">
-                <span className="text-[11px] uppercase tracking-wide text-gray-500">Additional directories</span>
-                <input
-                  data-testid="quick-start-additional-dirs"
-                  aria-label="Additional directories"
-                  type="text"
-                  value={advanced.additionalDirsRaw}
-                  onChange={(e) => setAdvanced((a) => ({ ...a, additionalDirsRaw: e.target.value }))}
-                  placeholder="e.g. /path/to/repo, /path/to/docs"
-                  className="bg-gray-900/80 border border-gray-700 rounded-md px-2 py-1.5 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                />
-              </label>
+              <div className="flex flex-col gap-2" data-testid="quick-start-cli-toggles">
+                <span className="text-[11px] uppercase tracking-wide text-gray-500">Session options</span>
+                {SESSION_CLI_TOGGLES[provider].map((t) => {
+                  const on = !!sessionToggles[t.field]
+                  return (
+                    <div key={t.field} className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <span className="text-sm text-gray-200">{t.label}</span>
+                        <p className="text-[10px] text-gray-500">{t.hint}</p>
+                      </div>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={on}
+                        aria-label={`Toggle ${t.label}`}
+                        data-testid={`quick-start-toggle:${t.field}`}
+                        onClick={() => toggleSessionFlag(t.field)}
+                        className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors flex-shrink-0 mt-0.5 ${on ? 'bg-sky-600' : 'bg-gray-600'}`}
+                      >
+                        <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${on ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                      </button>
+                    </div>
+                  )
+                })}
+                <p className="text-[10px] text-gray-600 mt-0.5">
+                  Defaults match your Settings. Changes here apply to this session only.
+                </p>
+              </div>
             </div>
           </div>
         )
       })()}
+      </>
+      )}
+
+      {/* Template fill-in modal (launch context). Picking a template with
+          variables opens this; submitting merges its prompt + patch into the
+          launchpad via applyTemplate. */}
+      {templateModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Fill in ${templateModal.name}`}
+          onMouseDown={(e) => { if (e.target === e.currentTarget) setTemplateModal(null) }}
+        >
+          <div className="w-full max-w-2xl bg-white rounded-xl border border-gray-200 p-5 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <TemplateForm
+              template={templateModal}
+              cli={cli}
+              context="launch"
+              onSubmit={applyTemplate}
+              onCancel={() => setTemplateModal(null)}
+            />
+          </div>
+        </div>
+      )}
     </section>
   )
 }

@@ -1,6 +1,7 @@
 import type { IpcMain } from 'electron'
 import type { SessionOptions } from '../cli/types'
 import type { CLIManager } from '../cli/CLIManager'
+import { cleanupSessionUploads } from './fileAttachmentHandlers'
 import type { AgentManager } from '../agents/AgentManager'
 import { checkRateLimit } from '../utils/rateLimiter'
 import { STARTER_AGENTS } from '../starter-pack/agents'
@@ -8,6 +9,7 @@ import Store from 'electron-store'
 import { getStoreEncryptionKey } from '../utils/storeEncryption'
 import { existsSync, readFileSync } from 'fs'
 import { providerOf } from '../../shared/backends'
+import { sessionDefaultFlagKeysFor } from '../../shared/sessionDefaultFlags'
 
 export function registerIpcHandlers(
   ipcMain: IpcMain,
@@ -23,19 +25,50 @@ export function registerIpcHandlers(
     if (!rl.allowed) return { error: `Rate limited — try again in ${Math.ceil((rl.retryAfterMs ?? 0) / 1000)}s` }
 
     let resolved = options
+    const provider = providerOf(options.cli)
+
+    // Read persisted settings once — reused for both the saved model and the
+    // curated session-default flags below.
+    let storedSettings: { model?: { copilot?: string; claude?: string }; flags?: Record<string, unknown> } | undefined
+    try {
+      const settingsStore = new Store({ name: 'clear-path-settings', encryptionKey: getStoreEncryptionKey() })
+      storedSettings = settingsStore.get('settings') as typeof storedSettings
+    } catch { /* settings not available */ }
 
     // Auto-inject the saved model from settings, or fall back to app defaults
     if (!resolved.model) {
-      const provider = providerOf(options.cli)
       const DEFAULT_MODELS: Record<'copilot' | 'claude', string> = { copilot: 'gpt-5-mini', claude: 'sonnet' }
-      let modelToUse = DEFAULT_MODELS[provider] ?? ''
-      try {
-        const settingsStore = new Store({ name: 'clear-path-settings', encryptionKey: getStoreEncryptionKey() })
-        const settings = settingsStore.get('settings') as { model?: { copilot?: string; claude?: string } } | undefined
-        const savedModel = settings?.model?.[provider]
-        if (savedModel) modelToUse = savedModel
-      } catch { /* settings not available */ }
+      const savedModel = storedSettings?.model?.[provider]
+      const modelToUse = savedModel || DEFAULT_MODELS[provider] || ''
       if (modelToUse) resolved = { ...resolved, model: modelToUse }
+    }
+
+    // Apply curated session-default flags from Settings → CLI Flags. The builder
+    // persists every configured flag under `settings.flags` keyed
+    // `${provider}:${field}`; we merge only the allowlisted, transport-compatible
+    // subset (see src/shared/sessionDefaultFlags.ts) onto the typed SessionOptions
+    // fields. Explicit caller options always win — a stored default only fills a
+    // field the caller left undefined.
+    if (storedSettings?.flags) {
+      const allowed = sessionDefaultFlagKeysFor(options.cli)
+      const prefix = `${provider}:`
+      const defaults: Record<string, unknown> = {}
+      for (const [storeKey, value] of Object.entries(storedSettings.flags)) {
+        if (!storeKey.startsWith(prefix)) continue
+        const field = storeKey.slice(prefix.length)
+        if (!allowed.has(field)) continue
+        // Mirror the renderer's `isSet` check — skip cleared / empty values.
+        if (value === undefined || value === null || value === '') continue
+        if (Array.isArray(value) && value.length === 0) continue
+        defaults[field] = value
+      }
+      if (Object.keys(defaults).length > 0) {
+        const merged = { ...resolved } as Record<string, unknown>
+        for (const [field, value] of Object.entries(defaults)) {
+          if (merged[field] === undefined) merged[field] = value
+        }
+        resolved = merged as unknown as SessionOptions
+      }
     }
 
     // Resolve the agent — either from explicit option or from stored active agent.
@@ -131,6 +164,9 @@ export function registerIpcHandlers(
     }
 
     const result = await cliManager.startSession(resolved)
+    // CLI-not-ready guard fired in the main process — no session was created.
+    // Pass the error envelope straight through; don't graft agentApplied onto it.
+    if ('error' in result) return result
     // Surface the auto-applied agent so the renderer can show it in the chat
     // status and pre-select it in the input bar's quick config.
     return agentDisplayName
@@ -142,15 +178,16 @@ export function registerIpcHandlers(
     'cli:send-input',
     (
       _event,
-      { sessionId, input, attachedNotes, promptSlices, userOverrideModel }: {
+      { sessionId, input, attachedNotes, promptSlices, userOverrideModel, attachedFiles }: {
         sessionId: string
         input: string
         attachedNotes?: Array<{ id: string; title: string }>
         promptSlices?: import('../../shared/tokenization/types').PromptSlices
         userOverrideModel?: string
+        attachedFiles?: Array<{ id: string; name: string; relPath: string }>
       },
     ) => {
-      cliManager.sendInput(sessionId, input, attachedNotes, promptSlices, userOverrideModel)
+      cliManager.sendInput(sessionId, input, attachedNotes, promptSlices, userOverrideModel, attachedFiles)
     }
   )
 
@@ -204,14 +241,25 @@ export function registerIpcHandlers(
     cliManager.getPersistedSessions()
   )
 
-  // Session management operations
-  ipcMain.handle('cli:delete-session', (_event, { sessionId }: { sessionId: string }) =>
-    cliManager.deletePersistedSession(sessionId)
-  )
+  // Session management operations.
+  // On delete we also remove the session's staged file attachments
+  // (`.clear-path/uploads/<sessionId>/`). The working directory is looked up
+  // from the persisted session so the renderer needn't supply it. Any miss is
+  // reclaimed later by `files:sweep-orphans`.
+  ipcMain.handle('cli:delete-session', (_event, { sessionId }: { sessionId: string }) => {
+    const wd = cliManager.getPersistedSessions().find((s) => s.sessionId === sessionId)?.workingDirectory
+    if (wd) cleanupSessionUploads(wd, sessionId)
+    return cliManager.deletePersistedSession(sessionId)
+  })
 
-  ipcMain.handle('cli:delete-sessions', (_event, { sessionIds }: { sessionIds: string[] }) =>
-    cliManager.deletePersistedSessions(sessionIds)
-  )
+  ipcMain.handle('cli:delete-sessions', (_event, { sessionIds }: { sessionIds: string[] }) => {
+    const sessions = cliManager.getPersistedSessions()
+    for (const id of sessionIds) {
+      const wd = sessions.find((s) => s.sessionId === id)?.workingDirectory
+      if (wd) cleanupSessionUploads(wd, id)
+    }
+    return cliManager.deletePersistedSessions(sessionIds)
+  })
 
   ipcMain.handle('cli:archive-session', (_event, { sessionId, archived }: { sessionId: string; archived: boolean }) =>
     cliManager.archivePersistedSession(sessionId, archived)

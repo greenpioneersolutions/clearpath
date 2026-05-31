@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react'
-import type { PromptTemplate } from '../../types/template'
+import type { PromptTemplate, HydratedTemplate } from '../../types/template'
 import type { WorkflowStep } from './StepCard'
 import TemplateLauncher from './TemplateLauncher'
 import WorkflowCanvas, { createEmptyStep } from './WorkflowCanvas'
@@ -87,25 +87,24 @@ export default function Composer({ onSendToSession, onSendToNewSession, cli, ses
     setHasStarted(true)
   }
 
-  const handleStartFromTemplate = (template: PromptTemplate, values: Record<string, string>) => {
-    let body = template.body
-    for (const [key, val] of Object.entries(values)) {
-      body = body.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), val)
-    }
+  const handleStartFromTemplate = (template: PromptTemplate, hydrated: HydratedTemplate) => {
     const step = createEmptyStep()
     step.name = template.name
-    step.prompt = body
-    if (template.recommendedModel) step.model = template.recommendedModel
-    if (template.recommendedPermissionMode) step.permissionMode = template.recommendedPermissionMode
+    step.prompt = hydrated.prompt
+    // Config-type variables win over the template's static recommendation.
+    if (hydrated.patch.model ?? template.recommendedModel) step.model = hydrated.patch.model ?? template.recommendedModel
+    if (hydrated.patch.permissionMode ?? template.recommendedPermissionMode) {
+      step.permissionMode = hydrated.patch.permissionMode ?? template.recommendedPermissionMode
+    }
     setSteps([step])
     setHasStarted(true)
   }
 
-  const handleRunNow = (hydratedPrompt: string) => {
+  const handleRunNow = (hydrated: HydratedTemplate) => {
     if (targetMode === 'existing' && hasActiveSession) {
-      onSendToSession(hydratedPrompt)
+      onSendToSession(hydrated.prompt)
     } else {
-      onSendToNewSession(hydratedPrompt)
+      onSendToNewSession(hydrated.prompt)
     }
   }
 
@@ -113,14 +112,12 @@ export default function Composer({ onSendToSession, onSendToNewSession, cli, ses
     setShowTemplatePicker(true)
   }
 
-  const handleTemplateForStep = (template: PromptTemplate, values: Record<string, string>) => {
-    let body = template.body
-    for (const [key, val] of Object.entries(values)) {
-      body = body.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), val)
-    }
+  const handleTemplateForStep = (template: PromptTemplate, hydrated: HydratedTemplate) => {
     const step = createEmptyStep()
     step.name = template.name
-    step.prompt = body
+    step.prompt = hydrated.prompt
+    if (hydrated.patch.model) step.model = hydrated.patch.model
+    if (hydrated.patch.permissionMode) step.permissionMode = hydrated.patch.permissionMode
     step.executionType = 'sub-agent'
     setSteps((prev) => [...prev, step])
     setShowTemplatePicker(false)

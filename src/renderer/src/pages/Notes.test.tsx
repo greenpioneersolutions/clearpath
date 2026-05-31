@@ -9,6 +9,23 @@ vi.mock('react-markdown', () => ({
 vi.mock('remark-gfm', () => ({ default: () => {} }))
 vi.mock('rehype-sanitize', () => ({ default: () => {} }))
 
+// The Notes editor overlay mounts CodeMirror. Mock it as a textarea (matching
+// the memory/FileEditor test) and stub the named exports the modal references
+// at render time (EditorView.lineWrapping, keymap.of) so the markdown toolbar
+// wiring doesn't crash under jsdom.
+vi.mock('@uiw/react-codemirror', () => ({
+  default: ({ value, onChange }: { value: string; onChange: (v: string) => void }) => (
+    <textarea
+      data-testid="codemirror-mock"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+    />
+  ),
+  EditorView: { lineWrapping: {} },
+  EditorSelection: { range: (from: number, to: number) => ({ from, to }) },
+  keymap: { of: () => ({}) },
+}))
+
 const flagsRef: { current: Record<string, boolean> } = { current: { showNotes: true } }
 vi.mock('../contexts/FeatureFlagContext', () => ({
   useFlag: (key: string) => Boolean(flagsRef.current[key]),
@@ -116,16 +133,51 @@ describe('Notes page', () => {
     })
   })
 
-  it('opens the editor drawer when a note card is clicked', async () => {
+  it('opens the editor overlay when a note card is clicked', async () => {
     renderNotes()
     await waitFor(() => expect(screen.getByText('Meeting Q3')).toBeInTheDocument())
 
     fireEvent.click(screen.getByTestId('notes-card-n-1'))
 
     await waitFor(() =>
-      expect(screen.getByTestId('notes-editor-drawer')).toBeInTheDocument(),
+      expect(screen.getByTestId('notes-editor-modal')).toBeInTheDocument(),
     )
     expect(screen.getByDisplayValue('Meeting Q3')).toBeInTheDocument()
+  })
+
+  it('shows the markdown formatting toolbar in the overlay', async () => {
+    renderNotes()
+    await waitFor(() => screen.getByText('Meeting Q3'))
+    fireEvent.click(screen.getByTestId('notes-card-n-1'))
+
+    await screen.findByTestId('notes-editor-modal')
+    // Default view mode is "split", so the toolbar is visible.
+    expect(screen.getByRole('button', { name: /Bold/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Link/i })).toBeInTheDocument()
+  })
+
+  it('"Save & close" flushes notes:update immediately and dismisses the overlay', async () => {
+    renderNotes()
+    await waitFor(() => screen.getByText('Meeting Q3'))
+    fireEvent.click(screen.getByTestId('notes-card-n-1'))
+
+    const titleInput = await screen.findByDisplayValue('Meeting Q3')
+    fireEvent.change(titleInput, { target: { value: 'Renamed note' } })
+
+    fireEvent.click(screen.getByTestId('notes-save-close'))
+
+    await waitFor(() => {
+      const calls = (window.electronAPI.invoke as unknown as { mock: { calls: unknown[][] } }).mock.calls
+      const matching = calls.filter(
+        (c) =>
+          c[0] === 'notes:update' &&
+          (c[1] as { id?: string; title?: string })?.id === 'n-1' &&
+          (c[1] as { title?: string })?.title === 'Renamed note',
+      )
+      expect(matching.length).toBeGreaterThan(0)
+    })
+    // Overlay closes after the explicit save.
+    await waitFor(() => expect(screen.queryByTestId('notes-editor-modal')).not.toBeInTheDocument())
   })
 
   it('saves edits via notes:update (debounced)', async () => {

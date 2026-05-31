@@ -60,8 +60,8 @@ test.describe('ClearPathAI — Configure Page', () => {
 
     test('renders all expected tab buttons', async ({ page }) => {
       // PR #47: integrations/extensions moved to /connect; tools tab added.
-      // Visible labels were also renamed (keys unchanged):
-      //   agents="Prompts", skills="Playbooks", memory="Notes & Context",
+      // Visible labels aligned to CLI vocabulary (keys unchanged):
+      //   agents="Agents", skills="Skills", memory="Project Memory",
       //   settings="General", branding="Branding", tools="Tools & Permissions".
       // Advanced group is collapsed by default — expand it via URL navigation
       // so its tab buttons attach to the DOM.
@@ -70,7 +70,7 @@ test.describe('ClearPathAI — Configure Page', () => {
 
       const expectedTabs = [
         'Setup Wizard', 'Accessibility', 'General', 'Tools & Permissions',
-        'Policies', 'Notes & Context', 'Prompts', 'Playbooks',
+        'Policies', 'Project Memory', 'Agents', 'Skills',
         'Session Wizard', 'Workspaces', 'Team Hub', 'Scheduler', 'Branding',
       ]
 

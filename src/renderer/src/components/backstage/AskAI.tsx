@@ -96,11 +96,15 @@ export default function AskAI(): JSX.Element {
       const contextBlock = `[Reference context from Backstage catalog]\n\n${contextPreview.context}\n\n---\n\n${question}`
 
       // Start the CLI process — this spawns the child process and sends the initial prompt
-      const { sessionId } = (await window.electronAPI.invoke('cli:start-session', {
+      const startResult = (await window.electronAPI.invoke('cli:start-session', {
         cli: 'copilot',
         mode: 'interactive',
         name: `Backstage: ${question.slice(0, 40)}${question.length > 40 ? '...' : ''}`,
-      })) as { sessionId: string }
+      })) as { sessionId: string } | { error: string; code: 'CLI_NOT_READY' }
+      // Main process guard: CLI not ready — no session created. Bail to Work
+      // (which shows the connect CTA) rather than sending into a phantom id.
+      if ('error' in startResult) { navigate('/work'); return }
+      const { sessionId } = startResult
 
       // Now send the actual prompt with context into the running session
       await window.electronAPI.invoke('cli:send-input', {

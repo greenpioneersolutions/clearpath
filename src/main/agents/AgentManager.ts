@@ -19,6 +19,7 @@ import type {
 } from '../../renderer/src/types/ipc'
 import type { BackendId, BackendProvider } from '../../shared/backends'
 import { providerOf } from '../../shared/backends'
+import type { LocationsManager } from '../locations/LocationsManager'
 
 // Built-in CLI agents (explore, task, etc.) are no longer listed here.
 // Users create their own agents via the Starter Pack walkthrough instead.
@@ -175,10 +176,28 @@ function scanDirectory(dir: string, provider: BackendProvider, extFilter: string
   return agents
 }
 
+/** Drop agents whose file path was already seen (source folder overlapping a home scan). */
+function dedupeByFilePath(agents: AgentDef[]): AgentDef[] {
+  const seen = new Set<string>()
+  return agents.filter((a) => {
+    const key = a.filePath ?? a.id
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
 // ── AgentManager ──────────────────────────────────────────────────────────────
 
 export class AgentManager {
   private _store: Store<AgentStoreSchema> | null = null
+
+  /**
+   * Optional — when provided, agent discovery also scans the user's extra
+   * "source folders" (e.g. a cloned pack or enterprise-internal repo) so
+   * agents living outside ~/.claude and ~/.github still show up.
+   */
+  constructor(private readonly locations?: LocationsManager) {}
 
   private get store(): Store<AgentStoreSchema> {
     if (!this._store) {
@@ -201,9 +220,24 @@ export class AgentManager {
     const copilotCustom = this.scanCopilotAgents(workingDir)
     const claudeAgents = this.scanClaudeAgents(workingDir)
 
+    // Extra source folders the user pointed ClearPath at. We scan the folder
+    // itself plus the common agent sub-layouts so a cloned pack works whether
+    // its agents sit at the root or under .github/.claude.
+    for (const folder of this.locations?.getExistingSourceFolders() ?? []) {
+      copilotCustom.push(
+        ...scanDirectory(folder, 'copilot', '.agent.md'),
+        ...scanDirectory(join(folder, 'agents'), 'copilot', '.agent.md'),
+        ...scanDirectory(join(folder, '.github', 'agents'), 'copilot', '.agent.md'),
+      )
+      claudeAgents.push(
+        ...scanDirectory(join(folder, 'agents'), 'claude', '.md'),
+        ...scanDirectory(join(folder, '.claude', 'agents'), 'claude', '.md'),
+      )
+    }
+
     return {
-      copilot: copilotCustom,
-      claude: claudeAgents,
+      copilot: dedupeByFilePath(copilotCustom),
+      claude: dedupeByFilePath(claudeAgents),
     }
   }
 

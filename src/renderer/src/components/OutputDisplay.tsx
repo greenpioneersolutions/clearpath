@@ -1,9 +1,58 @@
 import { useEffect, useRef, useState, useMemo } from 'react'
 import ReactMarkdown from 'react-markdown'
+import type { Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeSanitize from 'rehype-sanitize'
 import type { ParsedOutput } from '../types/ipc'
 import { useFlag } from '../contexts/FeatureFlagContext'
+import CodeBlock from './chat/CodeBlock'
+import JsonBlock from './chat/JsonBlock'
+
+// ── Markdown code rendering ──────────────────────────────────────────────────
+// Concatenate the text of a hast node tree (code fences are a `code` element
+// whose children are text nodes).
+function hastText(node: unknown): string {
+  if (!node || typeof node !== 'object') return ''
+  const n = node as { value?: unknown; children?: unknown[] }
+  if (typeof n.value === 'string') return n.value
+  if (Array.isArray(n.children)) return n.children.map(hastText).join('')
+  return ''
+}
+
+/** True when `text` is a JSON object/array literal that parses cleanly. */
+function looksLikeJson(text: string): boolean {
+  const t = text.trim()
+  if (t[0] !== '{' && t[0] !== '[') return false
+  try {
+    const v: unknown = JSON.parse(t)
+    return v !== null && typeof v === 'object'
+  } catch {
+    return false
+  }
+}
+
+// `pre` owns the frame for every fenced block (read straight from the hast node
+// so language-less fences are handled too); inline `code` keeps its default
+// `.prose-chat code` styling.
+const markdownComponents: Components = {
+  pre({ node, children }) {
+    const codeNode =
+      (node as { children?: { tagName?: string }[] } | undefined)?.children?.find(
+        (c) => c.tagName === 'code',
+      ) ?? (node as { children?: unknown[] } | undefined)?.children?.[0]
+    if (!codeNode) return <pre>{children}</pre>
+    const className: string =
+      ((codeNode as { properties?: { className?: unknown } }).properties?.className as
+        | string[]
+        | undefined)?.join(' ') ?? ''
+    const lang = /language-(\w+)/.exec(className)?.[1]
+    const text = hastText(codeNode)
+    if (lang === 'json' || lang === 'jsonc' || (!lang && looksLikeJson(text))) {
+      return <JsonBlock raw={text} />
+    }
+    return <CodeBlock code={text} lang={lang} />
+  },
+}
 
 export interface OutputMessage {
   id: string
@@ -12,7 +61,7 @@ export interface OutputMessage {
   timestamp?: number  // ms since epoch — when the message was added
   /**
    * Optional inline annotation rendered below a user message — e.g.
-   * "Sent with Prompt: Coach + 2 notes attached". Used to make injected
+   * "Sent with Agent: Coach + 2 notes attached". Used to make injected
    * context visible to the user.
    */
   contextAnnotation?: string
@@ -28,6 +77,18 @@ export interface OutputMessage {
   attachedAgent?: { id: string; name: string }
   /** Skills the user tagged this chat with. Names only — no body content. */
   attachedSkills?: Array<{ id: string; name: string }>
+  /**
+   * Files attached when this user message was sent. Name + workspace-relative
+   * path are frozen here; file CONTENT is never persisted on the message (the
+   * chip only ever knows the name). Survives file deletion + flag toggling.
+   */
+  attachedFiles?: Array<{ id: string; name: string; relPath: string }>
+  /**
+   * Repo / additional directories the agent was given access to for this turn
+   * (the `--add-dir` folders the user picked under Customize). Path + display
+   * name only — frozen here so the chip shows what scope the agent had.
+   */
+  attachedDirs?: Array<{ path: string; name: string }>
   /**
    * Id of the CLI turn this message belongs to. Propagated from
    * `ParsedOutput.turnId` when a `cli:output` event is ingested. Used by
@@ -183,8 +244,8 @@ export default function OutputDisplay({ messages, onPermissionResponse, onSaveAs
                   : null
                 usageIdx++
                 return badge
-                  ? <div key={`turn-${first.id}`}>{badge}<UserBubble content={first.output.content} timestamp={first.timestamp} contextAnnotation={first.contextAnnotation} attachedNotes={first.attachedNotes} attachedAgent={first.attachedAgent} attachedSkills={first.attachedSkills} /></div>
-                  : <UserBubble key={first.id} content={first.output.content} timestamp={first.timestamp} contextAnnotation={first.contextAnnotation} attachedNotes={first.attachedNotes} attachedAgent={first.attachedAgent} attachedSkills={first.attachedSkills} />
+                  ? <div key={`turn-${first.id}`}>{badge}<UserBubble content={first.output.content} timestamp={first.timestamp} contextAnnotation={first.contextAnnotation} attachedNotes={first.attachedNotes} attachedAgent={first.attachedAgent} attachedSkills={first.attachedSkills} attachedFiles={first.attachedFiles} attachedDirs={first.attachedDirs} /></div>
+                  : <UserBubble key={first.id} content={first.output.content} timestamp={first.timestamp} contextAnnotation={first.contextAnnotation} attachedNotes={first.attachedNotes} attachedAgent={first.attachedAgent} attachedSkills={first.attachedSkills} attachedFiles={first.attachedFiles} attachedDirs={first.attachedDirs} />
               }
 
               // Grouped AI text messages (only groups streaming fragments from same response)
@@ -229,21 +290,27 @@ function formatTime(ts?: number): string {
   return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
 }
 
-function UserBubble({ content, timestamp, contextAnnotation, attachedNotes, attachedAgent, attachedSkills }: {
+function UserBubble({ content, timestamp, contextAnnotation, attachedNotes, attachedAgent, attachedSkills, attachedFiles, attachedDirs }: {
   content: string
   timestamp?: number
   contextAnnotation?: string
   attachedNotes?: Array<{ id: string; title: string }>
   attachedAgent?: { id: string; name: string }
   attachedSkills?: Array<{ id: string; name: string }>
+  attachedFiles?: Array<{ id: string; name: string; relPath: string }>
+  attachedDirs?: Array<{ path: string; name: string }>
 }): JSX.Element {
   // Notes flag gates RENDERING only — the message metadata is always
   // preserved. Toggling showNotes off then on restores chips on existing
-  // transcripts.
+  // transcripts. Same contract for the files flag.
   const showNotes = useFlag('showNotes')
+  const showFiles = useFlag('showFileAttachments')
   const notesToShow = showNotes && attachedNotes && attachedNotes.length > 0 ? attachedNotes : null
   const skillsToShow = attachedSkills && attachedSkills.length > 0 ? attachedSkills : null
-  const hasAnyChip = !!(attachedAgent || skillsToShow || notesToShow)
+  const filesToShow = showFiles && attachedFiles && attachedFiles.length > 0 ? attachedFiles : null
+  // Directories are a core (un-flagged) capability — always show what scope the agent had.
+  const dirsToShow = attachedDirs && attachedDirs.length > 0 ? attachedDirs : null
+  const hasAnyChip = !!(attachedAgent || skillsToShow || notesToShow || filesToShow || dirsToShow)
 
   return (
     <div className="flex flex-col items-end animate-fadeIn">
@@ -273,6 +340,8 @@ function UserBubble({ content, timestamp, contextAnnotation, attachedNotes, atta
           )}
           {skillsToShow && <AttachedListChip kind="skill" items={skillsToShow.map((s) => s.name)} />}
           {notesToShow && <AttachedListChip kind="note" items={notesToShow.map((n) => n.title)} />}
+          {filesToShow && <AttachedListChip kind="file" items={filesToShow.map((f) => f.name)} />}
+          {dirsToShow && <AttachedListChip kind="dir" items={dirsToShow.map((d) => d.name)} />}
         </div>
       )}
       {contextAnnotation && (
@@ -288,9 +357,12 @@ function UserBubble({ content, timestamp, contextAnnotation, attachedNotes, atta
   )
 }
 
-function AttachedListChip({ kind, items }: { kind: 'note' | 'skill'; items: string[] }): JSX.Element {
+function AttachedListChip({ kind, items }: { kind: 'note' | 'skill' | 'file' | 'dir'; items: string[] }): JSX.Element {
   // No "expand" affordance — body text was never persisted; this chip is the
-  // entire audit-trail surface for attached context. Title/name only.
+  // entire audit-trail surface for attached context. Title/name only. For files
+  // this is name-only too: the file CONTENT never reaches the DOM (we inject
+  // paths, not bytes), so there is nothing to leak here. For dirs it's the
+  // folder name — the agent was granted access to that path via --add-dir.
   const MAX = 2
   const shown = items.slice(0, MAX)
   const overflow = items.length - shown.length
@@ -298,9 +370,17 @@ function AttachedListChip({ kind, items }: { kind: 'note' | 'skill'; items: stri
   const summary = overflow > 0 ? `${shown.join(' · ')} · +${overflow}` : shown.join(' · ')
   const styles = kind === 'note'
     ? { bg: 'bg-teal-900/30', border: 'border-teal-700/50', text: 'text-teal-200', label: 'text-teal-400' }
+    : kind === 'file'
+    ? { bg: 'bg-gray-800/40', border: 'border-gray-600/50', text: 'text-gray-200', label: 'text-gray-400' }
+    : kind === 'dir'
+    ? { bg: 'bg-sky-900/30', border: 'border-sky-700/50', text: 'text-sky-200', label: 'text-sky-400' }
     : { bg: 'bg-indigo-900/30', border: 'border-indigo-700/50', text: 'text-indigo-200', label: 'text-indigo-400' }
   const labelText = kind === 'note'
     ? `${items.length} note${items.length === 1 ? '' : 's'}`
+    : kind === 'file'
+    ? `${items.length} file${items.length === 1 ? '' : 's'}`
+    : kind === 'dir'
+    ? `${items.length} folder${items.length === 1 ? '' : 's'}`
     : `${items.length} skill${items.length === 1 ? '' : 's'}`
   return (
     <span
@@ -318,6 +398,20 @@ function AttachedListChip({ kind, items }: { kind: 'note' | 'skill'; items: stri
 
 function AIBubble({ content, onSaveAsNote, timestamp }: { content: string; onSaveAsNote?: (content: string) => void; timestamp?: number }): JSX.Element {
   const [saved, setSaved] = useState(false)
+
+  // Detect a whole-message raw JSON dump the model didn't fence. Conservative:
+  // must start with {/[, parse cleanly, and be more than a trivial one-liner.
+  const bareJson = useMemo(() => {
+    const t = content?.trim() ?? ''
+    if (t[0] !== '{' && t[0] !== '[') return null
+    if (!t.includes('\n') && t.length < 40) return null
+    try {
+      const v: unknown = JSON.parse(t)
+      return v !== null && typeof v === 'object' ? t : null
+    } catch {
+      return null
+    }
+  }, [content])
 
   if (!content?.trim()) return <></>
 
@@ -341,10 +435,14 @@ function AIBubble({ content, onSaveAsNote, timestamp }: { content: string; onSav
         <div className="relative">
           <div className="rounded-2xl rounded-tl-md px-4 py-3 shadow-sm" style={{ backgroundColor: 'var(--brand-dark-card)', border: '1px solid var(--brand-dark-border)', color: '#E5E7EB' }}>
             <div className="prose-chat text-sm leading-relaxed" style={{ color: '#E5E7EB' }}>
-              <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]}>{content}</ReactMarkdown>
+              {bareJson ? (
+                <JsonBlock raw={bareJson} />
+              ) : (
+                <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]} components={markdownComponents}>{content}</ReactMarkdown>
+              )}
             </div>
           </div>
-          {/* Save as memory button — appears on hover */}
+          {/* Save as note button — appears on hover */}
           {onSaveAsNote && (
             <button
               onClick={handleSave}
@@ -353,7 +451,7 @@ function AIBubble({ content, onSaveAsNote, timestamp }: { content: string; onSav
                   ? 'bg-green-900/80 text-green-300 opacity-100'
                   : 'bg-gray-800/80 text-gray-500 hover:text-gray-300 hover:bg-gray-700/80 opacity-0 group-hover/ai:opacity-100'
               }`}
-              title="Save this response as a memory note"
+              title="Save this response as a note"
             >
               {saved ? (
                 <>
@@ -363,7 +461,7 @@ function AIBubble({ content, onSaveAsNote, timestamp }: { content: string; onSav
               ) : (
                 <>
                   <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" /></svg>
-                  Save as Memory
+                  Save as Note
                 </>
               )}
             </button>

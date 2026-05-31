@@ -65,6 +65,13 @@ const DEFAULT_IPC_RESPONSES: Record<string, unknown> = {
   'workspace:get-active': null,
   'workspace:set-active': null,
 
+  // Local Setup (approved folders, default working dir, source folders)
+  'locations:list-approved': [],
+  'locations:get-default-cwd': null,
+  'locations:set-default-cwd': { success: true },
+  'locations:list-sources': [],
+  'locations:health': { defaultWorkingDir: null, approvedFolders: [], sourceFolders: [] },
+
   // Learn
   'learn:get-progress': { percentage: 0, dismissed: false },
   'learn:get-paths': [],

@@ -1,45 +1,22 @@
-export interface PromptTemplate {
-  id: string
-  name: string
-  category: string
-  description: string
-  body: string
-  recommendedModel?: string
-  recommendedPermissionMode?: string
-  complexity: 'low' | 'medium' | 'high'
-  variables: string[]
-  source: 'builtin' | 'user'
-  folder?: string
-  usageCount: number
-  totalCost: number
-  lastUsedAt?: number
-  createdAt: number
-}
+// Templates types now live in src/shared so main + renderer share one
+// definition (virtually merged via tsconfig `rootDirs`). Re-exported here so
+// existing renderer imports (`../types/template`) keep resolving.
+export type {
+  PromptTemplate,
+  TemplateUsageStat,
+  TemplateVariable,
+  VariableType,
+  TemplatePatch,
+  HydratedTemplate,
+  TemplateCategory,
+} from '../../../shared/templates/types'
 
-export interface TemplateUsageStat {
-  templateId: string
-  name: string
-  category: string
-  usageCount: number
-  avgCost: number
-  totalCost: number
-  lastUsedAt?: number
-}
-
-export const TEMPLATE_CATEGORIES = [
-  'Code Review',
-  'Bug Fix',
-  'Refactor',
-  'Testing',
-  'Documentation',
-  'Architecture',
-  'Security Audit',
-  'Performance Optimization',
-  'Migration',
-  'Git Workflow',
-  'PR Creation',
-  'Dependency Update',
-  'Custom',
-] as const
-
-export type TemplateCategory = typeof TEMPLATE_CATEGORIES[number]
+export {
+  TEMPLATE_CATEGORIES,
+  VARIABLE_TYPES,
+  CONFIG_VARIABLE_TYPES,
+  LAUNCH_ONLY_VARIABLE_TYPES,
+  MULTI_CAPABLE_VARIABLE_TYPES,
+  isConfigVariable,
+  isLaunchOnlyVariable,
+} from '../../../shared/templates/types'

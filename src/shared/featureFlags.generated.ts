@@ -20,6 +20,7 @@ export type FeatureFlagKey =
   | 'showEfficiencyInsights'
   | 'showEnvVars'
   | 'showExtensions'
+  | 'showFileAttachments'
   | 'showHomeHub'
   | 'showInsights'
   | 'showIntegrations'
@@ -67,6 +68,7 @@ export type FeatureFlags = {
   showEfficiencyInsights: boolean;
   showEnvVars: boolean;
   showExtensions: boolean;
+  showFileAttachments: boolean;
   showHomeHub: boolean;
   showInsights: boolean;
   showIntegrations: boolean;
@@ -126,6 +128,7 @@ export const BUILD_FLAGS: Readonly<FeatureFlags> = Object.freeze({
   showEfficiencyInsights: false,
   showEnvVars: false,
   showExtensions: false,
+  showFileAttachments: true,
   showHomeHub: true,
   showInsights: true,
   showIntegrations: false,
@@ -184,6 +187,7 @@ export const FEATURE_FLAG_META: Readonly<Record<FeatureFlagKey, FeatureFlagMetad
   showEfficiencyInsights: { experimental: true, enabled: false, addedIn: "1.14.0" },
   showEnvVars: { experimental: false, enabled: false, addedIn: "1.0.0" },
   showExtensions: { experimental: true, enabled: false, addedIn: "1.9.0" },
+  showFileAttachments: { experimental: false, enabled: true, addedIn: "1.15.0" },
   showHomeHub: { experimental: false, enabled: true, addedIn: "1.0.0" },
   showInsights: { experimental: false, enabled: true, addedIn: "1.0.0" },
   showIntegrations: { experimental: false, enabled: false, addedIn: "1.0.0" },
@@ -246,6 +250,7 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = Object.freeze([
   'showEfficiencyInsights',
   'showEnvVars',
   'showExtensions',
+  'showFileAttachments',
   'showHomeHub',
   'showInsights',
   'showIntegrations',

@@ -121,9 +121,9 @@ const CONNECT_TABS: ConnectTab[] = [
 const CONFIGURE_TABS: ConfigureTab[] = [
   { key: 'setup',         label: 'Setup Wizard',       screenshot: 'configure--tab-setup' },
   { key: 'accessibility', label: 'Accessibility',      screenshot: 'configure--tab-accessibility' },
-  { key: 'agents',        label: 'Prompts',            screenshot: 'configure--tab-agents' },
-  { key: 'skills',        label: 'Playbooks',          screenshot: 'configure--tab-skills' },
-  { key: 'memory',        label: 'Notes & Context',    screenshot: 'configure--tab-memory' },
+  { key: 'agents',        label: 'Agents',             screenshot: 'configure--tab-agents' },
+  { key: 'skills',        label: 'Skills',             screenshot: 'configure--tab-skills' },
+  { key: 'memory',        label: 'Project Memory',     screenshot: 'configure--tab-memory' },
   { key: 'settings',      label: 'General',            screenshot: 'configure--tab-settings' },
   { key: 'tools',         label: 'Tools & Permissions', screenshot: 'configure--tab-tools' },
   { key: 'wizard',        label: 'Session Wizard',     screenshot: 'configure--tab-wizard' },
@@ -149,8 +149,8 @@ const CONFIGURE_SUB_TABS: ConfigureSubTab[] = [
   { configureTab: 'policies', subLabel: 'Violations', screenshot: 'configure--tab-policies--sub-violations' },
   { configureTab: 'policies', subLabel: 'Editor',     screenshot: 'configure--tab-policies--sub-editor' },
 
-  // ── Memory / "Notes & Context" ──
-  { configureTab: 'memory', subLabel: 'Starter Memories', screenshot: 'configure--tab-memory--sub-starter' },
+  // ── Memory / "Project Memory" ──
+  { configureTab: 'memory', subLabel: 'Starter Files', screenshot: 'configure--tab-memory--sub-starter' },
   { configureTab: 'memory', subLabel: 'Config Files',     screenshot: 'configure--tab-memory--sub-config-files' },
   { configureTab: 'memory', subLabel: 'Instructions',     screenshot: 'configure--tab-memory--sub-instructions' },
   { configureTab: 'memory', subLabel: 'CLI Memory',       screenshot: 'configure--tab-memory--sub-cli-memory' },

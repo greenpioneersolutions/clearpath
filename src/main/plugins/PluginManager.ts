@@ -4,6 +4,7 @@ import { join } from 'path'
 import Store from 'electron-store'
 import { log } from '../utils/logger'
 import { getStoreEncryptionKey } from '../utils/storeEncryption'
+import type { LocationsManager } from '../locations/LocationsManager'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -219,6 +220,13 @@ function classifyCustomPath(dir: string, requested: CustomPathCli): {
 export class PluginManager {
   private _store: Store<PluginStoreSchema> | null = null
 
+  /**
+   * Optional — when provided, plugin discovery also treats the user's extra
+   * "source folders" as discovery roots, so a plugin inside a cloned pack or
+   * enterprise repo shows up without separately registering a custom path.
+   */
+  constructor(private readonly locations?: LocationsManager) {}
+
   private get store(): Store<PluginStoreSchema> {
     if (!this._store) {
       this._store = new Store<PluginStoreSchema>({
@@ -269,7 +277,22 @@ export class PluginManager {
       customEntries.push(makeEntry(cp.path, cls.manifestPath, cls.cli, 'custom', cls.meta))
     }
 
-    const merged = [...discovered, ...customEntries]
+    // Extra source folders — treat the folder itself and each immediate child
+    // as a possible plugin root. Skip anything without a recognizable manifest
+    // and anything already surfaced by discovery or a custom path.
+    const knownPaths = new Set([...discoveredPaths, ...customEntries.map((p) => p.path)])
+    const sourceEntries: PluginEntry[] = []
+    for (const folder of this.locations?.getExistingSourceFolders() ?? []) {
+      for (const candidate of [folder, ...listChildDirs(folder)]) {
+        if (knownPaths.has(candidate)) continue
+        const cls = classifyCustomPath(candidate, 'auto')
+        if (!cls) continue
+        knownPaths.add(candidate)
+        sourceEntries.push(makeEntry(candidate, cls.manifestPath, cls.cli, 'custom', cls.meta))
+      }
+    }
+
+    const merged = [...discovered, ...customEntries, ...sourceEntries]
     return merged.map((p) => ({
       ...p,
       enabled: p.cli === 'copilot' ? enabledCopilot.has(p.path) : enabledClaude.has(p.path),

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import type { AuthState, ProviderAuthState, AuthStatus } from '../types/ipc'
+import type { BackendId } from '../../../shared/backends'
 
 export interface ProviderReadiness {
   installed: boolean
@@ -18,8 +19,30 @@ export interface AuthReadiness {
   claude:  ProviderReadinessFull
   /** False until the first auth probe completes. UIs can use this to avoid a red-flash on cold start. */
   loaded: boolean
-  /** Force a refresh from the main process. */
+  /** Re-read status from the main process (honors its 5-min cache). */
   refresh: () => void
+  /**
+   * Force main to re-run the real install + auth checks, bypassing its cache.
+   * Use this to self-heal a stale "not authenticated" verdict (e.g. the user
+   * signed in via the CLI and the cached cold-start probe missed it).
+   */
+  forceRefresh: () => void
+}
+
+/**
+ * Flatten an `AuthReadiness` snapshot into the list of backends that are
+ * installed AND authenticated. Shared by every "pick a CLI to launch" surface
+ * (Home, Sessions launchpad) so they can't disagree about what's connected.
+ * Returns `[]` before the probe completes (`loaded === false`).
+ */
+export function readyBackendsOf(auth: AuthReadiness): BackendId[] {
+  if (!auth.loaded) return []
+  const out: BackendId[] = []
+  if (auth.copilot.cli.installed && auth.copilot.cli.authenticated) out.push('copilot-cli')
+  if (auth.copilot.sdk.installed && auth.copilot.sdk.authenticated) out.push('copilot-sdk')
+  if (auth.claude.cli.installed && auth.claude.cli.authenticated) out.push('claude-cli')
+  if (auth.claude.sdk.installed && auth.claude.sdk.authenticated) out.push('claude-sdk')
+  return out
 }
 
 function isProviderAuthState(v: unknown): v is ProviderAuthState {
@@ -64,10 +87,11 @@ export function useAuthStatus(): AuthReadiness {
     loaded: false,
   })
 
-  const refresh = useCallback(async (): Promise<void> => {
-    // Primary: auth:get-status. Splits cli vs sdk readiness and includes auth state.
+  const probe = useCallback(async (force = false): Promise<void> => {
+    // Primary: auth:get-status (cached) or auth:refresh (forces a fresh probe).
+    // Both resolve to the same AuthState shape — splits cli vs sdk readiness.
     try {
-      const raw = await window.electronAPI.invoke('auth:get-status') as AuthState | null
+      const raw = await window.electronAPI.invoke(force ? 'auth:refresh' : 'auth:get-status') as AuthState | null
       if (raw && isProviderAuthState(raw.copilot) && isProviderAuthState(raw.claude)) {
         setState({
           copilot: {
@@ -111,25 +135,30 @@ export function useAuthStatus(): AuthReadiness {
     }
   }, [])
 
+  // Stable callbacks so consumers can safely list them in effect deps without
+  // re-subscribing every render.
+  const refresh = useCallback((): void => { void probe(false) }, [probe])
+  const forceRefresh = useCallback((): void => { void probe(true) }, [probe])
+
   // Initial fetch.
-  useEffect(() => { void refresh() }, [refresh])
+  useEffect(() => { void probe(false) }, [probe])
 
   // Subscribe to AuthManager push events. AuthManager.refresh() broadcasts this
   // after login completes and after npm install completes, so the UI updates
   // without the user having to navigate or click anything.
   useEffect(() => {
-    const handler = (): void => { void refresh() }
+    const handler = (): void => { void probe(false) }
     const off = window.electronAPI.on?.('auth:status-changed', handler)
     return () => { if (typeof off === 'function') off() }
-  }, [refresh])
+  }, [probe])
 
   // Backward compatibility with code that still dispatches sidebar:refresh
   // (workspace switches, policy changes, etc. piggyback on this).
   useEffect(() => {
-    const handler = (): void => { void refresh() }
+    const handler = (): void => { void probe(false) }
     window.addEventListener('sidebar:refresh', handler)
     return () => window.removeEventListener('sidebar:refresh', handler)
-  }, [refresh])
+  }, [probe])
 
-  return { ...state, refresh: () => { void refresh() } }
+  return { ...state, refresh, forceRefresh }
 }

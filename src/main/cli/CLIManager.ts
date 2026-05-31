@@ -78,6 +78,19 @@ interface MessageLogEntry {
   attachedAgent?: { id: string; name: string }
   /** Skills the user tagged this chat with. Frozen at attach time, names only. */
   attachedSkills?: Array<{ id: string; name: string }>
+  /**
+   * Files the user attached when sending this message. Name + workspace-relative
+   * path are captured at attach time and frozen here — the renderer's "N files"
+   * chip reads straight from this metadata. The actual bytes live on disk under
+   * `.clear-path/uploads/<sessionId>/`; this never carries file content.
+   */
+  attachedFiles?: Array<{ id: string; name: string; relPath: string }>
+  /**
+   * Repo / additional directories the agent was granted access to for this turn
+   * (the `--add-dir` folders). Path + display name, frozen here so the in-chat
+   * "N folders" chip shows the scope the agent had.
+   */
+  attachedDirs?: Array<{ path: string; name: string }>
 }
 
 interface PersistedSession {
@@ -88,6 +101,12 @@ interface PersistedSession {
   startedAt: number
   endedAt?: number
   archived?: boolean
+  /**
+   * Working directory this session spawned in. Persisted so the file-attachment
+   * cleanup hook + orphan sweep can locate `.clear-path/uploads/<sessionId>/`
+   * without the renderer having to supply the path at delete time.
+   */
+  workingDirectory?: string
   messageLog: MessageLogEntry[]
 }
 
@@ -265,6 +284,7 @@ export class CLIManager {
       firstPrompt: session.lastPrompt || undefined,
       startedAt: session.info.startedAt,
       endedAt: session.info.status === 'stopped' ? Date.now() : undefined,
+      workingDirectory: session.originalOptions.workingDirectory,
       messageLog: session.messageLog.slice(-MAX_PERSISTED_MESSAGES),
     }
     const idx = sessions.findIndex((s) => s.sessionId === sessionId)
@@ -599,12 +619,38 @@ export class CLIManager {
 
   // ── Session lifecycle ────────────────────────────────────────────────────
 
-  async startSession(options: SessionOptions): Promise<{ sessionId: string }> {
+  async startSession(
+    options: SessionOptions,
+  ): Promise<{ sessionId: string } | { error: string; code: 'CLI_NOT_READY' }> {
     const adapter = this.adapterFor(options.cli)
-    const sessionId = randomUUID()
+    // The launchpad may pre-generate the id so it can stage file attachments into
+    // `.clear-path/uploads/<sessionId>/` before the session exists. Guard against
+    // a collision with a live session by falling back to a fresh id.
+    const sessionId = options.sessionId && !this.sessions.has(options.sessionId)
+      ? options.sessionId
+      : randomUUID()
 
-    // Ensure adapter binary is resolved
-    await adapter.isInstalled()
+    // Defense in depth: never create or spawn a session for a CLI that isn't
+    // installed + authenticated. Returning early (before the session is added
+    // to the map, audited, persisted, or broadcast) means a misrouted start —
+    // e.g. a stale Copilot default on a Claude-only machine — surfaces a clean
+    // message instead of a `spawn copilot ENOENT` and a phantom "active"
+    // session. `isInstalled()` also resolves+caches the binary path the spawn
+    // relies on, so this replaces the bare resolve call that lived here.
+    // The Playwright e2e harness (CLEARPATH_E2E=1) seeds sessions on CI runners
+    // where no CLI binary is installed. It only needs the session record + a
+    // sessionId — the child spawn failing with ENOENT is expected and handled.
+    // Skip the early-return guard there, but still call isInstalled() for its
+    // binary-path-resolve side effect. Production keeps the full guard.
+    const e2eBypass = process.env['CLEARPATH_E2E'] === '1'
+    const providerLabel = providerOf(options.cli) === 'copilot' ? 'GitHub Copilot' : 'Claude Code'
+    const installed = await adapter.isInstalled()
+    if (!installed && !e2eBypass) {
+      return { error: `${providerLabel} isn't installed. Connect it in Configure → Authentication.`, code: 'CLI_NOT_READY' }
+    }
+    if (!e2eBypass && !(await adapter.isAuthenticated())) {
+      return { error: `${providerLabel} isn't signed in. Connect it in Configure → Authentication.`, code: 'CLI_NOT_READY' }
+    }
 
     // Inject enabled plugin dirs for this CLI unless the caller already provided some.
     // This is what wires the Plugins page through to every spawned session.
@@ -658,6 +704,14 @@ export class CLIManager {
       if (options.attachedSkills && options.attachedSkills.length > 0) {
         entry.attachedSkills = options.attachedSkills.map((s) => ({ id: s.id, name: s.name }))
       }
+      if (options.attachedFiles && options.attachedFiles.length > 0) {
+        entry.attachedFiles = options.attachedFiles.map((f) => ({ id: f.id, name: f.name, relPath: f.relPath }))
+      }
+      // Surface the repo / additional directories the agent was given access to
+      // (--add-dir folders) as a frozen chip, derived from additionalDirs.
+      if (options.additionalDirs && options.additionalDirs.length > 0) {
+        entry.attachedDirs = options.additionalDirs.map((p) => ({ path: p, name: p.split('/').filter(Boolean).pop() || p }))
+      }
       session.messageLog.push(entry)
     }
 
@@ -696,6 +750,7 @@ export class CLIManager {
     attachedNotes?: Array<{ id: string; title: string }>,
     promptSlices?: PromptSlices,
     userOverrideModel?: string,
+    attachedFiles?: Array<{ id: string; name: string; relPath: string }>,
   ): Promise<void> {
     const session = this.sessions.get(sessionId)
     if (!session || session.info.status !== 'running') return
@@ -718,6 +773,9 @@ export class CLIManager {
       const entry: MessageLogEntry = { type: 'text', content: input, sender: 'user', timestamp: Date.now() }
       if (attachedNotes && attachedNotes.length > 0) {
         entry.attachedNotes = attachedNotes.map((n) => ({ id: n.id, title: n.title }))
+      }
+      if (attachedFiles && attachedFiles.length > 0) {
+        entry.attachedFiles = attachedFiles.map((f) => ({ id: f.id, name: f.name, relPath: f.relPath }))
       }
       session.messageLog.push(entry)
     }
@@ -990,6 +1048,12 @@ export class CLIManager {
       continue: session.turnCount > 0 ? true : session.originalOptions.continue,
       // Don't re-resume a named session on turn 2+ — let --continue handle it
       resume: session.turnCount === 0 ? session.originalOptions.resume : undefined,
+      // `--session-id` is a CREATE-with-this-id flag and, in the Claude adapter,
+      // takes priority over --continue. ClearPath spawns a fresh CLI per turn, so
+      // re-sending it on turn 2+ makes the CLI try to re-create the same session
+      // ("Session ID … is already in use"). Emit it only on turn 0; later turns
+      // fall through to --continue. (Copilot ignores sessionId, so this is a no-op there.)
+      sessionId: session.turnCount === 0 ? session.originalOptions.sessionId : undefined,
       // Token Coach Phase 4 — thread the routed model back into the spawn
       // options so the adapter emits `--model <routed>` for this turn. The
       // routing decision is per-turn — `session.originalOptions.model` stays
@@ -1372,6 +1436,15 @@ export class CLIManager {
       session.process = null
       const endedTurnId = session.currentTurnId
       session.currentTurnId = undefined
+      // Dead on arrival: the very first spawn failed (e.g. ENOENT) and the
+      // session never produced a turn. Mark it stopped so it drops out of the
+      // active-sessions list instead of lingering as a phantom "running" chip.
+      // A spawn error on a LATER turn (turnCount > 0) leaves the session alive
+      // for retry — matching the non-zero-exit behavior below.
+      if (session.turnCount === 0) {
+        session.info.status = 'stopped'
+        this.persistSession(sessionId, session)
+      }
       const wc = this.getWebContents()
       if (!wc || wc.isDestroyed()) return
       wc.send('cli:error', { sessionId, error: `Failed to start process: ${err.message}` })

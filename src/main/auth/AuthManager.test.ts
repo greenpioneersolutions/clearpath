@@ -396,6 +396,39 @@ describe('AuthManager', () => {
       expect(result.copilot.tokenSource).toBe('config-file')
     })
 
+    it('detects copilot auth when config.json has JSONC banner comments', async () => {
+      // Regression: Copilot CLI writes ~/.copilot/config.json with leading
+      // "// ..." banner comments. A plain JSON.parse throws on those, which
+      // previously dropped us into the unauthenticated branch even though the
+      // user was fully logged in (the "CLI installed but not green" bug).
+      resolveInShellMock.mockImplementation(async (name: string) => {
+        if (name === 'copilot') return '/usr/local/bin/copilot'
+        return null
+      })
+      mockExecFileSuccess('1.2.3\n')
+      existsSyncMock.mockImplementation((p: string) => {
+        if (p === '/mock/home/.copilot/config.json') return true
+        return false
+      })
+      readFileSyncMock.mockReturnValue(
+        [
+          '// User settings belong in settings.json.',
+          '// This file is managed automatically.',
+          '{',
+          '  "lastLoggedInUser": { "host": "https://github.com", "login": "octocat" },',
+          '  "loggedInUsers": [{ "host": "https://github.com", "login": "octocat" }]',
+          '}',
+        ].join('\n'),
+      )
+
+      const mgr = new AuthManager(() => mockWc as any)
+      const result = await mgr.refresh()
+
+      expect(result.copilot.installed).toBe(true)
+      expect(result.copilot.authenticated).toBe(true)
+      expect(result.copilot.tokenSource).toBe('config-file')
+    })
+
     it('detects copilot auth via config file with logged_in_users (legacy snake_case)', async () => {
       resolveInShellMock.mockImplementation(async (name: string) => {
         if (name === 'copilot') return '/usr/local/bin/copilot'
@@ -764,6 +797,89 @@ describe('AuthManager', () => {
       expect(result.claude.authenticated).toBe(true)
       expect(result.claude.tokenSource).toBe('auth-status')
     })
+
+    // Regression: on macOS the token lives in the login Keychain (no
+    // ~/.claude/*.json), and `claude auth status` can falsely report
+    // loggedIn:false when the spawn env is missing USER (GUI launch). The direct
+    // `security find-generic-password` probe must still detect the sign-in.
+    it('detects claude auth via macOS Keychain when auth status + config files miss', async () => {
+      const originalPlatform = process.platform
+      Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true })
+      try {
+        resolveInShellMock.mockImplementation(async (name: string) => {
+          if (name === 'claude') return '/usr/local/bin/claude'
+          return null
+        })
+        // auth status reports NOT logged in (the USER-missing failure mode);
+        // no ~/.claude/*.json exists (existsSync defaults to false).
+        execFileMock.mockImplementation(
+          (_cmd: string, args: string[], _opts: unknown, cb?: (err: Error | null, result: { stdout: string; stderr: string }) => void) => {
+            if (typeof cb === 'function') {
+              if (Array.isArray(args) && args.includes('auth')) {
+                cb(null, { stdout: '{"loggedIn": false}', stderr: '' })
+              } else {
+                cb(null, { stdout: '2.0.0\n', stderr: '' })
+              }
+            }
+            return { pid: 1234 }
+          },
+        )
+        // `security find-generic-password ...` exits 0 → item present.
+        spawnMock.mockImplementation((cmd: string) => {
+          const proc = new EventEmitter() as any
+          if (typeof cmd === 'string' && cmd.includes('security')) {
+            queueMicrotask(() => proc.emit('close', 0))
+          } else {
+            queueMicrotask(() => proc.emit('close', 1))
+          }
+          return proc
+        })
+
+        const mgr = new AuthManager(() => mockWc as any)
+        const result = await mgr.refresh()
+
+        expect(result.claude.authenticated).toBe(true)
+        expect(result.claude.tokenSource).toBe('config-file')
+      } finally {
+        Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true })
+      }
+    })
+
+    it('does NOT mark claude authed when the Keychain item is absent (security exits non-zero)', async () => {
+      const originalPlatform = process.platform
+      Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true })
+      try {
+        resolveInShellMock.mockImplementation(async (name: string) => {
+          if (name === 'claude') return '/usr/local/bin/claude'
+          return null
+        })
+        execFileMock.mockImplementation(
+          (_cmd: string, args: string[], _opts: unknown, cb?: (err: Error | null, result: { stdout: string; stderr: string }) => void) => {
+            if (typeof cb === 'function') {
+              if (Array.isArray(args) && args.includes('auth')) {
+                cb(null, { stdout: '{"loggedIn": false}', stderr: '' })
+              } else {
+                cb(null, { stdout: '2.0.0\n', stderr: '' })
+              }
+            }
+            return { pid: 1234 }
+          },
+        )
+        // security exits 44 (item not found)
+        spawnMock.mockImplementation(() => {
+          const proc = new EventEmitter() as any
+          queueMicrotask(() => proc.emit('close', 44))
+          return proc
+        })
+
+        const mgr = new AuthManager(() => mockWc as any)
+        const result = await mgr.refresh()
+
+        expect(result.claude.authenticated).toBe(false)
+      } finally {
+        Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true })
+      }
+    })
   })
 
   // ── Both CLIs checked in parallel ───────────────────────────────────────────
@@ -804,9 +920,11 @@ describe('AuthManager', () => {
         expect(spawnMock).toHaveBeenCalled()
       })
 
+      // Uses the dedicated `copilot login` subcommand (non-interactive OAuth
+      // device flow) — NOT the interactive TUI, which hangs over pipes.
       expect(spawnMock).toHaveBeenCalledWith(
         '/usr/local/bin/copilot',
-        ['--no-experimental'],
+        ['login'],
         expect.objectContaining({ stdio: ['pipe', 'pipe', 'pipe'] }),
       )
 
@@ -968,7 +1086,12 @@ describe('AuthManager', () => {
       expect(loginOutputCalls).toHaveLength(0)
     })
 
-    it('sends /login command to copilot stdin', async () => {
+    it('does NOT type /login into stdin (regression: TUI-over-pipes hang)', async () => {
+      // The `copilot login` subcommand drives the OAuth device flow itself and
+      // never reads stdin. The old flow spawned the interactive TUI and wrote
+      // "/login\n" to its piped stdin — which the TUI ignored (it needs a real
+      // TTY), causing the login modal to hang forever. Guard against any
+      // regression that re-introduces stdin injection.
       const proc = createMockProcess()
       spawnMock.mockReturnValue(proc)
       resolveInShellMock.mockResolvedValue('/usr/local/bin/copilot')
@@ -980,10 +1103,14 @@ describe('AuthManager', () => {
         expect(spawnMock).toHaveBeenCalled()
       })
 
-      // Trigger stdout to force sendLogin
-      proc._emitStdout('Ready\n')
+      proc._emitStdout('To authenticate, visit https://github.com/login/device and enter code ABCD-1234.\n')
 
-      expect((proc.stdin as any).write).toHaveBeenCalledWith('/login\n')
+      expect((proc.stdin as any).write).not.toHaveBeenCalled()
+      // The device URL still triggers the browser auto-open path.
+      expect(mockWc.send).toHaveBeenCalledWith(
+        'auth:login-browser-opened',
+        expect.objectContaining({ cli: 'copilot' }),
+      )
     })
 
     it('streams stderr output from login process', async () => {

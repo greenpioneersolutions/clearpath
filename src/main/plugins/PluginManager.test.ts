@@ -313,3 +313,30 @@ describe('PluginManager custom paths', () => {
     expect(storeData['enabled']).toEqual({ copilot: [], claude: [] })
   })
 })
+
+describe('PluginManager source-folder discovery', () => {
+  it('discovers a plugin inside an extra source folder', () => {
+    // Source folder ~/work/pack contains a child plugin dir with a Copilot
+    // manifest at child/plugin.json.
+    const sourceRoot = '/work/pack'
+    const pluginDir = `${sourceRoot}/my-plugin`
+    const manifestPath = `${pluginDir}/plugin.json`
+
+    existsSyncMock.mockImplementation((p: string) => p === sourceRoot || p === manifestPath)
+    readdirSyncMock.mockImplementation((p: string) => (p === sourceRoot ? ['my-plugin'] : []))
+    statSyncMock.mockReturnValue({ isDirectory: () => true })
+    readFileSyncMock.mockImplementation((p: string) =>
+      p === manifestPath ? manifestJson({ name: 'Packed', version: '2.0.0' }) : (() => { throw new Error('nf') })(),
+    )
+
+    const locations = { getExistingSourceFolders: () => [sourceRoot] } as unknown as import('../locations/LocationsManager').LocationsManager
+    const pm = new PluginManager(locations)
+    const list = pm.listPlugins()
+
+    const found = list.find((p) => p.path === pluginDir)
+    expect(found).toBeDefined()
+    expect(found?.name).toBe('Packed')
+    expect(found?.source).toBe('custom')
+    expect(found?.cli).toBe('copilot')
+  })
+})

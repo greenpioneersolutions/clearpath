@@ -11,6 +11,7 @@ import { randomUUID } from 'crypto'
 import { assertPathWithinRoots, isSensitiveSystemPath } from '../utils/pathSecurity'
 import { getStoreEncryptionKey } from '../utils/storeEncryption'
 import { STARTER_SKILLS } from '../starter-pack'
+import type { LocationsManager } from '../locations/LocationsManager'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -18,7 +19,7 @@ interface SkillInfo {
   id: string
   name: string
   description: string
-  scope: 'project' | 'global' | 'plugin' | 'team'
+  scope: 'project' | 'global' | 'plugin' | 'team' | 'custom'
   cli: 'copilot' | 'claude' | 'both'
   path: string
   dirPath: string
@@ -139,7 +140,7 @@ function makeSkillInfo(
   }
 }
 
-function listAllSkills(workingDirectory: string): SkillInfo[] {
+function listAllSkills(workingDirectory: string, sourceFolders: string[] = []): SkillInfo[] {
   const home = homedir()
   const skills: SkillInfo[] = []
 
@@ -158,7 +159,24 @@ function listAllSkills(workingDirectory: string): SkillInfo[] {
     skills.push(...scanSkillDir(join(sharedFolder, 'skills'), 'team', 'both'))
   }
 
-  return skills
+  // Extra source folders the user pointed ClearPath at (e.g. a cloned pack like
+  // gstack, or an enterprise-internal repo). We scan the folder itself plus the
+  // common skill sub-layouts so "point at my pack, it just works" holds whether
+  // the folder IS a skills collection or merely contains one.
+  for (const folder of sourceFolders) {
+    skills.push(...scanSkillDir(folder, 'custom', 'both'))
+    skills.push(...scanSkillDir(join(folder, 'skills'), 'custom', 'both'))
+    skills.push(...scanSkillDir(join(folder, '.claude', 'skills'), 'custom', 'both'))
+  }
+
+  // De-dupe by file path — a folder added as both a source and a parent of the
+  // home scan could otherwise surface the same SKILL.md twice.
+  const seen = new Set<string>()
+  return skills.filter((s) => {
+    if (seen.has(s.path)) return false
+    seen.add(s.path)
+    return true
+  })
 }
 
 // ── Starter templates ────────────────────────────────────────────────────────
@@ -293,9 +311,9 @@ Keep the tone professional and concise. Focus on "why" more than "what".`,
 
 // ── Registration ─────────────────────────────────────────────────────────────
 
-export function registerSkillHandlers(ipcMain: IpcMain): void {
+export function registerSkillHandlers(ipcMain: IpcMain, locations?: LocationsManager): void {
   ipcMain.handle('skills:list', (_e, args: { workingDirectory: string }) =>
-    listAllSkills(args.workingDirectory),
+    listAllSkills(args.workingDirectory, locations?.getExistingSourceFolders() ?? []),
   )
 
   ipcMain.handle('skills:get', (_e, args: { path: string }) => {

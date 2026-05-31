@@ -13,7 +13,7 @@ import type { SessionInfo } from '../types/ipc'
 type Tab = 'starter' | 'files' | 'instructions' | 'memory' | 'context'
 
 const TABS: { key: Tab; label: string }[] = [
-  { key: 'starter', label: 'Templates' },
+  { key: 'starter', label: 'Starter Files' },
   { key: 'files', label: 'Config Files' },
   { key: 'instructions', label: 'Instructions' },
   { key: 'memory', label: 'CLI Memory' },

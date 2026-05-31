@@ -185,6 +185,24 @@ describe('handlers (registerIpcHandlers)', () => {
       expect(cliManager.startSession).not.toHaveBeenCalled()
     })
 
+    it('passes a CLI_NOT_READY error envelope straight through without grafting agentApplied', async () => {
+      mockGet.mockReturnValue(undefined)
+      // Active agent resolves so agentDisplayName would normally be set — the
+      // error envelope must NOT be decorated with it.
+      agentManager.getActiveAgents.mockReturnValue({ copilot: 'starter-agent', claude: null })
+      cliManager.startSession.mockResolvedValue({ error: 'GitHub Copilot isn\'t installed.', code: 'CLI_NOT_READY' })
+
+      const result = await handlers.get('cli:start-session')!(mockEvent, {
+        cli: 'copilot',
+        mode: 'interactive',
+        prompt: 'Hello',
+      })
+
+      expect(result).toEqual({ error: 'GitHub Copilot isn\'t installed.', code: 'CLI_NOT_READY' })
+      expect(result).not.toHaveProperty('agentApplied')
+      expect(result).not.toHaveProperty('sessionId')
+    })
+
     it('calls cliManager.startSession with original options when no agent and no model override', async () => {
       // Settings store returns no settings
       mockGet.mockReturnValue(undefined)
@@ -251,6 +269,124 @@ describe('handlers (registerIpcHandlers)', () => {
 
       const passedOptions = cliManager.startSession.mock.calls[0][0]
       expect(passedOptions.model).toBe('claude-sonnet-4')
+    })
+
+    // ── Curated session-default flags (settings.flags) ───────────────────────
+
+    it('applies an allowlisted Claude flag onto the typed SessionOptions field', async () => {
+      mockGet.mockReturnValue({ flags: { 'claude:permissionMode': 'acceptEdits', 'claude:verbose': true } })
+
+      await handlers.get('cli:start-session')!(mockEvent, {
+        cli: 'claude-cli',
+        mode: 'interactive',
+      })
+
+      const passed = cliManager.startSession.mock.calls[0][0]
+      expect(passed.permissionMode).toBe('acceptEdits')
+      expect(passed.verbose).toBe(true)
+      // Never written through the raw catch-all (would emit --permissionMode literally)
+      expect(passed.flags).toBeUndefined()
+    })
+
+    it('applies an allowlisted Copilot flag (yolo)', async () => {
+      mockGet.mockReturnValue({ flags: { 'copilot:yolo': true } })
+
+      await handlers.get('cli:start-session')!(mockEvent, {
+        cli: 'copilot-cli',
+        mode: 'interactive',
+      })
+
+      const passed = cliManager.startSession.mock.calls[0][0]
+      expect(passed.yolo).toBe(true)
+    })
+
+    it('drops operational / one-shot flags not on the allowlist', async () => {
+      mockGet.mockReturnValue({
+        flags: {
+          'claude:permissionMode': 'plan',
+          'claude:resume': 'abc-123',
+          'claude:worktree': true,
+          'claude:print': true,
+        },
+      })
+
+      await handlers.get('cli:start-session')!(mockEvent, {
+        cli: 'claude-cli',
+        mode: 'interactive',
+      })
+
+      const passed = cliManager.startSession.mock.calls[0][0]
+      expect(passed.permissionMode).toBe('plan')
+      expect(passed.resume).toBeUndefined()
+      expect(passed.worktree).toBeUndefined()
+      // `print` is excluded — it would force headless mode and break the session
+      expect(passed.mode).toBe('interactive')
+    })
+
+    it('does not leak another CLI\'s configured flags into the session', async () => {
+      mockGet.mockReturnValue({
+        flags: { 'claude:permissionMode': 'acceptEdits', 'copilot:yolo': true },
+      })
+
+      await handlers.get('cli:start-session')!(mockEvent, {
+        cli: 'copilot-cli',
+        mode: 'interactive',
+      })
+
+      const passed = cliManager.startSession.mock.calls[0][0]
+      expect(passed.yolo).toBe(true)
+      expect(passed.permissionMode).toBeUndefined()
+    })
+
+    it('lets an explicit caller option win over a stored session-default flag', async () => {
+      mockGet.mockReturnValue({ flags: { 'claude:permissionMode': 'acceptEdits' } })
+
+      await handlers.get('cli:start-session')!(mockEvent, {
+        cli: 'claude-cli',
+        mode: 'interactive',
+        permissionMode: 'plan',
+      })
+
+      const passed = cliManager.startSession.mock.calls[0][0]
+      expect(passed.permissionMode).toBe('plan')
+    })
+
+    it('narrows CLI-only flags for SDK transports', async () => {
+      mockGet.mockReturnValue({
+        flags: { 'claude:permissionMode': 'acceptEdits', 'claude:ide': true, 'claude:debug': 'api' },
+      })
+
+      await handlers.get('cli:start-session')!(mockEvent, {
+        cli: 'claude-sdk',
+        mode: 'interactive',
+      })
+
+      const passed = cliManager.startSession.mock.calls[0][0]
+      // Transport-compatible flag still applies…
+      expect(passed.permissionMode).toBe('acceptEdits')
+      // …but CLI-only flags are not promised on the SDK path
+      expect(passed.ide).toBeUndefined()
+      expect(passed.debug).toBeUndefined()
+    })
+
+    it('skips cleared / empty flag values', async () => {
+      mockGet.mockReturnValue({
+        flags: {
+          'claude:permissionMode': '',
+          'claude:allowedTools': [],
+          'claude:systemPrompt': null,
+        },
+      })
+
+      await handlers.get('cli:start-session')!(mockEvent, {
+        cli: 'claude-cli',
+        mode: 'interactive',
+      })
+
+      const passed = cliManager.startSession.mock.calls[0][0]
+      expect(passed.permissionMode).toBeUndefined()
+      expect(passed.allowedTools).toBeUndefined()
+      expect(passed.systemPrompt).toBeUndefined()
     })
 
     // ── Agent resolution: stored active agent ───────────────────────────────
@@ -449,7 +585,7 @@ describe('handlers (registerIpcHandlers)', () => {
       handlers.get('cli:send-input')!(mockEvent, { sessionId: 's1', input: 'hello' })
       // Args: sessionId, input, attachedNotes, promptSlices, userOverrideModel —
       // all trailing undefined when the renderer doesn't pass them.
-      expect(cliManager.sendInput).toHaveBeenCalledWith('s1', 'hello', undefined, undefined, undefined)
+      expect(cliManager.sendInput).toHaveBeenCalledWith('s1', 'hello', undefined, undefined, undefined, undefined)
     })
 
     it('forwards promptSlices when the renderer attaches them', () => {
@@ -457,14 +593,14 @@ describe('handlers (registerIpcHandlers)', () => {
       handlers.get('cli:send-input')!(mockEvent, {
         sessionId: 's1', input: 'be concise\n\nhello', promptSlices: slices,
       })
-      expect(cliManager.sendInput).toHaveBeenCalledWith('s1', 'be concise\n\nhello', undefined, slices, undefined)
+      expect(cliManager.sendInput).toHaveBeenCalledWith('s1', 'be concise\n\nhello', undefined, slices, undefined, undefined)
     })
 
     it('forwards userOverrideModel when the renderer attaches it (Phase 4)', () => {
       handlers.get('cli:send-input')!(mockEvent, {
         sessionId: 's1', input: 'hi', userOverrideModel: 'claude-opus-4.6',
       })
-      expect(cliManager.sendInput).toHaveBeenCalledWith('s1', 'hi', undefined, undefined, 'claude-opus-4.6')
+      expect(cliManager.sendInput).toHaveBeenCalledWith('s1', 'hi', undefined, undefined, 'claude-opus-4.6', undefined)
     })
   })
 

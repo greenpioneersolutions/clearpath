@@ -29,7 +29,13 @@ interface SkillItem {
   cli?: 'copilot' | 'claude' | 'both'
 }
 
-export type ContextPickerTab = 'prompts' | 'notes' | 'playbooks' | 'files'
+export type ContextPickerTab = 'agents' | 'notes' | 'skills' | 'templates' | 'files' | 'attach'
+
+interface AttachedFile {
+  id: string
+  name: string
+  relPath: string
+}
 
 interface Props {
   cli: BackendId
@@ -50,8 +56,15 @@ interface Props {
   onToggleContextSource: (source: SelectedContextSource) => void
   onRemoveContextSource: (providerId: string) => void
 
-  // Optional template select (Quick playbook with variables → opens TemplateForm)
+  // Optional template select (fill-in template with variables → opens TemplateForm)
   onTemplateSelect?: (template: PromptTemplate) => void
+
+  // Optional mid-session file attach (Slice 29 parity). When provided AND the
+  // showFileAttachments flag is on, an "Files" tab lets the user stage files
+  // into the active session's uploads dir for the next turn.
+  attachedFiles?: AttachedFile[]
+  onAttachFiles?: () => void
+  onRemoveAttachedFile?: (id: string) => void
 
   /** Initial tab to land on. */
   defaultTab?: ContextPickerTab
@@ -64,9 +77,10 @@ const CAT_COLORS = NOTE_CATEGORY_COLORS_DARK
  * Unified tabbed context picker — replaces the per-feature dropdowns from QuickCompose.
  *
  * Tabs:
- *   • Prompts    — pre-configured prompt personas (was Agents)
- *   • Notes      — saved reference notes (was Memories)
- *   • Playbooks  — reusable prompt templates AND skills (Quick / Detailed)
+ *   • Agents     — agent personas (.agent.md / .md files; CLI --agent)
+ *   • Notes      — saved reference notes
+ *   • Skills     — SKILL.md capability files (CLI skills)
+ *   • Templates  — reusable fill-in-the-blank prompt templates
  *   • Files      — connected context providers (extensions / integrations)
  *
  * Renders inline as a `bottom-full` popover anchored to its parent, so the consumer
@@ -87,12 +101,17 @@ export default function ContextPicker({
   onToggleContextSource,
   onRemoveContextSource,
   onTemplateSelect,
-  defaultTab = 'prompts',
+  attachedFiles,
+  onAttachFiles,
+  onRemoveAttachedFile,
+  defaultTab = 'agents',
 }: Props): JSX.Element | null {
   const showNotes = useFlag('showNotes')
+  const showFileAttachments = useFlag('showFileAttachments')
+  const showAttachTab = showFileAttachments && !!onAttachFiles
   // When showNotes is off, the Notes tab cannot be the initial tab — fall
-  // back to Prompts so deep-linked callers don't land on a hidden tab.
-  const initialTab: ContextPickerTab = !showNotes && defaultTab === 'notes' ? 'prompts' : defaultTab
+  // back to Agents so deep-linked callers don't land on a hidden tab.
+  const initialTab: ContextPickerTab = !showNotes && defaultTab === 'notes' ? 'agents' : defaultTab
   const [tab, setTab] = useState<ContextPickerTab>(initialTab)
   const [search, setSearch] = useState('')
   const wrapRef = useRef<HTMLDivElement>(null)
@@ -109,7 +128,7 @@ export default function ContextPicker({
   // cannot be the initial tab — fall back to Prompts.
   useEffect(() => {
     if (open) {
-      setTab(!showNotes && defaultTab === 'notes' ? 'prompts' : defaultTab)
+      setTab(!showNotes && defaultTab === 'notes' ? 'agents' : defaultTab)
       setSearch('')
     }
   }, [open, defaultTab, showNotes])
@@ -126,7 +145,7 @@ export default function ContextPicker({
 
   // ── Data loading ──────────────────────────────────────────────────────────
   useEffect(() => {
-    if (!open || tab !== 'prompts') return
+    if (!open || tab !== 'agents') return
     void (window.electronAPI.invoke('agent:list', {}) as Promise<{
       copilot: AgentItem[]
       claude: AgentItem[]
@@ -152,19 +171,23 @@ export default function ContextPicker({
     void loadNotes()
   }, [open, tab, loadNotes, showNotes])
 
-  // Playbooks = templates + skills (merged)
+  // Skills = SKILL.md capability files. skills:list takes a workingDirectory
+  // arg in main; use cwd as a sensible default.
   useEffect(() => {
-    if (!open || tab !== 'playbooks') return
+    if (!open || tab !== 'skills') return
+    void (window.electronAPI.invoke('skills:list', { workingDirectory: '.' }) as Promise<SkillItem[]>)
+      .then((r) => setSkills(r ?? []))
+      .catch(() => setSkills([]))
+  }, [open, tab])
+
+  // Templates = reusable fill-in-the-blank prompt templates.
+  useEffect(() => {
+    if (!open || tab !== 'templates') return
     void (window.electronAPI.invoke('templates:list', {
       search: search || undefined,
     }) as Promise<PromptTemplate[]>)
       .then((r) => setTemplates(r ?? []))
       .catch(() => setTemplates([]))
-
-    // skills:list takes a workingDirectory arg in main; use cwd as a sensible default
-    void (window.electronAPI.invoke('skills:list', { workingDirectory: '.' }) as Promise<SkillItem[]>)
-      .then((r) => setSkills(r ?? []))
-      .catch(() => setSkills([]))
   }, [open, tab, search])
 
   useEffect(() => {
@@ -189,10 +212,12 @@ export default function ContextPicker({
       <div className="flex items-center border-b border-gray-800">
         {(
           [
-            ['prompts', 'Prompts'],
+            ['agents', 'Agents'],
             ...(showNotes ? [['notes', 'Notes']] as const : []),
-            ['playbooks', 'Playbooks'],
-            ['files', 'Files'],
+            ['skills', 'Skills'],
+            ['templates', 'Templates'],
+            ...(showAttachTab ? [['attach', 'Files']] as const : []),
+            ['files', 'Sources'],
           ] as const
         ).map(([key, label]) => (
           <button
@@ -215,8 +240,8 @@ export default function ContextPicker({
         ))}
       </div>
 
-      {/* Search bar (not shown on Files — has its own UI) */}
-      {tab !== 'files' && (
+      {/* Search bar (not shown on Sources / Files attach — they have their own UI) */}
+      {tab !== 'files' && tab !== 'attach' && (
         <div className="px-2 pt-2">
           <input
             type="text"
@@ -231,8 +256,8 @@ export default function ContextPicker({
 
       {/* Body */}
       <div className="max-h-[340px] overflow-y-auto">
-        {tab === 'prompts' && (
-          <PromptList
+        {tab === 'agents' && (
+          <AgentsList
             agents={agents.filter((a) =>
               search ? a.name.toLowerCase().includes(search.toLowerCase()) : true,
             )}
@@ -253,21 +278,34 @@ export default function ContextPicker({
           />
         )}
 
-        {tab === 'playbooks' && (
-          <PlaybookList
-            templates={templates}
+        {tab === 'skills' && (
+          <SkillsList
             skills={skills.filter((s) =>
               search ? s.name.toLowerCase().includes(search.toLowerCase()) : true,
             )}
             selectedSkill={selectedSkill}
-            onSelectTemplate={(t) => {
-              onClose()
-              onTemplateSelect?.(t)
-            }}
             onSelectSkill={(name) => {
               onSelectSkill(name)
               onClose()
             }}
+          />
+        )}
+
+        {tab === 'templates' && (
+          <TemplatesList
+            templates={templates}
+            onSelectTemplate={(t) => {
+              onClose()
+              onTemplateSelect?.(t)
+            }}
+          />
+        )}
+
+        {tab === 'attach' && (
+          <AttachFilesList
+            files={attachedFiles ?? []}
+            onAttach={() => onAttachFiles?.()}
+            onRemove={(id) => onRemoveAttachedFile?.(id)}
           />
         )}
 
@@ -287,9 +325,9 @@ export default function ContextPicker({
   )
 }
 
-// ── Prompts ───────────────────────────────────────────────────────────────────
+// ── Agents ────────────────────────────────────────────────────────────────────
 
-function PromptList({
+function AgentsList({
   agents,
   selected,
   onSelect,
@@ -304,7 +342,7 @@ function PromptList({
         onClick={() => onSelect(undefined)}
         className="w-full text-left px-3 py-2 text-xs text-gray-400 hover:bg-gray-800"
       >
-        No prompt (default)
+        No agent (default)
       </button>
       {agents.map((a) => (
         <button
@@ -319,7 +357,7 @@ function PromptList({
       ))}
       {agents.length === 0 && (
         <p className="text-xs text-gray-500 text-center py-6">
-          No prompts yet. Create one in Configure → Prompts.
+          No agents yet. Create one in Configure → Agents.
         </p>
       )}
     </div>
@@ -393,75 +431,123 @@ function NotesList({
   )
 }
 
-// ── Playbooks (templates + skills merged) ─────────────────────────────────────
+// ── Skills (SKILL.md capability files) ────────────────────────────────────────
 
-function PlaybookList({
-  templates,
+function SkillsList({
   skills,
   selectedSkill,
-  onSelectTemplate,
   onSelectSkill,
 }: {
-  templates: PromptTemplate[]
   skills: SkillItem[]
   selectedSkill?: string
-  onSelectTemplate: (t: PromptTemplate) => void
   onSelectSkill: (name: string | undefined) => void
 }): JSX.Element {
-  if (templates.length === 0 && skills.length === 0) {
+  if (skills.length === 0) {
     return (
       <p className="text-xs text-gray-500 text-center py-6">
-        No playbooks yet. Build one in Configure → Playbooks.
+        No skills yet. Add one in Configure → Skills.
       </p>
     )
   }
   return (
     <div>
-      {templates.length > 0 && (
-        <>
-          <div className="px-3 py-1.5 text-[10px] font-semibold text-gray-500 uppercase tracking-wider bg-gray-900/50">
-            Quick (fill-in)
-          </div>
-          {templates.slice(0, 25).map((t) => (
-            <button
-              key={t.id}
-              onClick={() => onSelectTemplate(t)}
-              className="w-full text-left px-3 py-2 text-xs hover:bg-gray-800 transition-colors flex items-center gap-2"
-            >
-              <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-900/40 text-amber-300">Quick</span>
-              <span className="text-gray-200 truncate">{t.name}</span>
-              {t.category && <span className="text-gray-500 ml-auto">{t.category}</span>}
-            </button>
-          ))}
-        </>
-      )}
-      {skills.length > 0 && (
-        <>
-          <div className="px-3 py-1.5 text-[10px] font-semibold text-gray-500 uppercase tracking-wider bg-gray-900/50">
-            Detailed
-          </div>
-          {skills.slice(0, 25).map((s) => {
-            const sel = selectedSkill === s.name
-            return (
+      {skills.slice(0, 25).map((s) => {
+        const sel = selectedSkill === s.name
+        return (
+          <button
+            key={s.id}
+            onClick={() => onSelectSkill(sel ? undefined : s.name)}
+            className={`w-full text-left px-3 py-2 text-xs hover:bg-gray-800 transition-colors flex items-center gap-2 ${
+              sel ? 'bg-amber-900/20 text-amber-300' : 'text-gray-200'
+            }`}
+          >
+            <span className="truncate">{s.name}</span>
+            {sel && (
+              <svg className="w-3 h-3 text-amber-400 ml-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+              </svg>
+            )}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+// ── Templates (fill-in-the-blank prompt templates) ────────────────────────────
+
+function TemplatesList({
+  templates,
+  onSelectTemplate,
+}: {
+  templates: PromptTemplate[]
+  onSelectTemplate: (t: PromptTemplate) => void
+}): JSX.Element {
+  if (templates.length === 0) {
+    return (
+      <p className="text-xs text-gray-500 text-center py-6">
+        No templates yet. Build one in Configure → Templates.
+      </p>
+    )
+  }
+  return (
+    <div>
+      {templates.slice(0, 25).map((t) => (
+        <button
+          key={t.id}
+          onClick={() => onSelectTemplate(t)}
+          className="w-full text-left px-3 py-2 text-xs hover:bg-gray-800 transition-colors flex items-center gap-2"
+        >
+          <span className="text-gray-200 truncate">{t.name}</span>
+          {t.category && <span className="text-gray-500 ml-auto">{t.category}</span>}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+// ── Files (real attachments staged into the session) ──────────────────────────
+
+function AttachFilesList({
+  files,
+  onAttach,
+  onRemove,
+}: {
+  files: AttachedFile[]
+  onAttach: () => void
+  onRemove: (id: string) => void
+}): JSX.Element {
+  return (
+    <div className="p-2">
+      <p className="px-1 pb-2 text-[11px] text-gray-500">
+        Attach files for the AI to read, edit, or run. They're copied into
+        {' '}<code>.clear-path/uploads/</code> in your project so the CLI can reach them.
+      </p>
+      {files.length > 0 && (
+        <ul className="mb-2 space-y-1 max-h-48 overflow-y-auto">
+          {files.map((f) => (
+            <li key={f.id} className="flex items-center gap-2 px-2 py-1 rounded-md bg-gray-800/50 text-xs text-gray-200">
+              <span className="flex-1 truncate" title={f.relPath}>{f.name}</span>
               <button
-                key={s.id}
-                onClick={() => onSelectSkill(sel ? undefined : s.name)}
-                className={`w-full text-left px-3 py-2 text-xs hover:bg-gray-800 transition-colors flex items-center gap-2 ${
-                  sel ? 'bg-amber-900/20 text-amber-300' : 'text-gray-200'
-                }`}
+                type="button"
+                aria-label={`Remove ${f.name}`}
+                onClick={() => onRemove(f.id)}
+                className="text-gray-500 hover:text-red-400 transition-colors"
               >
-                <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-900/40 text-amber-300">Detailed</span>
-                <span className="truncate">{s.name}</span>
-                {sel && (
-                  <svg className="w-3 h-3 text-amber-400 ml-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                  </svg>
-                )}
+                ✕
               </button>
-            )
-          })}
-        </>
+            </li>
+          ))}
+        </ul>
       )}
+      <button
+        type="button"
+        data-testid="context-picker-attach-files"
+        onClick={onAttach}
+        className="w-full px-2.5 py-1.5 rounded-md text-xs text-gray-200 border border-dashed border-gray-700 hover:bg-gray-800 transition-colors"
+      >
+        + Add files
+      </button>
     </div>
   )
 }

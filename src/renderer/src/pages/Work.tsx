@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useLocation, useSearchParams, useNavigate } from 'react-router-dom'
 import type { ParsedOutput, SessionInfo, HistoricalSession } from '../types/ipc'
-import type { PromptTemplate } from '../types/template'
+import type { PromptTemplate, HydratedTemplate } from '../types/template'
 import type { BackendId } from '../../../shared/backends'
-import { providerOf, migrateLegacyBackendId } from '../../../shared/backends'
+import { providerOf, migrateLegacyBackendId, pickReadyBackend } from '../../../shared/backends'
+import { useAuthStatus, readyBackendsOf } from '../hooks/useAuthStatus'
 import OutputDisplay, { type OutputMessage, type UsageStats } from '../components/OutputDisplay'
 import ChatInputArea, { type ChatContextConfig } from '../components/ChatInputArea'
 import ModeIndicator, { type SessionMode, MODE_CYCLE } from '../components/ModeIndicator'
@@ -85,6 +86,10 @@ export default function Work(): JSX.Element {
   const [showSessionManager, setShowSessionManager] = useState(false)
   const [viewingStoppedSession, setViewingStoppedSession] = useState(false)
   const [selectedNoteIds, setSelectedNoteIds] = useState<Set<string>>(new Set())
+  // Mid-session file attachments, staged into the active session's uploads dir
+  // and framed onto the NEXT send. Keyed by sessionId so switching sessions
+  // never leaks one chat's pending files into another.
+  const [pendingFilesBySession, setPendingFilesBySession] = useState<Record<string, Array<{ id: string; name: string; relPath: string }>>>({})
   const [selectedContextSources, setSelectedContextSources] = useState<import('../types/contextSources').SelectedContextSource[]>([])
   const [showSaveNoteModal, setShowSaveNoteModal] = useState<string | null>(null)
   // Token Coach Phase 4 — per-turn routing override. The ModelRoutingChip
@@ -104,6 +109,31 @@ export default function Work(): JSX.Element {
   const sessionsRef = useRef(sessions)
   sessionsRef.current = sessions
   const pendingQuickPrompt = useRef<PendingQuickPrompt | null>(null)
+  // The quick-prompt we've already auto-started, used to make the Home→Work
+  // hand-off idempotent. Two re-entry paths would otherwise double-spawn:
+  //  1. React StrictMode double-invokes effects on mount.
+  //  2. The first startSession changes the URL (`?id=`), so the deep-link
+  //     effect re-runs against the still-present location.state and re-seeds
+  //     pendingQuickPrompt.
+  // Keying on the prompt text survives both (the key/path change between
+  // re-entries, the prompt doesn't), so we never start the same hand-off twice.
+  const startedQuickPrompt = useRef<string | null>(null)
+
+  // Backend readiness — drives readiness-aware CLI defaults so we never launch
+  // an uninstalled CLI. `readyBackendsRef` lets the callbacks below read the
+  // latest set without re-creating themselves on every auth refresh.
+  const auth = useAuthStatus()
+  const readyBackends = readyBackendsOf(auth)
+  const readyBackendsRef = useRef(readyBackends)
+  readyBackendsRef.current = readyBackends
+  // Track whether the auth probe has completed so callbacks can tell "nothing
+  // connected" apart from "still checking". Only the former should block a launch.
+  const authLoadedRef = useRef(auth.loaded)
+  authLoadedRef.current = auth.loaded
+  // Surfaced when a launch is blocked or the main process reports the CLI
+  // isn't ready (CLI_NOT_READY). Rendered as a banner above the launchpad and
+  // cleared on the next successful start.
+  const [startError, setStartError] = useState<string | null>(null)
 
   // selectedId is derived from the URL — `?id=<sessionId>`. When absent, the
   // launchpad renders. setSelectedId() pushes the id into the URL so deep
@@ -172,7 +202,7 @@ export default function Work(): JSX.Element {
 
       // 2. Load persisted sessions from disk (survive app restart)
       const persisted = await window.electronAPI.invoke('cli:get-persisted-sessions') as
-        Array<{ sessionId: string; cli: BackendId; name?: string; firstPrompt?: string; startedAt: number; endedAt?: number; messageLog: Array<{ type: string; content: string; metadata?: unknown; sender?: string; timestamp?: number; attachedNotes?: Array<{ id: string; title: string }>; attachedAgent?: { id: string; name: string }; attachedSkills?: Array<{ id: string; name: string }> }> }>
+        Array<{ sessionId: string; cli: BackendId; name?: string; firstPrompt?: string; startedAt: number; endedAt?: number; messageLog: Array<{ type: string; content: string; metadata?: unknown; sender?: string; timestamp?: number; attachedNotes?: Array<{ id: string; title: string }>; attachedAgent?: { id: string; name: string }; attachedSkills?: Array<{ id: string; name: string }>; attachedFiles?: Array<{ id: string; name: string; relPath: string }>; attachedDirs?: Array<{ path: string; name: string }> }> }>
 
       // Build a set of active session IDs so we don't duplicate
       const activeIds = new Set(activeSessions.map((s) => s.sessionId))
@@ -181,7 +211,7 @@ export default function Work(): JSX.Element {
       const logs = await Promise.all(
         activeSessions.map(async (info) => {
           const log = await window.electronAPI.invoke('cli:get-message-log', { sessionId: info.sessionId }) as
-            Array<{ type: string; content: string; metadata?: unknown; sender?: string; timestamp?: number; attachedNotes?: Array<{ id: string; title: string }>; attachedAgent?: { id: string; name: string }; attachedSkills?: Array<{ id: string; name: string }> }>
+            Array<{ type: string; content: string; metadata?: unknown; sender?: string; timestamp?: number; attachedNotes?: Array<{ id: string; title: string }>; attachedAgent?: { id: string; name: string }; attachedSkills?: Array<{ id: string; name: string }>; attachedFiles?: Array<{ id: string; name: string; relPath: string }>; attachedDirs?: Array<{ path: string; name: string }> }>
           return { sessionId: info.sessionId, log }
         })
       )
@@ -207,6 +237,8 @@ export default function Work(): JSX.Element {
                 attachedAgent: entry.attachedAgent,
                 attachedSkills: entry.attachedSkills,
                 attachedNotes: entry.attachedNotes,
+                attachedFiles: entry.attachedFiles,
+                attachedDirs: entry.attachedDirs,
               }
             })
             if (messages.length === 0) {
@@ -234,6 +266,8 @@ export default function Work(): JSX.Element {
             attachedAgent: entry.attachedAgent,
             attachedSkills: entry.attachedSkills,
             attachedNotes: entry.attachedNotes,
+            attachedFiles: entry.attachedFiles,
+                attachedDirs: entry.attachedDirs,
           }))
           if (messages.length === 0) continue // Skip empty sessions
           const info: SessionInfo = {
@@ -394,14 +428,33 @@ export default function Work(): JSX.Element {
     attachedAgent?: { id: string; name: string }
     attachedSkills?: Array<{ id: string; name: string }>
     attachedNotes?: Array<{ id: string; title: string }>
+    /** Files staged for this session (frozen name + workspace-relative path). */
+    attachedFiles?: Array<{ id: string; name: string; relPath: string }>
+    /** Caller-provided session id — lets files be staged before the session starts. */
+    sessionId?: string
+    /** Per-session CLI toggle overrides, keyed by SessionOptions boolean field. */
+    sessionFlags?: Record<string, boolean>
     /** Token Coach Phase 1: per-slice breakdown for accurate cost attribution. */
     promptSlices?: import('../types/ipc').SessionOptions['promptSlices']
     /** Explicit "user picked (none)" — disables server-side default-agent fallback. */
     noAgent?: boolean
   }) => {
+    // Clear any prior "connect a CLI" banner — we're attempting a fresh start.
+    setStartError(null)
     const startResult = (await window.electronAPI.invoke('cli:start-session', {
-      cli: opts.cli, mode: 'interactive', name: opts.name, workingDirectory: opts.workingDirectory, prompt: opts.initialPrompt, displayPrompt: opts.displayPrompt, agent: opts.agent, model: opts.model, permissionMode: opts.permissionMode, additionalDirs: opts.additionalDirs, attachedNotes: opts.attachedNotes, promptSlices: opts.promptSlices, noAgent: opts.noAgent,
-    })) as { sessionId: string; agentApplied?: { id: string; name: string } }
+      cli: opts.cli, mode: 'interactive', name: opts.name, workingDirectory: opts.workingDirectory, prompt: opts.initialPrompt, displayPrompt: opts.displayPrompt, agent: opts.agent, model: opts.model, permissionMode: opts.permissionMode, additionalDirs: opts.additionalDirs, attachedNotes: opts.attachedNotes, attachedFiles: opts.attachedFiles, sessionId: opts.sessionId, promptSlices: opts.promptSlices, noAgent: opts.noAgent,
+      // Per-session CLI toggle overrides (experimental/verbose/etc.) as explicit
+      // typed fields so they beat the stored global defaults in the main-process merge.
+      ...(opts.sessionFlags ?? {}),
+    })) as
+      | { sessionId: string; agentApplied?: { id: string; name: string } }
+      | { error: string; code: 'CLI_NOT_READY' }
+    // Main process guard: the CLI isn't installed/authenticated. No session was
+    // created server-side, so surface the message without minting a ghost row.
+    if ('error' in startResult) {
+      setStartError(startResult.error)
+      return
+    }
     const { sessionId, agentApplied } = startResult
     const info: SessionInfo = { sessionId, name: opts.name, cli: opts.cli, status: 'running', startedAt: Date.now() }
 
@@ -422,6 +475,10 @@ export default function Work(): JSX.Element {
         attachedAgent: effectiveAgent,
         attachedSkills: opts.attachedSkills,
         attachedNotes: opts.attachedNotes,
+        attachedFiles: opts.attachedFiles,
+        attachedDirs: opts.additionalDirs && opts.additionalDirs.length > 0
+          ? opts.additionalDirs.map((p) => ({ path: p, name: p.split('/').filter(Boolean).pop() || p }))
+          : undefined,
       })
     }
 
@@ -442,28 +499,11 @@ export default function Work(): JSX.Element {
   // hands off to `startSession` without opening a modal. Any failure
   // surfaces via the existing `cli:error` pipeline (chat bubble), so no
   // special unauth handling here — matches the Sessions page behaviour.
-  const handleQuickStart = useCallback(async () => {
-    const settings = await window.electronAPI.invoke('settings:get') as {
-      preferredBackend?: BackendId
-      model?: { copilot?: string; claude?: string }
-    } | null
-
-    // 1. Resolve CLI: explicit default → last-used session's CLI → copilot-cli
-    let cli: BackendId = 'copilot-cli'
-    if (settings?.preferredBackend) {
-      cli = settings.preferredBackend
-    } else if (sessionsRef.current.size > 0) {
-      const lastUsed = Array.from(sessionsRef.current.values())
-        .sort((a, b) => b.info.startedAt - a.info.startedAt)[0]
-      if (lastUsed) cli = lastUsed.info.cli
-    }
-
-    // 2. Resolve model: settings.model[provider] for that CLI
-    const provider = providerOf(cli)
-    const model = settings?.model?.[provider] || undefined
-
-    // 3. Resolve working directory from the active workspace's first repo path
-    let workingDirectory: string | undefined
+  // Resolve the directory a new session should run in. Without this anchor the
+  // CLI inherits the Electron process cwd (home/app dir) and the AI can't see
+  // the user's repos. Chain: active workspace's first repo → the user's default
+  // working folder (set in the first-run wizard / Local Setup) → undefined.
+  const resolveWorkingDirectory = useCallback(async (): Promise<string | undefined> => {
     try {
       const activeId = await window.electronAPI.invoke('workspace:get-active') as string | null
       if (activeId) {
@@ -471,14 +511,73 @@ export default function Work(): JSX.Element {
           id: string; repoPaths: string[]
         }>
         const active = workspaces.find((w) => w.id === activeId)
-        if (active && active.repoPaths.length > 0) workingDirectory = active.repoPaths[0]
+        if (active && active.repoPaths.length > 0) return active.repoPaths[0]
       }
     } catch {
-      // Workspace lookup is best-effort; empty workingDirectory falls back to backend default.
+      // Workspace lookup is best-effort.
+    }
+    try {
+      const defaultCwd = await window.electronAPI.invoke('locations:get-default-cwd') as string | null
+      if (typeof defaultCwd === 'string' && defaultCwd) return defaultCwd
+    } catch {
+      // Locations lookup is best-effort; fall through to backend default.
+    }
+    return undefined
+  }, [])
+
+  // Reclaim file-attachment upload dirs whose session no longer exists. Runs
+  // once on mount (best-effort) so crashes / manual session-store edits that
+  // skipped the delete-time cleanup don't leak `.clear-path/uploads/<id>/`
+  // folders. Cheap no-op when the feature was never used.
+  useEffect(() => {
+    void (async () => {
+      try {
+        const workingDirectory = await resolveWorkingDirectory()
+        if (workingDirectory) {
+          await window.electronAPI.invoke('files:sweep-orphans', { workingDirectory })
+        }
+      } catch {
+        // Best-effort housekeeping — never block session load on it.
+      }
+    })()
+  }, [resolveWorkingDirectory])
+
+  const handleQuickStart = useCallback(async () => {
+    const settings = await window.electronAPI.invoke('settings:get') as {
+      preferredBackend?: BackendId
+      model?: { copilot?: string; claude?: string }
+    } | null
+
+    // 1. Resolve CLI from readiness: preferred (if connected) → last-used (if
+    //    connected) → any connected backend. Never default to an uninstalled
+    //    CLI when we know what's connected.
+    const lastUsedSession = sessionsRef.current.size > 0
+      ? Array.from(sessionsRef.current.values()).sort((a, b) => b.info.startedAt - a.info.startedAt)[0]
+      : undefined
+    const preferred = settings?.preferredBackend
+    const lastUsed = lastUsedSession?.info.cli
+    const resolved = pickReadyBackend(readyBackendsRef.current, { preferred, lastUsed })
+    let cli: BackendId
+    if (resolved) {
+      cli = resolved
+    } else if (authLoadedRef.current) {
+      // Auth probe finished and nothing is connected — block and route to auth.
+      setStartError('Connect GitHub Copilot or Claude Code to start a session — open Configure → Authentication.')
+      return
+    } else {
+      // Probe still running — stay optimistic with the saved/last-used default.
+      cli = preferred ?? lastUsed ?? 'copilot-cli'
     }
 
+    // 2. Resolve model: settings.model[provider] for that CLI
+    const provider = providerOf(cli)
+    const model = settings?.model?.[provider] || undefined
+
+    // 3. Resolve working directory (workspace repo → default working folder)
+    const workingDirectory = await resolveWorkingDirectory()
+
     await startSession({ cli, model, workingDirectory })
-  }, [startSession])
+  }, [startSession, resolveWorkingDirectory])
 
   // ── Edit an existing session's settings ──────────────────────────────
   const handleEditSessionSave = useCallback(async (changes: SessionSettingsEditChanges) => {
@@ -496,16 +595,21 @@ export default function Work(): JSX.Element {
   }, [selectedId])
 
   // ── Auto-start session from Home page quick prompt ─────────────────────
-  // The location.state.quickPrompt is read by the deep-link effect into
-  // pendingQuickPrompt.current. After consuming it we clear the location
-  // state so React StrictMode's double-mount doesn't read it back and start
-  // a second session.
+  // The deep-link effect reads location.state.quickPrompt into
+  // pendingQuickPrompt.current. Guard the actual start on the prompt text so
+  // neither StrictMode's double-invoked effects nor the post-start URL change
+  // (which re-runs the deep-link effect and re-seeds the ref) can spawn a
+  // second session for the same hand-off.
   useEffect(() => {
-    if (pendingQuickPrompt.current) {
+    if (pendingQuickPrompt.current && startedQuickPrompt.current !== pendingQuickPrompt.current.prompt) {
+      startedQuickPrompt.current = pendingQuickPrompt.current.prompt
       const q = pendingQuickPrompt.current
       pendingQuickPrompt.current = null
+      // Prefer the CLI Home handed us; if it's missing, fall back to a ready
+      // backend rather than a hardcoded (possibly uninstalled) Copilot.
+      const cli = q.cli ?? pickReadyBackend(readyBackendsRef.current) ?? 'copilot-cli'
       void startSession({
-        cli: q.cli ?? 'copilot-cli',
+        cli,
         model: q.model,
         agent: q.agent,
         attachedAgent: q.attachedAgent,
@@ -514,9 +618,8 @@ export default function Work(): JSX.Element {
         initialPrompt: q.prompt,
       })
       setWorkMode('session')
-      navigate(location.pathname + location.search, { replace: true, state: null })
     }
-  }, [startSession, navigate, location.pathname, location.search])
+  }, [startSession, location.pathname, location.search])
 
   const stopSession = useCallback(async (sessionId: string) => {
     await window.electronAPI.invoke('cli:stop-session', { sessionId })
@@ -675,6 +778,25 @@ export default function Work(): JSX.Element {
         }
       }
 
+      // Mid-session file attachments — frame by PATH (never inline content),
+      // same reference bundle the launchpad uses. Files were already staged
+      // into the session's uploads dir by handleAttachFiles.
+      const capturedFiles = pendingFilesBySession[selectedId] ?? []
+      if (capturedFiles.length > 0) {
+        try {
+          const workingDirectory = await resolveWorkingDirectory()
+          const bundle = await window.electronAPI.invoke('files:get-bundle-for-prompt', {
+            workingDirectory, sessionId: selectedId, ids: capturedFiles.map((f) => f.id),
+          }) as { framedPrompt: string; fileCount: number }
+          if (bundle.framedPrompt) {
+            actualInput = `${bundle.framedPrompt}\n\n${actualInput}`
+            slices.filesFramed = bundle.framedPrompt
+          }
+        } catch {
+          // Bundle fetch failed — send without the framing
+        }
+      }
+
       // Show only the user's original message in the chat (not the prepended
       // context). The "Sent with..." annotation surfaces what context was
       // attached. attachedNotes is what powers the in-chat chip.
@@ -683,10 +805,12 @@ export default function Work(): JSX.Element {
         const u = new Map(prev)
         const noteCount = capturedNotes.length
         const ctxCount = selectedContextSources.length
+        const fileCount = capturedFiles.length
         const parts: string[] = []
-        if (quickConfig.agent) parts.push(`Prompt: ${quickConfig.agent}`)
-        if (quickConfig.skill) parts.push(`Playbook: ${quickConfig.skill}`)
+        if (quickConfig.agent) parts.push(`Agent: ${quickConfig.agent}`)
+        if (quickConfig.skill) parts.push(`Skill: ${quickConfig.skill}`)
         if (noteCount > 0) parts.push(`${noteCount} note${noteCount === 1 ? '' : 's'}`)
+        if (fileCount > 0) parts.push(`${fileCount} file${fileCount === 1 ? '' : 's'}`)
         if (ctxCount > 0) parts.push(`${ctxCount} source${ctxCount === 1 ? '' : 's'}`)
         if (quickConfig.fleet) parts.push('Parallel Mode')
         const contextAnnotation = parts.length > 0 ? `Sent with ${parts.join(' + ')}` : undefined
@@ -701,6 +825,7 @@ export default function Work(): JSX.Element {
               timestamp: Date.now(),
               contextAnnotation,
               attachedNotes: capturedNotes.length > 0 ? capturedNotes : undefined,
+              attachedFiles: capturedFiles.length > 0 ? capturedFiles : undefined,
             },
           ],
           msgIdCounter: s.msgIdCounter + 1,
@@ -713,14 +838,19 @@ export default function Work(): JSX.Element {
         sessionId: selectedId,
         input: actualInput,
         attachedNotes: capturedNotes.length > 0 ? capturedNotes : undefined,
+        attachedFiles: capturedFiles.length > 0 ? capturedFiles : undefined,
         promptSlices: slices,
         // Token Coach Phase 4 — per-turn override. Cleared immediately after
         // dispatch so the next turn re-routes fresh.
         userOverrideModel: routingOverride ?? undefined,
       })
+      // Clear this session's pending files now that they've been framed + sent.
+      if (capturedFiles.length > 0) {
+        setPendingFilesBySession((prev) => ({ ...prev, [selectedId]: [] }))
+      }
       if (routingOverride) setRoutingOverride(null)
     })()
-  }, [selectedId, sessions, selectedNoteIds, selectedContextSources, quickConfig, routingOverride])
+  }, [selectedId, sessions, selectedNoteIds, selectedContextSources, quickConfig, routingOverride, pendingFilesBySession, resolveWorkingDirectory])
 
   /** Append a single status bubble to the active session's message log. */
   const appendStatus = useCallback((sessionId: string, content: string) => {
@@ -834,10 +964,59 @@ export default function Work(): JSX.Element {
     }
   }, [handleSend])
 
-  const handleTemplateSend = useCallback((hydratedPrompt: string) => {
-    handleSend(hydratedPrompt)
+  const handleTemplateSend = useCallback((result: HydratedTemplate) => {
+    const { patch } = result
+    // Apply the subset of the patch a live process can honor. Agent /
+    // permission mode are launch-only and are dropped by TemplateForm in
+    // `session` context, so they never reach here.
+    if (patch.model) handleModelChange(patch.model)
+    if (patch.attachedNotes?.length) {
+      setSelectedNoteIds((prev) => {
+        const next = new Set(prev)
+        for (const id of patch.attachedNotes ?? []) next.add(id)
+        return next
+      })
+    }
+    if (patch.attachedSkills?.length) {
+      // Mid-session skill is single-select; take the first.
+      setQuickConfig((c) => ({ ...c, skill: patch.attachedSkills![0].name }))
+    }
+    // patch.pickedFiles mid-session staging is handled by the compose "+" file
+    // attach flow (Phase 6); template-picked files surface there.
+    handleSend(result.prompt)
     setActiveTemplate(null)
-  }, [handleSend])
+  }, [handleSend, handleModelChange])
+
+  // Stage files into the active session's uploads dir for the next turn.
+  const handleAttachFiles = useCallback(async () => {
+    if (!selectedId) return
+    const workingDirectory = await resolveWorkingDirectory()
+    const res = await window.electronAPI.invoke('files:pick-and-stage', {
+      workingDirectory,
+      sessionId: selectedId,
+    }) as { canceled?: boolean; attachments: Array<{ id: string; name: string; relPath: string }>; errors: string[] }
+    if (res.canceled) return
+    if (res.attachments.length > 0) {
+      setPendingFilesBySession((prev) => ({
+        ...prev,
+        [selectedId]: [
+          ...(prev[selectedId] ?? []),
+          ...res.attachments
+            .filter((a) => !(prev[selectedId] ?? []).some((x) => x.id === a.id))
+            .map((a) => ({ id: a.id, name: a.name, relPath: a.relPath })),
+        ],
+      }))
+    }
+    if (res.errors?.length) appendStatus(selectedId, `Couldn't attach: ${res.errors.join('; ')}`)
+  }, [selectedId, resolveWorkingDirectory, appendStatus])
+
+  const handleRemovePendingFile = useCallback((id: string) => {
+    if (!selectedId) return
+    setPendingFilesBySession((prev) => ({
+      ...prev,
+      [selectedId]: (prev[selectedId] ?? []).filter((f) => f.id !== id),
+    }))
+  }, [selectedId])
 
   const handleModeToggle = useCallback(() => {
     if (!selectedId) return
@@ -890,8 +1069,14 @@ export default function Work(): JSX.Element {
     .sort((a, b) => b.info.startedAt - a.info.startedAt)
     .slice(0, 5)
   const selectedSession = selectedId ? sessions.get(selectedId) ?? null : null
-  // Derive a sensible CLI default from the most recent session (or fall back to copilot-cli)
-  const lastUsedCli: BackendId = selectedSession?.info.cli ?? recentSessions[0]?.info.cli ?? 'copilot-cli'
+  // Derive a sensible CLI default for the launchpad. Prefer the most recent
+  // session's CLI, but only if it's actually connected — otherwise fall to a
+  // ready backend so the picker never defaults to an uninstalled CLI. When
+  // nothing is ready (or readiness hasn't loaded yet) we keep copilot-cli;
+  // QuickStartCard shows its connect-CTA in the both-red case.
+  const sessionLastUsedCli = selectedSession?.info.cli ?? recentSessions[0]?.info.cli
+  const lastUsedCli: BackendId =
+    pickReadyBackend(readyBackends, { lastUsed: sessionLastUsedCli }) ?? sessionLastUsedCli ?? 'copilot-cli'
 
   return (
     <div className="flex h-full overflow-hidden">
@@ -1026,7 +1211,9 @@ export default function Work(): JSX.Element {
                       <div className="max-w-2xl mx-auto bg-white rounded-xl border border-gray-200 p-5 shadow-lg">
                         <TemplateForm
                           template={activeTemplate}
-                          onSend={handleTemplateSend}
+                          cli={selectedSession.info.cli}
+                          context="session"
+                          onSubmit={handleTemplateSend}
                           onCancel={() => setActiveTemplate(null)}
                         />
                       </div>
@@ -1082,6 +1269,9 @@ export default function Work(): JSX.Element {
                     }
                     onClearContextSources={() => setSelectedContextSources([])}
                     onTemplateSelect={handleTemplateSelect}
+                    attachedFiles={pendingFilesBySession[selectedSession.info.sessionId] ?? []}
+                    onAttachFiles={() => { void handleAttachFiles() }}
+                    onRemoveAttachedFile={handleRemovePendingFile}
                     currentModel={selectedSession.currentModel}
                     onModelChange={handleModelChange}
                     priorSessionTokens={sessionTokens.get(selectedSession.info.sessionId) ?? 0}
@@ -1118,20 +1308,91 @@ export default function Work(): JSX.Element {
             </div>
           ) : (
             /* Launchpad: the default empty-state of /work — quick start, workflows, active + recent sessions. */
+            <>
+            {startError && (
+              <div
+                data-testid="work-start-error"
+                role="alert"
+                className="mb-4 flex items-start gap-3 rounded-xl border border-amber-700/40 bg-amber-900/15 px-4 py-3"
+              >
+                <span className="text-amber-300 text-sm">⚠</span>
+                <div className="flex-1">
+                  <p className="text-amber-100 text-sm">{startError}</p>
+                  <button
+                    type="button"
+                    onClick={() => navigate('/configure?tab=setup')}
+                    className="mt-1.5 text-xs font-semibold text-violet-300 hover:text-violet-200"
+                  >
+                    Open Configure → Authentication →
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  aria-label="Dismiss"
+                  onClick={() => setStartError(null)}
+                  className="text-amber-400 hover:text-amber-200"
+                >×</button>
+              </div>
+            )}
             <WorkLaunchpad
               defaultCli={lastUsedCli}
-              onQuickStart={({ prompt, displayPrompt, cli, model, agent, permissionMode, additionalDirs, attachedAgent, attachedSkills, attachedNotes, noAgent }) => {
+              onQuickStart={({ prompt, displayPrompt, cli, model, agent, permissionMode, additionalDirs, attachedAgent, attachedSkills, attachedNotes, pickedFiles, sessionFlags, noAgent }) => {
                 const shown = displayPrompt ?? prompt
-                void startSession({
-                  cli, model, agent, permissionMode, additionalDirs,
-                  initialPrompt: prompt,
-                  displayPrompt: shown,
-                  name: shown.slice(0, 30),
-                  attachedAgent,
-                  attachedSkills,
-                  attachedNotes,
-                  noAgent,
-                })
+                void (async () => {
+                  // Anchor the session to the user's code so the AI can read it.
+                  let workingDirectory = await resolveWorkingDirectory()
+
+                  // Stage any picked files INTO the session's working dir, keyed by
+                  // a pre-generated session id so their paths line up with the
+                  // session we're about to start. Then frame them by path (the AI
+                  // reads the real files with its own tools — content never inlined).
+                  let initialPrompt = prompt
+                  let attachedFiles: Array<{ id: string; name: string; relPath: string }> | undefined
+                  let filesSessionId: string | undefined
+                  let filesSlice: string | undefined
+                  if (pickedFiles && pickedFiles.length > 0) {
+                    // Guarantee a concrete, writable cwd even when no workspace is
+                    // configured — otherwise the upload was silently dropped AND
+                    // the CLI spawned in a read-only dir. The SAME dir is used for
+                    // staging and the spawn below so relative paths always resolve.
+                    const base = await window.electronAPI.invoke('files:ensure-base-dir', { preferred: workingDirectory }) as { dir: string }
+                    workingDirectory = base.dir
+                    filesSessionId = crypto.randomUUID()
+                    const staged = await window.electronAPI.invoke('files:stage-paths', {
+                      workingDirectory, sessionId: filesSessionId,
+                      sourcePaths: pickedFiles.map((f) => f.sourcePath),
+                    }) as { attachments: Array<{ id: string; name: string; relPath: string }>; errors: string[] }
+                    if (staged.attachments.length > 0) {
+                      attachedFiles = staged.attachments.map((a) => ({ id: a.id, name: a.name, relPath: a.relPath }))
+                      const bundle = await window.electronAPI.invoke('files:get-bundle-for-prompt', {
+                        workingDirectory, sessionId: filesSessionId, ids: staged.attachments.map((a) => a.id),
+                      }) as { framedPrompt: string; fileCount: number }
+                      if (bundle.framedPrompt) {
+                        initialPrompt = `${bundle.framedPrompt}\n\nUser request:\n${prompt}`
+                        filesSlice = bundle.framedPrompt
+                      }
+                    } else if (staged.errors.length > 0) {
+                      // Never fail silently — tell the user why the file didn't attach.
+                      setStartError(`Couldn't attach your file${pickedFiles.length === 1 ? '' : 's'}: ${staged.errors.join('; ')}`)
+                    }
+                  }
+
+                  await startSession({
+                    cli, model, agent, permissionMode, additionalDirs,
+                    workingDirectory,
+                    initialPrompt,
+                    displayPrompt: shown,
+                    name: shown.slice(0, 30),
+                    attachedAgent,
+                    attachedSkills,
+                    attachedNotes,
+                    attachedFiles,
+                    sessionId: filesSessionId,
+                    promptSlices: filesSlice ? { userText: prompt, filesFramed: filesSlice } : undefined,
+                    sessionFlags,
+                    noAgent,
+                  })
+                })()
               }}
               onOpenWorkflow={(id) => {
                 setSearchParams((prev) => {
@@ -1158,6 +1419,7 @@ export default function Work(): JSX.Element {
               }}
               onSeeMoreSessions={() => setShowSessionManager(true)}
             />
+            </>
           )
         )}
 
@@ -1230,7 +1492,7 @@ export default function Work(): JSX.Element {
         />
       )}
 
-      {/* Save as memory note modal — opened from "Save as note" on AI
+      {/* Save as note modal — opened from "Save as Note" on AI
           response actions. The full Notes management UI lives at /notes. */}
       {showSaveNoteModal !== null && (
         <SaveNoteModal
@@ -1274,7 +1536,7 @@ function SaveNoteModal({ content, sessionName, sessionId, onClose }: {
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 animate-fadeIn" onClick={onClose}>
       <div className="bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl w-full max-w-lg mx-4" onClick={(e) => e.stopPropagation()}>
         <div className="px-6 py-4 border-b border-gray-800">
-          <h3 className="text-base font-semibold text-white">Save as Memory</h3>
+          <h3 className="text-base font-semibold text-white">Save as Note</h3>
           <p className="text-xs text-gray-500 mt-0.5">Save this AI response so you can reference it later</p>
         </div>
 

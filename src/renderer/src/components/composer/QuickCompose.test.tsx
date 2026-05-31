@@ -45,7 +45,7 @@ describe('QuickCompose', () => {
     render(<QuickCompose {...defaultProps} />)
     expect(screen.getByTitle('Templates')).toBeInTheDocument()
     expect(screen.getByTitle('Agent')).toBeInTheDocument()
-    expect(screen.getByTitle('Memories')).toBeInTheDocument()
+    expect(screen.getByTitle('Notes')).toBeInTheDocument()
     expect(screen.getByTitle('Delegate')).toBeInTheDocument()
   })
 
@@ -82,9 +82,9 @@ describe('QuickCompose', () => {
     expect(screen.getByText('review-agent')).toBeInTheDocument()
   })
 
-  it('shows memory badge when notes are selected', () => {
+  it('shows notes badge when notes are selected', () => {
     render(<QuickCompose {...defaultProps} selectedNoteIds={new Set(['n1', 'n2'])} />)
-    expect(screen.getByText('2 memories')).toBeInTheDocument()
+    expect(screen.getByText('2 notes')).toBeInTheDocument()
   })
 
   it('shows delegate badge when delegate is set', () => {
@@ -108,9 +108,9 @@ describe('QuickCompose', () => {
     expect(defaultProps.onConfigChange).toHaveBeenCalledWith(expect.not.objectContaining({ agent: 'my-agent' }))
   })
 
-  it('calls onClearNotes when memory badge x is clicked', () => {
+  it('calls onClearNotes when notes badge x is clicked', () => {
     render(<QuickCompose {...defaultProps} selectedNoteIds={new Set(['n1'])} />)
-    const badge = screen.getByText('1 memory').closest('span')!
+    const badge = screen.getByText('1 note').closest('span')!
     const removeBtn = badge.querySelector('button')!
     fireEvent.click(removeBtn)
     expect(defaultProps.onClearNotes).toHaveBeenCalled()

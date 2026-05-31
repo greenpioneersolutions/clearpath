@@ -108,13 +108,19 @@ describe('Settings', () => {
     })
   })
 
-  it('Session Limits panel does not show a Max Budget control', async () => {
+  it('Session Limits panel redirects to the Claude CLI Flags tab', async () => {
     render(<Settings />)
     await waitFor(() => screen.getByText('Session Limits'))
     fireEvent.click(screen.getByText('Session Limits'))
     await waitFor(() => screen.getByText('Session Limits', { selector: 'h3' }))
-    expect(screen.queryByText(/Max Budget/i)).not.toBeInTheDocument()
-    expect(screen.queryByText(/--max-budget-usd/)).not.toBeInTheDocument()
+    // The panel no longer hosts its own controls — it points at CLI Flags → Claude.
+    const redirect = screen.getByText('Open Claude CLI Flags')
+    expect(redirect).toBeInTheDocument()
+    fireEvent.click(redirect)
+    await waitFor(() => {
+      // Lands on the CLI Flags builder scoped to Claude Code.
+      expect(screen.getByText(/CLI Flags — Claude Code/)).toBeInTheDocument()
+    })
   })
 
   it('switches to Model tab and renders model selector', async () => {

@@ -204,13 +204,16 @@ export default function Sessions(): JSX.Element {
       initialPrompt?: string
     }) => {
       console.log('[Sessions] starting session', opts)
-    const { sessionId } = (await window.electronAPI.invoke('cli:start-session', {
+    const startResult = (await window.electronAPI.invoke('cli:start-session', {
         cli: opts.cli,
         mode: 'interactive',
         name: opts.name,
         workingDirectory: opts.workingDirectory,
         prompt: opts.initialPrompt,
-      })) as { sessionId: string }
+      })) as { sessionId: string } | { error: string; code: 'CLI_NOT_READY' }
+    // Main process guard: CLI not installed/authenticated — no session created.
+    if ('error' in startResult) { console.error('[Sessions]', startResult.error); return }
+    const { sessionId } = startResult
     console.log('[Sessions] session started', sessionId)
 
       const info: SessionInfo = {
@@ -260,12 +263,14 @@ export default function Sessions(): JSX.Element {
 
   // ── Resume a historical session ───────────────────────────────────────────
   const resumeSession = useCallback(async (hist: HistoricalSession) => {
-    const { sessionId } = (await window.electronAPI.invoke('cli:start-session', {
+    const startResult = (await window.electronAPI.invoke('cli:start-session', {
       cli: hist.cli,
       mode: 'interactive',
       name: hist.name,
       resume: hist.sessionId,
-    })) as { sessionId: string }
+    })) as { sessionId: string } | { error: string; code: 'CLI_NOT_READY' }
+    if ('error' in startResult) { console.error('[Sessions]', startResult.error); return }
+    const { sessionId } = startResult
 
     const info: SessionInfo = {
       sessionId,

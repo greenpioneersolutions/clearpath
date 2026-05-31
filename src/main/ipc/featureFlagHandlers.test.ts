@@ -127,6 +127,24 @@ describe('featureFlagHandlers', () => {
       const result = handler(mockEvent, { presetId: 'nonexistent' }) as { error: string }
       expect(result.error).toBe('Unknown preset')
     })
+
+    it('all-on enables every flag whose code is in the build — guards against new flags being missed', async () => {
+      const { BUILD_FLAGS, EXPERIMENTAL_FLAG_KEYS } = await import('../../shared/featureFlags.generated')
+      // Experimental flags that are off in BUILD_FLAGS are "compiled out" — their
+      // code path isn't in the bundle, so clampToCompiledIn keeps them false even
+      // under all-on. Everything else MUST flip on. This is the regression guard
+      // for the stale-hardcoded-list bug where newly-added non-experimental flags
+      // (e.g. showFileAttachments) silently stayed off.
+      const compiledOut = new Set(EXPERIMENTAL_FLAG_KEYS.filter((k) => !BUILD_FLAGS[k]))
+      const handler = getHandler('feature-flags:apply-preset')
+      const result = handler(mockEvent, { presetId: 'all-on' }) as Record<string, boolean>
+      for (const [key, value] of Object.entries(result)) {
+        if (compiledOut.has(key as keyof typeof BUILD_FLAGS)) continue
+        expect(value, `all-on should enable ${key}`).toBe(true)
+      }
+      // The specific flag from the reported bug — non-experimental, must be on.
+      expect(result.showFileAttachments).toBe(true)
+    })
   })
 
   describe('feature-flags:get-presets', () => {

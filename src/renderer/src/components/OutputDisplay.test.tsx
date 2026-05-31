@@ -34,12 +34,50 @@ describe('OutputDisplay', () => {
     expect(screen.getByText('Hello world')).toBeInTheDocument()
   })
 
+  it('never leaks an attached file path or content into the DOM', () => {
+    // The security-critical guarantee: even with files attached, only the
+    // message text (and, when the flag is on, the file NAME chip) renders. The
+    // workspace-relative path is frozen metadata and must never reach the DOM.
+    // (The flag-on chip-visible assertion is covered manually — the
+    // setup-coverage eager-load defeats vi.mock of useFlag here, same caveat as
+    // the Notes chip test.)
+    const messages: OutputMessage[] = [
+      {
+        id: '1',
+        sender: 'user',
+        output: { type: 'text', content: 'summarize these' },
+        attachedFiles: [
+          { id: 'f1', name: 'spec.pdf', relPath: '.clear-path/uploads/sess/spec.pdf' },
+          { id: 'f2', name: 'data.csv', relPath: '.clear-path/uploads/sess/data.csv' },
+        ],
+      },
+    ]
+    render(<OutputDisplay messages={messages} onPermissionResponse={onPermissionResponse} />)
+    expect(screen.getByText('summarize these')).toBeInTheDocument()
+    expect(screen.queryByText(/\.clear-path\/uploads/)).toBeNull()
+  })
+
   it('renders an AI text message with markdown', () => {
     const messages: OutputMessage[] = [
       { id: '1', sender: 'ai', output: { type: 'text', content: 'AI response here' } },
     ]
     render(<OutputDisplay messages={messages} onPermissionResponse={onPermissionResponse} />)
     expect(screen.getByText('AI response here')).toBeInTheDocument()
+  })
+
+  it('renders a whole-message raw JSON dump as a JSON block, not plain markdown', () => {
+    // react-markdown is mocked to a passthrough, but the bare-JSON pre-check in
+    // AIBubble runs *before* markdown — so an unfenced JSON dump is routed to the
+    // real <JsonBlock> (rich tree), exercising the detection directly.
+    const content = '{\n  "compilerOptions": { "strict": true },\n  "files": []\n}'
+    const messages: OutputMessage[] = [
+      { id: '1', sender: 'ai', output: { type: 'text', content } },
+    ]
+    render(<OutputDisplay messages={messages} onPermissionResponse={onPermissionResponse} />)
+    // JSON tree renders the key tokens, and the markdown passthrough is bypassed.
+    expect(screen.getByText(/compilerOptions/)).toBeInTheDocument()
+    expect(screen.getByText('JSON')).toBeInTheDocument()
+    expect(screen.queryByTestId('markdown')).toBeNull()
   })
 
   it('renders tool-use messages', () => {

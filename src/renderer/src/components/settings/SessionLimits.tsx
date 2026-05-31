@@ -1,85 +1,50 @@
 interface Props {
-  maxTurns: number | null
-  verbose: boolean
-  onTurnsChange: (turns: number | null) => void
-  onVerboseChange: (verbose: boolean) => void
+  /** Jump to the CLI Flags tab, pre-scoped to Claude. */
+  onOpenFlags: () => void
 }
 
-export default function SessionLimits({
-  maxTurns,
-  verbose,
-  onTurnsChange,
-  onVerboseChange,
-}: Props): JSX.Element {
+/**
+ * Session turn/budget/verbosity controls used to live here, but they overlapped
+ * the Claude flags in the CLI Flags tab and — unlike those — never reached a
+ * spawned session. They're now owned by **Settings → CLI Flags → Claude**, where
+ * each value is applied as a real session default (see
+ * `src/shared/sessionDefaultFlags.ts`). This panel redirects there so there's a
+ * single source of truth rather than two controls that silently disagreed.
+ */
+export default function SessionLimits({ onOpenFlags }: Props): JSX.Element {
   return (
     <div className="space-y-5">
       <div>
         <h3 className="text-sm font-semibold text-gray-900">Session Limits</h3>
         <p className="text-xs text-gray-500 mt-0.5">
-          Controls for non-interactive (-p / --print) mode sessions
+          Turn limits, budget, and verbose logging for Claude sessions
         </p>
       </div>
 
-      <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-2.5 text-xs text-blue-700">
-        These settings only apply to headless/print mode sessions (Claude Code --print, Copilot --prompt).
-        Interactive sessions do not enforce turn limits.
-      </div>
-
-      {/* Max Turns */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <label className="text-sm font-medium text-gray-800">
-            Max Turns <code className="text-xs text-gray-400 font-mono ml-1">--max-turns</code>
-          </label>
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-mono text-gray-700 w-16 text-right">
-              {maxTurns !== null ? maxTurns : 'Off'}
-            </span>
-            {maxTurns !== null && (
-              <button
-                onClick={() => onTurnsChange(null)}
-                className="text-xs text-gray-400 hover:text-red-500"
-              >
-                Clear
-              </button>
-            )}
-          </div>
-        </div>
-        <input
-          type="range"
-          min={0}
-          max={100}
-          step={1}
-          value={maxTurns ?? 0}
-          onChange={(e) => {
-            const v = parseInt(e.target.value)
-            onTurnsChange(v > 0 ? v : null)
-          }}
-          className="w-full accent-indigo-600"
-        />
-        <div className="flex justify-between text-xs text-gray-400">
-          <span>0 (off)</span>
-          <span>50</span>
-          <span>100</span>
-        </div>
-      </div>
-
-      {/* Verbose */}
-      <div className="flex items-center justify-between px-4 py-3 rounded-lg border border-gray-200 bg-white">
-        <div>
-          <span className="text-sm font-medium text-gray-800">Verbose Logging</span>
-          <code className="text-xs text-gray-400 font-mono ml-2">--verbose</code>
-          <p className="text-xs text-gray-500 mt-0.5">Full turn-by-turn output</p>
-        </div>
+      <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-4 space-y-3">
+        <p className="text-sm text-gray-700">
+          These controls moved to{' '}
+          <span className="font-medium text-gray-900">CLI Flags → Claude</span>, where they
+          now apply as real session defaults:
+        </p>
+        <ul className="text-xs text-gray-600 space-y-1.5 ml-1">
+          <li>
+            <code className="font-mono text-gray-500">--max-turns</code> · <code className="font-mono text-gray-500">--max-budget-usd</code>
+            {' '}— in the <span className="font-medium">Budget &amp; Limits</span> category
+          </li>
+          <li>
+            <code className="font-mono text-gray-500">--verbose</code>
+            {' '}— in the <span className="font-medium">Output &amp; Format</span> category
+          </li>
+        </ul>
         <button
-          onClick={() => onVerboseChange(!verbose)}
-          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-            verbose ? 'bg-indigo-600' : 'bg-gray-300'
-          }`}
+          onClick={onOpenFlags}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition-colors"
         >
-          <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-            verbose ? 'translate-x-6' : 'translate-x-1'
-          }`} />
+          Open Claude CLI Flags
+          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
         </button>
       </div>
     </div>

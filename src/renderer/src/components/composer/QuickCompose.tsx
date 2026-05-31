@@ -112,7 +112,7 @@ export default function QuickCompose({ config, onConfigChange, cli, onTemplateSe
           {selectedNoteIds.size > 0 && (
             <Badge
               icon="memory"
-              label={`${selectedNoteIds.size} memor${selectedNoteIds.size === 1 ? 'y' : 'ies'}`}
+              label={`${selectedNoteIds.size} note${selectedNoteIds.size === 1 ? '' : 's'}`}
               color="bg-indigo-900/40 text-indigo-300 border-indigo-700/50"
               onRemove={onClearNotes}
             />
@@ -153,7 +153,7 @@ export default function QuickCompose({ config, onConfigChange, cli, onTemplateSe
         />
         <ToolbarButton
           icon={<MemoryIcon />}
-          label="Memories"
+          label="Notes"
           active={openPicker === 'memory'}
           highlighted={selectedNoteIds.size > 0}
           onClick={() => toggle('memory')}
@@ -222,7 +222,7 @@ export default function QuickCompose({ config, onConfigChange, cli, onTemplateSe
       {openPicker === 'memory' && (
         <PickerDropdown>
           <div className="px-3 py-2 border-b border-gray-800 flex items-center justify-between">
-            <span className="text-xs font-medium text-gray-300">Attach Memories</span>
+            <span className="text-xs font-medium text-gray-300">Attach Notes</span>
             {selectedNoteIds.size > 0 && (
               <button onClick={onClearNotes} className="text-[10px] text-gray-500 hover:text-gray-300">Clear</button>
             )}
@@ -233,7 +233,7 @@ export default function QuickCompose({ config, onConfigChange, cli, onTemplateSe
             autoFocus />
           <div className="max-h-52 overflow-y-auto">
             {notes.length === 0 ? (
-              <p className="text-xs text-gray-500 text-center py-4">No memories yet</p>
+              <p className="text-xs text-gray-500 text-center py-4">No notes yet</p>
             ) : notes.map((note) => {
               const sel = selectedNoteIds.has(note.id)
               return (

@@ -23,6 +23,9 @@ out/
 # Local config (contains personal paths)
 .claude/settings.local.json
 
+# Per-project Claude memory — path embeds the local username, keep out of Git
+.claude/projects/
+
 # App data (user-specific, generated at runtime)
 .clear-path/
 

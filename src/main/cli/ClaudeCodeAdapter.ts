@@ -6,6 +6,7 @@ import type { ChildProcess } from 'child_process'
 import type { SessionOptions, ParsedOutput } from './types'
 import type { ICLIAdapter } from './types'
 import { resolveInShell, getScopedSpawnEnv } from '../utils/shellEnv'
+import { claudeKeychainTokenExists } from '../utils/claudeKeychain'
 
 // Matches Claude Code permission prompts: "Do you want to allow: X? [y/n]"
 const PERMISSION_LINE_RE = /\ballow\b.+\?\s*\[y\/n\]/i
@@ -25,10 +26,18 @@ export class ClaudeCodeAdapter implements ICLIAdapter {
   async isAuthenticated(): Promise<boolean> {
     if (process.env['ANTHROPIC_API_KEY']) return true
     const claudeDir = join(homedir(), '.claude')
-    return (
+    if (
       existsSync(join(claudeDir, '.credentials.json')) ||
-      existsSync(join(claudeDir, 'auth.json'))
-    )
+      existsSync(join(claudeDir, 'auth.json')) ||
+      existsSync(join(claudeDir, 'credentials.json'))
+    ) {
+      return true
+    }
+    // macOS keeps the token in the login Keychain, NOT a ~/.claude/*.json file —
+    // so the file checks above always miss on Mac and this guard would block
+    // every session for a signed-in user. Mirror AuthManager.checkClaude's
+    // Keychain probe so the session-start gate agrees with launchpad readiness.
+    return claudeKeychainTokenExists()
   }
 
   buildArgs(options: SessionOptions): string[] {
