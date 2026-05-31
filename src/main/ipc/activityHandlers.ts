@@ -33,7 +33,7 @@ function store(): Store<ActivitySchema> {
  */
 export function recordSessionActivity(entry: Omit<SessionActivityEntry, 'id'>): void {
   if (!entry.sessionId) return
-  const all = store().get('bySession', {})
+  const all = (store().get('bySession', {}) || {})
   const list = all[entry.sessionId] ?? []
   const last = list[list.length - 1]
   if (last && last.kind === entry.kind && last.target === entry.target && last.decision === entry.decision) {
@@ -47,14 +47,14 @@ export function recordSessionActivity(entry: Omit<SessionActivityEntry, 'id'>): 
 
 /** Drop a session's activity (called from the session-delete hook). */
 export function clearSessionActivity(sessionId: string): void {
-  const all = store().get('bySession', {})
+  const all = (store().get('bySession', {}) || {})
   if (all[sessionId]) { delete all[sessionId]; store().set('bySession', all) }
 }
 
 export function registerActivityHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('activity:get-session', (_e, args: { sessionId: string }): SessionActivityEntry[] => {
     if (!args?.sessionId) return []
-    return store().get('bySession', {})[args.sessionId] ?? []
+    return (store().get('bySession', {}) || {})[args.sessionId] ?? []
   })
 
   ipcMain.handle('activity:clear-session', (_e, args: { sessionId: string }): { ok: boolean } => {
