@@ -231,7 +231,8 @@ hook entry on disable/quit (merge-don't-clobber, ClearMemory precedent).
 - [x] index.ts wiring: broker built with exported `getActivePolicy`, `getWebContents`, shared audit sink, grants (`clear-path-tool-grants`), `getSessionMeta`; started + Copilot hook registered at boot; torn down on quit
 - [x] Renderer response surface: `PermissionRequestHandler.tsx` (Tools panel) → `permission:respond` (Allow once / Always this session / Deny / Always deny); recovers via `permission:list-pending`; legacy `y/n` path removed (8 tests)
 - [x] Packaging: covered by electron-builder `files: resources/**` + `asarUnpack`
-- [ ] **Remaining (Phase 1b tail):** surface the prompt inline in the **chat** (Work.tsx/OutputDisplay) too — today it shows in the Tools & Permissions panel; e2e for the `permission:respond` round-trip; verify the Standard `acceptEdits` interaction doesn't bypass the broker (plan §8 #6)
+- [x] **App-wide prompt modal** (`PermissionPromptOverlay`, mounted in Layout) — pops wherever the user is (fixes the reported "write denied because the prompt was only in the Tools panel and timed out"). Queues requests; recovers in-flight via `permission:list-pending`; Allow once / Always this session / Deny / Always deny. Broker timeout now reports "no response — timed out" (was "user decision").
+- [ ] **Remaining (Phase 1b tail):** e2e for the `permission:respond` round-trip; verify the Standard `acceptEdits` interaction doesn't bypass the broker (plan §8 #6)
 
 ## 9. Out of scope (this plan)
 - Full ACP session mode for Copilot (Phase 4 candidate only).
