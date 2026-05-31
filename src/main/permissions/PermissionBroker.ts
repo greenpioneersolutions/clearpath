@@ -44,7 +44,7 @@ export interface BrokerDeps {
 }
 
 interface PendingDecision {
-  resolve: (decision: PermissionDecision) => void
+  resolve: (outcome: { decision: PermissionDecision; reason: string }) => void
   timer: ReturnType<typeof setTimeout>
   request: PermissionRequest
   workspaceDir?: string
@@ -94,7 +94,7 @@ export class PermissionBroker {
   }
 
   stop(): void {
-    for (const [, p] of this.pending) { clearTimeout(p.timer); p.resolve('deny') }
+    for (const [, p] of this.pending) { clearTimeout(p.timer); p.resolve({ decision: 'deny', reason: 'app closing' }) }
     this.pending.clear()
     this.server?.close()
     this.server = null
@@ -114,7 +114,7 @@ export class PermissionBroker {
     this.tokens.delete(sessionId)
     this.deps.grants.clearSession(sessionId)
     for (const [id, p] of this.pending) {
-      if (p.request.sessionId === sessionId) { clearTimeout(p.timer); p.resolve('deny'); this.pending.delete(id) }
+      if (p.request.sessionId === sessionId) { clearTimeout(p.timer); p.resolve({ decision: 'deny', reason: 'session ended' }); this.pending.delete(id) }
     }
   }
 
@@ -136,7 +136,7 @@ export class PermissionBroker {
       })
     }
     this.audit(p.request, decision, remember ? `user (${remember})` : 'user')
-    p.resolve(decision)
+    p.resolve({ decision, reason: remember ? `user (${remember})` : 'user decision' })
     return true
   }
 
@@ -192,14 +192,13 @@ export class PermissionBroker {
     }
 
     // Surface a modal and block until the user answers (or timeout → deny).
-    const decision = await this.prompt({ sessionId, cli, toolName, toolClass, input: body.input, meta, policyName: policy.presetName })
-    return { decision, reason: 'user decision' }
+    return this.prompt({ sessionId, cli, toolName, toolClass, input: body.input, meta, policyName: policy.presetName })
   }
 
   private prompt(args: {
     sessionId: string; cli: string; toolName: string; toolClass: ToolClass
     input: unknown; meta: SessionMeta; policyName: string
-  }): Promise<PermissionDecision> {
+  }): Promise<{ decision: PermissionDecision; reason: string }> {
     const request: PermissionRequest = {
       requestId: randomUUID(),
       sessionId: args.sessionId,
@@ -211,11 +210,11 @@ export class PermissionBroker {
       policyName: args.policyName,
       timestamp: Date.now(),
     }
-    return new Promise<PermissionDecision>((resolve) => {
+    return new Promise<{ decision: PermissionDecision; reason: string }>((resolve) => {
       const timer = setTimeout(() => {
         this.pending.delete(request.requestId)
         this.audit(request, 'deny', 'timeout')
-        resolve('deny')
+        resolve({ decision: 'deny', reason: 'no response — timed out' })
       }, this.timeoutMs)
       this.pending.set(request.requestId, { resolve, timer, request, workspaceDir: args.meta.workspaceDir })
       const wc = this.deps.getWebContents()
