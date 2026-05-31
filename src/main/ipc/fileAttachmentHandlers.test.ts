@@ -194,6 +194,32 @@ describe('ensureBaseDir', () => {
     const ghost = join(tmpdir(), 'cp-does-not-exist-xyz')
     expect(ensureBaseDir(ghost)).not.toBe(ghost)
   })
+
+  // Finding C (PR #62): a FILE path passed as workingDirectory must NOT be
+  // accepted (existsSync was true for files), else stagePaths' pre-loop mkdir
+  // throws ENOTDIR. ensureBaseDir must fall back to the scratch dir instead.
+  it('falls back (no throw) when the preferred path is a file, not a directory', () => {
+    const filePath = makeSource('not-a-dir.txt', 'x')
+    expect(() => ensureBaseDir(filePath)).not.toThrow()
+    expect(ensureBaseDir(filePath)).not.toBe(filePath)
+  })
+})
+
+describe('files:stage-paths with a file path as workingDirectory (Finding C)', () => {
+  it('does not throw, stages into the scratch fallback, reports usedFallback:true', async () => {
+    const filePath = makeSource('not-a-dir.txt', 'x')
+    const src = makeSource('doc.md', 'hello')
+    const { ipcMain, invoke } = makeFakeIpc()
+    registerFileAttachmentHandlers(ipcMain, () => [])
+    const res = await invoke<{ attachments: unknown[]; baseDir?: string; usedFallback?: boolean }>(
+      'files:stage-paths',
+      { workingDirectory: filePath, sessionId: SID, sourcePaths: [src] },
+    )
+    expect(res.usedFallback).toBe(true)
+    expect(res.baseDir).not.toBe(filePath)
+    expect(res.attachments).toHaveLength(1)
+    expect(existsSync(getUploadsDir(res.baseDir as string, SID))).toBe(true)
+  })
 })
 
 describe('cleanupSessionUploads', () => {

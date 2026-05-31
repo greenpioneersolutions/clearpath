@@ -24,12 +24,19 @@
 export function isUsageSummary(text: string): boolean {
   const t = text.trim()
   if (!t) return false
+  // Anchor the shape/keyword patterns to the start of a line (the `m` flag is
+  // required — in a multi-line stderr chunk the Tokens/Requests line is rarely
+  // line 1) so genuine errors that merely *mention* "premium"/"changes" mid-
+  // sentence (e.g. "Error: 5 premium requests failed") aren't misclassified as
+  // usage and hidden. The cached/reasoning parenthetical is specific enough to
+  // keep unanchored.
   return (
-    /total usage est|premium request|api time spent|session time|code changes|breakdown by ai model/i.test(t) ||
-    /\bchanges\s+[+-]\d/i.test(t) ||
-    /\b\d[\d.,]*\s+premium\b/i.test(t) ||
-    /\btokens?\b[^\n]*[↑↓⬆⬇]/i.test(t) ||
-    /[↑↓⬆⬇]\s*[\d.]+\s*k?\b/.test(t) ||
+    /total usage est|api time spent|session time|breakdown by ai model/i.test(t) ||
+    /^\s*premium requests?\b/im.test(t) ||
+    /^\s*code changes\b/im.test(t) ||
+    /^\s*changes\s+[+-]\d/im.test(t) ||
+    /^\s*requests\s+\d[\d.,]*\s+premium\b/im.test(t) ||
+    /^\s*tokens?\b[^\n]*[↑↓⬆⬇]/im.test(t) ||
     /\(\s*[\d.]+\s*k?\s+(?:cached|reasoning)\s*\)/i.test(t)
   )
 }

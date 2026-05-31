@@ -140,8 +140,21 @@ function escapeAttr(value: string): string {
  * read-only on a packaged app). The returned dir is used for BOTH staging and
  * the CLI spawn, so the relative `.clear-path/uploads/...` paths always resolve.
  */
+/** True only when `p` is an existing, statable directory (a file path is NOT usable). */
+export function isUsableDir(p?: string): boolean {
+  if (!p) return false
+  try {
+    return statSync(p).isDirectory()
+  } catch {
+    return false
+  }
+}
+
 export function ensureBaseDir(preferred?: string): string {
-  if (preferred && existsSync(preferred)) return preferred
+  // `existsSync` would accept a FILE path; staging then throws ENOTDIR from the
+  // pre-loop mkdirSync in stagePaths (outside its per-file try/catch). Require a
+  // real directory so a non-dir falls through to the scratch workspace.
+  if (isUsableDir(preferred)) return preferred as string
   const base = join(app.getPath('userData'), 'session-files')
   mkdirSync(base, { recursive: true })
   return base
@@ -342,7 +355,7 @@ export function registerFileAttachmentHandlers(
 
   // Copy already-picked source paths into a session's uploads dir.
   ipcMain.handle('files:stage-paths', (_e, args: { workingDirectory?: string; sessionId: string; sourcePaths: string[] }): PickAndStageResult => {
-    const usedFallback = !(args.workingDirectory && existsSync(args.workingDirectory))
+    const usedFallback = !isUsableDir(args.workingDirectory)
     const baseDir = ensureBaseDir(args.workingDirectory)
     return { ...stagePaths(baseDir, args.sessionId, args.sourcePaths ?? []), baseDir, usedFallback }
   })
@@ -353,7 +366,7 @@ export function registerFileAttachmentHandlers(
   // workspace — it falls back to the app-managed scratch dir and reports
   // `usedFallback` so the renderer can nudge them to pick a real workspace.
   ipcMain.handle('files:pick-and-stage', async (_e, args: { workingDirectory?: string; sessionId: string }): Promise<PickAndStageResult> => {
-    const usedFallback = !(args.workingDirectory && existsSync(args.workingDirectory))
+    const usedFallback = !isUsableDir(args.workingDirectory)
     const baseDir = ensureBaseDir(args.workingDirectory)
     const win = BrowserWindow.getFocusedWindow()
     const dialogOpts = {
