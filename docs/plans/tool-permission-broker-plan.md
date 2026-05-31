@@ -206,6 +206,34 @@ call during review.
 
 ---
 
+## 8b. Refinement discovered during implementation — Copilot hook safety
+
+The plan's §6 recommended merging the `permissionRequest` hook into the user's
+global `~/.copilot/settings.json`. That hook then runs for the user's **own**
+terminal `copilot` sessions too — and if it pointed at a dead broker it would
+break/deny normal usage. Fix baked into `copilot-hook.mjs`: the hook is a
+**no-op pass-through (allow)** whenever the broker env (`BROKER_URL/TOKEN/SESSION`)
+is absent. Only ClearPath-spawned sessions carry that env, so the global hook
+gates ClearPath sessions and is inert everywhere else. Teardown still removes the
+hook entry on disable/quit (merge-don't-clobber, ClearMemory precedent).
+
+## Progress (branch `feat/tool-permission-broker`)
+
+- [x] Plan doc
+- [x] Shared types (`src/shared/permissions/types.ts`)
+- [x] `permissionProfile.ts` — policy→profile + tool classification + matchers (27 tests)
+- [x] `grantsStore.ts` — persisted always-allow/deny (8 tests)
+- [x] `PermissionBroker.ts` — loopback HTTP, decideStatic, prompt/respond/timeout, audit (13 tests)
+- [x] Bundled clients: `resources/permission/claude-mcp-server.mjs`, `copilot-hook.mjs`
+- [ ] `cliIntegration.ts` — resource path resolve (dev/packaged) + Claude mcpConfig merge builder + Copilot settings.json merge/teardown (+ tests)
+- [ ] CLIManager lifecycle: start broker, mint token/session, inject `BROKER_*` env into spawn, set Claude `mcpConfig`(merged)+`permissionPromptTool`, ensure Copilot hook registered; `releaseSession` on stop/delete; `setAuditCallback` → `tool-approval`
+- [ ] `permissionHandlers.ts` IPC: `permission:respond`, `permission:list-pending`
+- [ ] index.ts wiring: construct broker with `getActivePolicy` (read `clear-path-policy`), `getWebContents`, audit, grants (electron-store backend), `getSessionMeta` (from CLIManager)
+- [ ] Renderer: rewrite `PermissionRequestHandler.tsx` + `PermissionCard.tsx` to the new request shape + `permission:respond` (Allow / Deny / Always-session / Always-workspace); drop the dead `cli:send-input 'y'/'n'` path
+- [ ] `package.json` `build.extraResources` for `resources/permission/**`
+- [ ] e2e (`permission:respond` round-trip like `file-attachments.pw.spec.ts`)
+- [ ] Set Standard policy's `requiredPermissionMode` to `default` (so edits route through the broker — plan §8 #6)
+
 ## 9. Out of scope (this plan)
 - Full ACP session mode for Copilot (Phase 4 candidate only).
 - Stream-json control protocol for Claude (undocumented).
