@@ -31,4 +31,17 @@ describe('isUsageSummary', () => {
     expect(isUsageSummary('TypeError: cannot read property of undefined')).toBe(false)
     expect(isUsageSummary('')).toBe(false)
   })
+
+  // Finding A (PR #62): patterns must be line-anchored so mid-sentence mentions
+  // of premium/changes/tokens in a real error aren't misclassified as usage.
+  it('does NOT swallow errors that mention premium/changes/tokens mid-line', () => {
+    expect(isUsageSummary('Error: 5 premium requests failed')).toBe(false)
+    expect(isUsageSummary('changes detected in 3 files')).toBe(false)
+    expect(isUsageSummary('the build introduced code changes that broke CI')).toBe(false)
+    expect(isUsageSummary('Error: token ↑ limit exceeded in request')).toBe(false)
+  })
+
+  it('matches a Tokens line that is not the first line of a multi-line chunk', () => {
+    expect(isUsageSummary('Changes +0 -0\nRequests 0 Premium (18s)\nTokens ↑ 55.4k (30.5k cached)')).toBe(true)
+  })
 })

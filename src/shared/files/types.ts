@@ -63,9 +63,11 @@ export interface PickAndStageResult {
   errors: string[]
   /**
    * The directory files were actually staged under (`<baseDir>/.clear-path/uploads/…`).
-   * Resolved server-side via `ensureBaseDir`, so it's always concrete even when the
-   * caller passed no workspace. The renderer reuses it for the matching
-   * `files:get-bundle-for-prompt` call so staging and framing never disagree.
+   * Populated only by the IPC handlers that resolve it via `ensureBaseDir`
+   * (`files:stage-paths`, `files:pick-and-stage`) — the lower-level `stagePaths()`
+   * core omits it. When present it's concrete even if the caller passed no
+   * workspace; the renderer reuses it for the matching `files:get-bundle-for-prompt`
+   * call so staging and framing never disagree.
    */
   baseDir?: string
   /**
