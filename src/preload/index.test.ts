@@ -63,6 +63,14 @@ describe('preload IPC security boundary', () => {
       expect(result).toEqual({ ok: true })
     })
 
+    it('allows the permission-broker channels (regression: the modal must reach the broker)', async () => {
+      vi.mocked(ipcRenderer.invoke).mockResolvedValue({ ok: true })
+      await api.invoke('permission:respond', { requestId: 'r1', decision: 'allow' })
+      expect(ipcRenderer.invoke).toHaveBeenCalledWith('permission:respond', { requestId: 'r1', decision: 'allow' })
+      await api.invoke('permission:list-pending')
+      expect(ipcRenderer.invoke).toHaveBeenCalledWith('permission:list-pending')
+    })
+
     it('passes arguments through to ipcRenderer.invoke', async () => {
       vi.mocked(ipcRenderer.invoke).mockResolvedValue(undefined)
 

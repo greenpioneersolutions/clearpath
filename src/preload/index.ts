@@ -64,6 +64,9 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   'files:list-attachments', 'files:remove', 'files:get-bundle-for-prompt', 'files:open-folder',
   'files:cleanup-session', 'files:sweep-orphans',
 
+  // Per-tool permission broker
+  'permission:respond', 'permission:list-pending',
+
   // Git
   'git:status', 'git:log', 'git:diff', 'git:file-diff', 'git:revert-file',
   'git:worktrees', 'git:create-worktree', 'git:remove-worktree', 'git:branch-protection',
