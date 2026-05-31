@@ -210,7 +210,9 @@ export class CopilotAdapter implements ICLIAdapter {
     const proc = spawn(this.binaryPath, args, {
       cwd: options.workingDirectory,
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: getScopedSpawnEnv('copilot'),
+      // brokerEnv carries BROKER_* so the permissionRequest hook child can reach
+      // the PermissionBroker (the hook inherits this process's env).
+      env: { ...getScopedSpawnEnv('copilot'), ...(options.brokerEnv ?? {}) },
     })
 
     // Copilot's --prompt takes the text as a CLI argument (not stdin), so

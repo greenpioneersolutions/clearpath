@@ -12,6 +12,18 @@ import type { PricingService } from '../pricing/PricingService'
 import type { BackendId } from '../../shared/backends'
 import { isBackendId, migrateLegacyBackendId, providerOf } from '../../shared/backends'
 import { isUsageSummary } from './outputClassification'
+import {
+  buildClaudeMcpConfig,
+  resolvePermissionResource,
+  CLAUDE_PERMISSION_TOOL,
+} from '../permissions/cliIntegration'
+
+/** The slice of PermissionBroker that CLIManager needs (avoids a hard import cycle). */
+export interface PermissionBrokerLike {
+  url(): string
+  tokenForSession(sessionId: string): string
+  releaseSession(sessionId: string): void
+}
 import type { PromptSlices } from '../../shared/tokenization/types'
 import { tokenCounter } from '../tokenization/TokenCounter'
 import { buildPipeline, runPipeline, type MiddlewareContext, type Middleware } from './middleware'
@@ -148,6 +160,7 @@ export class CLIManager {
   private onCostRecord: CostRecordCallback | null = null
   private onAudit: AuditCallback | null = null
   private onExtensionEvent: ((event: string, data: unknown) => Promise<void>) | null = null
+  private permissionBroker: PermissionBrokerLike | null = null
   /**
    * Token Coach Phase 3 — cache policy used by direct-API adapters (today:
    * LocalModelAdapter when pointed at Anthropic). Defaults to the safe
@@ -315,6 +328,7 @@ export class CLIManager {
     sessionStore.set('sessions', sessions)
     // Also remove from in-memory map if present
     this.sessions.delete(sessionId)
+    this.permissionBroker?.releaseSession(sessionId)
   }
 
   /** Delete multiple sessions at once */
@@ -322,7 +336,7 @@ export class CLIManager {
     const idSet = new Set(sessionIds)
     const sessions = sessionStore.get('sessions').filter((s) => !idSet.has(s.sessionId))
     sessionStore.set('sessions', sessions)
-    for (const id of sessionIds) this.sessions.delete(id)
+    for (const id of sessionIds) { this.sessions.delete(id); this.permissionBroker?.releaseSession(id) }
   }
 
   /** Toggle archive flag on a session */
@@ -457,6 +471,15 @@ export class CLIManager {
   /** Register a callback for audit logging. */
   setAuditCallback(cb: AuditCallback): void {
     this.onAudit = cb
+  }
+
+  /**
+   * Inject the PermissionBroker so each spawned turn routes the agent's tool
+   * calls through the policy-driven per-tool gate. Without it, sessions run with
+   * the CLI's own (headless) permission behaviour — i.e. the feature is off.
+   */
+  setPermissionBroker(broker: PermissionBrokerLike): void {
+    this.permissionBroker = broker
   }
 
   /** Register a callback for broadcasting extension lifecycle events. */
@@ -865,6 +888,9 @@ export class CLIManager {
     session.info.status = 'stopped'
     session.processingTurn = false
 
+    // Drop the broker token + any pending prompts for this session.
+    this.permissionBroker?.releaseSession(sessionId)
+
     // Audit: session stopped
     this.auditSession(sessionId, 'stopped', session.info.cli, { turnCount: session.turnCount })
 
@@ -884,6 +910,17 @@ export class CLIManager {
 
   getSession(sessionId: string): SessionInfo | undefined {
     return this.sessions.get(sessionId)?.info
+  }
+
+  /** Lightweight session metadata for the PermissionBroker (name / cli / cwd). */
+  getSessionMeta(sessionId: string): { name?: string; cli?: string; workspaceDir?: string } {
+    const s = this.sessions.get(sessionId)
+    if (!s) return {}
+    return {
+      name: s.info.name,
+      cli: providerOf(s.info.cli),
+      workspaceDir: s.originalOptions.workingDirectory,
+    }
   }
 
   getSessionMessageLog(sessionId: string): Array<{ type: string; content: string; metadata?: unknown }> {
@@ -1063,6 +1100,29 @@ export class CLIManager {
       // is undefined and the original session model wins, preserving today's
       // behavior byte-for-byte for flag-off users.
       ...(routedModelForSpawn ? { model: routedModelForSpawn } : {}),
+    }
+
+    // Route this turn's tool calls through the PermissionBroker (policy-driven
+    // per-tool gate). Claude: add the bundled permission MCP server (carrying the
+    // broker env) + --permission-prompt-tool. Copilot: pass the broker env into
+    // the spawn so the (globally-registered) permissionRequest hook child can
+    // reach the broker. Caller-supplied permissionPromptTool always wins.
+    if (this.permissionBroker) {
+      const env = {
+        BROKER_URL: this.permissionBroker.url(),
+        BROKER_TOKEN: this.permissionBroker.tokenForSession(sessionId),
+        BROKER_SESSION: sessionId,
+      }
+      if (providerOf(session.info.cli) === 'claude') {
+        turnOptions.mcpConfig = buildClaudeMcpConfig(
+          turnOptions.mcpConfig,
+          resolvePermissionResource('claude-mcp-server.mjs'),
+          env,
+        )
+        turnOptions.permissionPromptTool = turnOptions.permissionPromptTool ?? CLAUDE_PERMISSION_TOOL
+      } else {
+        turnOptions.brokerEnv = { ...turnOptions.brokerEnv, ...env }
+      }
     }
 
     // Log turn start — do NOT log prompt content or full args in production

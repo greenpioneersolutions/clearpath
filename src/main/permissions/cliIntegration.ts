@@ -116,7 +116,8 @@ export function removeCopilotHook(path = copilotSettingsPath()): void {
   const list = settings.hooks?.permissionRequest
   if (!Array.isArray(list)) return
   const others = list.filter((h) => h?.['name'] !== HOOK_MARKER)
-  const hooks = { ...settings.hooks, permissionRequest: others }
-  if (others.length === 0) delete hooks.permissionRequest
+  const hooks: Record<string, unknown> = { ...settings.hooks }
+  if (others.length === 0) delete hooks['permissionRequest']
+  else hooks['permissionRequest'] = others
   writeCopilotSettings(path, { ...settings, hooks })
 }
