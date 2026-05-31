@@ -11,6 +11,7 @@ import { estimateCost, DEFAULT_PRICING_TABLE } from '../../shared/pricing'
 import type { PricingService } from '../pricing/PricingService'
 import type { BackendId } from '../../shared/backends'
 import { isBackendId, migrateLegacyBackendId, providerOf } from '../../shared/backends'
+import { isUsageSummary } from './outputClassification'
 import type { PromptSlices } from '../../shared/tokenization/types'
 import { tokenCounter } from '../tokenization/TokenCounter'
 import { buildPipeline, runPipeline, type MiddlewareContext, type Middleware } from './middleware'
@@ -1390,9 +1391,12 @@ export class CLIManager {
       const trimmed = raw.trim()
       if (!trimmed) return
 
-      // Detect usage/stats output and send as usage event instead of error
-      const isUsageStats = /total usage est|premium request|api time spent|session time|code changes|breakdown by ai model/i.test(trimmed)
-      if (isUsageStats) {
+      // Detect usage/stats output and send as a usage event instead of an error.
+      // Copilot CLI prints an end-of-turn summary to stderr ("Changes +0 -0",
+      // "Requests 0 Premium (18s)", "Tokens ↑ 55.4k (30.5k cached) • ↓ 1.8k …")
+      // that the old check missed, so it rendered as a red error block. See
+      // isUsageSummary for the full pattern set.
+      if (isUsageSummary(trimmed)) {
         wc.send('cli:usage', { sessionId, usage: trimmed })
         return
       }
