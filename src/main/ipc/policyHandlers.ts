@@ -99,6 +99,15 @@ function getActiveRules(): { rules: PolicyRules; presetName: string } {
   return { rules: preset.rules, presetName: preset.name }
 }
 
+/**
+ * The active policy, in the shape the PermissionBroker / `permissionProfileForPolicy`
+ * consume. Exported so the broker can read it without an IPC round-trip.
+ */
+export function getActivePolicy(): { activePresetId: string; presetName: string; rules: PolicyRules } {
+  const { rules, presetName } = getActiveRules()
+  return { activePresetId: store.get('activePresetId'), presetName, rules }
+}
+
 export function registerPolicyHandlers(ipcMain: IpcMain, notificationManager?: NotificationManager): void {
   ipcMain.handle('policy:get-active', () => {
     const { rules, presetName } = getActiveRules()

@@ -22,12 +22,16 @@ export interface BrokerEnv {
   BROKER_SESSION: string
 }
 
-/** Absolute path to a bundled permission client script (dev or packaged). */
+/**
+ * Absolute path to a bundled permission client script (dev or packaged).
+ * `resources/**` is shipped via electron-builder `files` + `asarUnpack`, so when
+ * packaged the scripts live under `app.asar.unpacked/resources/permission/`
+ * (they must be on real disk — Claude/Copilot spawn `node <script>`).
+ */
 export function resolvePermissionResource(name: 'claude-mcp-server.mjs' | 'copilot-hook.mjs'): string {
-  const base = app.isPackaged
-    ? join(process.resourcesPath, 'permission')
-    : join(app.getAppPath(), 'resources', 'permission')
-  return join(base, name)
+  const appPath = app.getAppPath()
+  const base = app.isPackaged ? appPath.replace(/app\.asar$/, 'app.asar.unpacked') : appPath
+  return join(base, 'resources', 'permission', name)
 }
 
 /**
