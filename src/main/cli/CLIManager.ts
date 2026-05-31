@@ -827,6 +827,20 @@ export class CLIManager {
   }
 
   /**
+   * Update the working directory used for future turns of a session.
+   * Used when file-attachment staging resolves a different concrete baseDir
+   * (notably scratch fallback) so staged relPaths and subsequent CLI spawns
+   * stay in the same cwd.
+   */
+  updateSessionWorkingDirectory(sessionId: string, workingDirectory: string): void {
+    const session = this.sessions.get(sessionId)
+    if (!session) return
+    if (!workingDirectory || typeof workingDirectory !== 'string') return
+    session.originalOptions = { ...session.originalOptions, workingDirectory }
+    this.persistSession(sessionId, session)
+  }
+
+  /**
    * Reset a session's conversation: clear the renderer-visible log, drop the
    * `--continue` chain so the next spawn starts a fresh underlying CLI
    * session, and SIGTERM any in-flight child process. Used to implement

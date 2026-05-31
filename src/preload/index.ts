@@ -22,7 +22,7 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   'cli:list-sessions', 'cli:get-session', 'cli:get-message-log',
   'cli:get-persisted-sessions', 'cli:delete-session', 'cli:delete-sessions',
   'cli:archive-session', 'cli:archive-sessions', 'cli:rename-session', 'cli:search-sessions',
-  'session:update-model', 'session:reset',
+  'session:update-model', 'session:update-working-directory', 'session:reset',
 
   // Agents
   'agent:list', 'agent:create', 'agent:read-file', 'agent:write-file', 'agent:delete',

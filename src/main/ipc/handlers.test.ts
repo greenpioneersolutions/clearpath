@@ -85,6 +85,7 @@ function makeMockCLIManager() {
     archivePersistedSessions: vi.fn(),
     renamePersistedSession: vi.fn(),
     searchSessions: vi.fn().mockReturnValue([]),
+    updateSessionWorkingDirectory: vi.fn(),
   }
 }
 
@@ -141,6 +142,7 @@ describe('handlers (registerIpcHandlers)', () => {
       'cli:rename-session',
       'cli:search-sessions',
       'session:update-model',
+      'session:update-working-directory',
       'session:reset',
       'app:get-cwd',
     ]
@@ -148,6 +150,15 @@ describe('handlers (registerIpcHandlers)', () => {
       expect(handlers.has(channel), `missing handler for ${channel}`).toBe(true)
     }
     expect(ipcMainMock.handle).toHaveBeenCalledTimes(expected.length)
+  })
+
+  it('session:update-working-directory delegates to cliManager.updateSessionWorkingDirectory', async () => {
+    await handlers.get('session:update-working-directory')!(mockEvent, {
+      sessionId: 'sess-1',
+      workingDirectory: '/tmp/workspace',
+    })
+
+    expect(cliManager.updateSessionWorkingDirectory).toHaveBeenCalledWith('sess-1', '/tmp/workspace')
   })
 
   // ── cli:check-installed ───────────────────────────────────────────────────

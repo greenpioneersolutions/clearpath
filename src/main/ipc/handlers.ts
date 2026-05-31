@@ -209,6 +209,13 @@ export function registerIpcHandlers(
     }
   )
 
+  ipcMain.handle(
+    'session:update-working-directory',
+    (_event, { sessionId, workingDirectory }: { sessionId: string; workingDirectory: string }) => {
+      cliManager.updateSessionWorkingDirectory(sessionId, workingDirectory)
+    }
+  )
+
   // Reset a session's conversation history and drop the --continue chain so
   // the next message starts a brand-new underlying CLI session. Backs the
   // renderer-side /clear handler.

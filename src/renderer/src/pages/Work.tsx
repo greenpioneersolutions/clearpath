@@ -1022,6 +1022,12 @@ export default function Work(): JSX.Element {
     // Pin the session to the dir staging actually used so the matching
     // `files:get-bundle-for-prompt` call (in handleSend) frames the same root.
     if (res.baseDir) {
+      if (res.baseDir !== knownDir) {
+        await window.electronAPI.invoke('session:update-working-directory', {
+          sessionId: selectedId,
+          workingDirectory: res.baseDir,
+        })
+      }
       setSessions((prev) => {
         const s = prev.get(selectedId); if (!s || s.workingDirectory === res.baseDir) return prev
         const u = new Map(prev); u.set(selectedId, { ...s, workingDirectory: res.baseDir }); return u
