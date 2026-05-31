@@ -6,6 +6,7 @@ import type { ChildProcess } from 'child_process'
 import type { SessionOptions, ParsedOutput } from './types'
 import type { ICLIAdapter } from './types'
 import { resolveInShell, getScopedSpawnEnv } from '../utils/shellEnv'
+import { parseJsonc } from '../utils/jsonc'
 
 // Matches prompts like "Allow copilot to run: `shell(...)` [y/n/a]?" or "[y/n]?"
 const PERMISSION_LINE_RE = /\[y\/n(?:\/a)?\]\s*[?:]*\s*$/i
@@ -27,7 +28,11 @@ export class CopilotAdapter implements ICLIAdapter {
     const configPath = join(homedir(), '.copilot', 'config.json')
     if (existsSync(configPath)) {
       try {
-        const parsed = JSON.parse(require('fs').readFileSync(configPath, 'utf8')) as Record<string, unknown>
+        // config.json is JSONC — Copilot CLI prepends `//` banner comments, so a
+        // plain JSON.parse throws and would drop a signed-in user into the
+        // unauthenticated branch. parseJsonc mirrors AuthManager.checkCopilot so
+        // this session-start gate agrees with the launchpad readiness dot.
+        const parsed = parseJsonc(require('fs').readFileSync(configPath, 'utf8')) as Record<string, unknown>
         // Copilot CLI stores logged-in accounts under `loggedInUsers`
         // (camelCase). Older builds wrote `logged_in_users` — accept both.
         const users = parsed['loggedInUsers'] ?? parsed['logged_in_users']
