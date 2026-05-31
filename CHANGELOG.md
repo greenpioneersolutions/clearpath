@@ -4,6 +4,17 @@ All notable changes to ClearPathAI will be documented in this file.
 
 ## [Unreleased]
 
+## [1.15.0] - 2026-05-31
+
+### Added
+- **Claude Code parity surface** — Brought the Claude backend up to feature parity with Copilot across the app: backend selection, launchpad cards, and onboarding flows now treat Claude as a first-class provider
+- **Session file attachments** (`showFileAttachments`, default OFF) — Activates the previously-disabled "Files (soon)" launchpad chip. Picked files are copied into the workspace at `.clear-path/uploads/<sessionId>/` (gitignored) and handed to the CLI **by path** — the agent reads/edits/runs them with its own file tools (reference-by-path, not content-injection). Because uploads live inside the session `cwd`, both Copilot and Claude reach them with zero adapter changes. New `files:*` IPC surface (`pick`, `stage-paths`, `pick-and-stage`, `list`, `remove`, `get-bundle-for-prompt`, `open-folder`, `cleanup-session`, `sweep-orphans`) with per-file 25MB / per-session 200MB caps, sha256 dedupe, path-security validation, and a frozen `attachedFiles` audit chip (names only — paths/bytes never reach the DOM). Orphan-upload sweep on Work mount; cleanup on session delete
+- **Local Setup / locations** — Onboarding and setup surfaces for configuring local provider locations
+- **Feature-flag + skill-handler updates** — Supporting changes to the feature-flag pipeline and skill handlers for the parity work
+
+### Fixed
+- **Claude auth detection hardening on macOS** — GUI launches (Finder/Dock) hand Electron a stripped `launchd` env without `USER`, and Claude Code's Keychain lookup keys off `USER`, so a missing `USER` made the spawned `claude` session unable to authenticate. `shellEnv.ensureLoginIdentity()` now backfills `USER`/`LOGNAME`/`HOME` into the spawn env. `AuthManager.checkClaude` gained a direct macOS Keychain probe (`security find-generic-password -s "Claude Code-credentials"`) as a fallback, since the token lives in the Keychain rather than `~/.claude/*.json`. The Claude session-start guard now honors the Keychain so a connected-and-working CLI no longer instantly fails with "Claude Code isn't signed in"
+
 ## [1.14.0] - 2026-05-16
 
 ### Added
