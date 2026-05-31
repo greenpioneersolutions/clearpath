@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { resolve } from 'path'
-import { homedir } from 'os'
+import { resolve, join } from 'path'
+import { homedir, tmpdir } from 'os'
 import {
   assertPathWithinRoots,
   getMemoryAllowedRoots,
@@ -96,6 +96,17 @@ describe('pathSecurity', () => {
 
     it('does not flag home directory itself', () => {
       expect(isSensitiveSystemPath(homedir())).toBe(false)
+    })
+
+    it('does not flag the OS temp directory (macOS resolves it under /var)', () => {
+      // os.tmpdir() returns /var/folders/... on a default macOS box; the /var
+      // blanket rule must not block files a user picks from their temp dir.
+      expect(isSensitiveSystemPath(tmpdir())).toBe(false)
+      expect(isSensitiveSystemPath(join(tmpdir(), 'cp-files-src-XXXX', 'report.md'))).toBe(false)
+    })
+
+    it('still flags non-temp /var system paths', () => {
+      expect(isSensitiveSystemPath('/var/log/system.log')).toBe(true)
     })
   })
 })

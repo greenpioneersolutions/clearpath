@@ -92,10 +92,30 @@ export function getImportAllowedRoots(workingDirectory?: string): string[] {
 
 /**
  * Check if a path points to a sensitive system location that should never be written to.
+ *
+ * The OS temp directory is explicitly NOT treated as sensitive even though it
+ * lives under `/var` on macOS (`os.tmpdir()` returns `/var/folders/...`, a symlink
+ * to `/private/var/folders/...`). Temp is a legitimately user-writable location
+ * (and is an allowed root in `getImportAllowedRoots`), so files a user picks from
+ * there — e.g. a download or an export — must not be rejected by the `/var` rule.
  */
 export function isSensitiveSystemPath(filePath: string): boolean {
   const resolved = resolve(filePath)
   const home = homedir()
+
+  // Exempt the OS temp dir up front, in both its raw and symlink-resolved forms,
+  // so the `/var` blanket below never blocks legitimately-writable temp paths.
+  const tmpRoots = new Set<string>()
+  const tmp = resolve(tmpdir())
+  tmpRoots.add(tmp)
+  try {
+    tmpRoots.add(realpathSync(tmp))
+  } catch {
+    /* temp dir should always exist, but never throw from a predicate */
+  }
+  for (const tmpRoot of tmpRoots) {
+    if (resolved === tmpRoot || resolved.startsWith(tmpRoot + sep)) return false
+  }
 
   const sensitivePatterns = [
     resolve(home, '.ssh'),
