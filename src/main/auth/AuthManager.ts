@@ -89,6 +89,16 @@ export class AuthManager {
   // ── Public API ─────────────────────────────────────────────────────────────
 
   async getStatus(forceRefresh = false): Promise<AuthState> {
+    // Under the Playwright e2e harness (CLEARPATH_E2E=1) no CLI binary is
+    // installed on the runner, so report Copilot as connected. This keeps the
+    // renderer's auth-gated surfaces (e.g. the launchpad quick-start textarea,
+    // which otherwise shows a "Connect a CLI" CTA) usable, and matches the
+    // CLIManager start-session bypass that lets specs seed real sessions.
+    if (process.env['CLEARPATH_E2E'] === '1') {
+      const ready: AuthStatus = { installed: true, authenticated: true, checkedAt: Date.now() }
+      return { copilot: buildProviderState(ready, { ...EMPTY_STATUS }), claude: buildProviderState({ ...EMPTY_STATUS }, { ...EMPTY_STATUS }) }
+    }
+
     const cache = this.migrateCache(this.store.get('authCache'))
     const now = Date.now()
 
