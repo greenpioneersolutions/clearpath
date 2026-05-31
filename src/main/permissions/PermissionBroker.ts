@@ -17,9 +17,11 @@ import {
   toolMatchesBlocked,
   isFileBlocked,
   extractCommand,
+  activityKind,
   type ActivePolicy,
 } from './permissionProfile'
 import type { GrantsStore } from './grantsStore'
+import type { SessionActivityEntry } from '../../shared/activity/types'
 import type {
   PermissionDecision,
   PermissionRequest,
@@ -39,6 +41,8 @@ export interface BrokerDeps {
   grants: GrantsStore
   getSessionMeta: (sessionId: string) => SessionMeta
   audit?: (entry: { actionType: 'tool-approval'; summary: string; details: string; sessionId?: string }) => void
+  /** Records every tool call (file read/write, fetch, shell) into the session activity log. */
+  recordActivity?: (entry: Omit<SessionActivityEntry, 'id'>) => void
   /** Decision used when the user never answers the modal. Default 'deny'. */
   timeoutMs?: number
 }
@@ -178,9 +182,17 @@ export class PermissionBroker {
     const policy = await this.deps.getActivePolicy()
     const profile = permissionProfileForPolicy(policy)
 
+    const target = extractCommand(body.input)
+    const record = (decision: PermissionDecision) =>
+      this.deps.recordActivity?.({
+        sessionId, cli, kind: activityKind(toolClass, target), toolName, target,
+        decision, timestamp: Date.now(),
+      })
+
     const stat = decideStatic({ toolName, toolClass, input: body.input, profile })
     if (stat.decision !== 'prompt') {
       this.auditByName(toolName, sessionId, stat.decision, `policy:${policy.presetName}`)
+      record(stat.decision)
       return { decision: stat.decision, reason: stat.reason }
     }
 
@@ -188,11 +200,14 @@ export class PermissionBroker {
     const remembered = this.deps.grants.find(cli, toolClass, sessionId, meta.workspaceDir)
     if (remembered) {
       this.auditByName(toolName, sessionId, remembered, 'grant')
+      record(remembered)
       return { decision: remembered, reason: 'remembered choice' }
     }
 
     // Surface a modal and block until the user answers (or timeout → deny).
-    return this.prompt({ sessionId, cli, toolName, toolClass, input: body.input, meta, policyName: policy.presetName })
+    const outcome = await this.prompt({ sessionId, cli, toolName, toolClass, input: body.input, meta, policyName: policy.presetName })
+    record(outcome.decision)
+    return outcome
   }
 
   private prompt(args: {

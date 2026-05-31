@@ -147,6 +147,15 @@ export function toolMatchesBlocked(toolName: string, input: unknown, blocked: st
   return false
 }
 
+/** Classify a tool call into an activity kind for the session activity log. */
+export function activityKind(toolClass: ToolClass, target?: string): 'read' | 'write' | 'fetch' | 'shell' | 'tool' {
+  if (target && /^https?:\/\//i.test(target)) return 'fetch'
+  if (toolClass === 'read') return 'read'
+  if (toolClass === 'edit') return 'write'
+  if (toolClass === 'shell') return 'shell'
+  return 'tool'
+}
+
 /** Pull a shell command / path-ish string out of a tool input object for matching. */
 export function extractCommand(input: unknown): string | undefined {
   if (!input || typeof input !== 'object') return undefined

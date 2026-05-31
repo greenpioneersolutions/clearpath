@@ -45,6 +45,7 @@ import { registerPermissionHandlers } from './ipc/permissionHandlers'
 import { getActivePolicy } from './ipc/policyHandlers'
 import { ensureCopilotHook, removeCopilotHook, resolvePermissionResource } from './permissions/cliIntegration'
 import type { ToolGrant } from '../shared/permissions/types'
+import { registerActivityHandlers, recordSessionActivity, clearSessionActivity } from './ipc/activityHandlers'
 import { registerNotificationHandlers } from './ipc/notificationHandlers'
 import { NotificationManager } from './notifications/NotificationManager'
 import { registerSchedulerHandlers } from './ipc/schedulerHandlers'
@@ -157,6 +158,7 @@ const permissionBroker = new PermissionBroker({
   }),
   getSessionMeta: (id) => cliManager.getSessionMeta(id),
   audit: (entry) => appendAuditEntry(entry),
+  recordActivity: (entry) => recordSessionActivity(entry),
 })
 cliManager.setPermissionBroker(permissionBroker)
 void permissionBroker.start().catch((e) => log.warn('[permissions] broker start failed:', e))
@@ -195,6 +197,7 @@ registerPolicyHandlers(ipcMain, notificationManager)
 registerWorkspaceHandlers(ipcMain)
 registerComplianceHandlers(ipcMain, notificationManager)
 registerPermissionHandlers(ipcMain, permissionBroker)
+registerActivityHandlers(ipcMain)
 registerNotificationHandlers(ipcMain, notificationManager)
 registerSchedulerHandlers(ipcMain, schedulerService)
 registerKnowledgeBaseHandlers(ipcMain, cliManager)

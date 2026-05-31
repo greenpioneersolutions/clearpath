@@ -2,6 +2,7 @@ import type { IpcMain } from 'electron'
 import type { SessionOptions } from '../cli/types'
 import type { CLIManager } from '../cli/CLIManager'
 import { cleanupSessionUploads } from './fileAttachmentHandlers'
+import { clearSessionActivity } from './activityHandlers'
 import type { AgentManager } from '../agents/AgentManager'
 import { checkRateLimit } from '../utils/rateLimiter'
 import { STARTER_AGENTS } from '../starter-pack/agents'
@@ -249,6 +250,7 @@ export function registerIpcHandlers(
   ipcMain.handle('cli:delete-session', (_event, { sessionId }: { sessionId: string }) => {
     const wd = cliManager.getPersistedSessions().find((s) => s.sessionId === sessionId)?.workingDirectory
     if (wd) cleanupSessionUploads(wd, sessionId)
+    clearSessionActivity(sessionId)
     return cliManager.deletePersistedSession(sessionId)
   })
 
@@ -257,6 +259,7 @@ export function registerIpcHandlers(
     for (const id of sessionIds) {
       const wd = sessions.find((s) => s.sessionId === id)?.workingDirectory
       if (wd) cleanupSessionUploads(wd, id)
+      clearSessionActivity(id)
     }
     return cliManager.deletePersistedSessions(sessionIds)
   })

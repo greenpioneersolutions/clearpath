@@ -67,6 +67,9 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   // Per-tool permission broker
   'permission:respond', 'permission:list-pending',
 
+  // Session activity log (files read/written, URLs fetched, commands run)
+  'activity:get-session', 'activity:clear-session', 'activity:open-file', 'activity:reveal-file', 'activity:open-url',
+
   // Git
   'git:status', 'git:log', 'git:diff', 'git:file-diff', 'git:revert-file',
   'git:worktrees', 'git:create-worktree', 'git:remove-worktree', 'git:branch-protection',
