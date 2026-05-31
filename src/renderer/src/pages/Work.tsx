@@ -1023,10 +1023,15 @@ export default function Work(): JSX.Element {
     // `files:get-bundle-for-prompt` call (in handleSend) frames the same root.
     if (res.baseDir) {
       if (res.baseDir !== knownDir) {
-        await window.electronAPI.invoke('session:update-working-directory', {
-          sessionId: selectedId,
-          workingDirectory: res.baseDir,
-        })
+        try {
+          await window.electronAPI.invoke('session:update-working-directory', {
+            sessionId: selectedId,
+            workingDirectory: res.baseDir,
+          })
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : String(error)
+          appendStatus(selectedId, `Couldn't update session directory: ${msg}`)
+        }
       }
       setSessions((prev) => {
         const s = prev.get(selectedId); if (!s || s.workingDirectory === res.baseDir) return prev
