@@ -31,10 +31,11 @@ const ALLOW_ALL: Record<ToolClass, ToolBehavior> = {
 const PROMPT_ALL: Record<ToolClass, ToolBehavior> = {
   read: 'prompt', edit: 'prompt', shell: 'prompt', mcp: 'prompt', other: 'prompt',
 }
-// Standard: reads are safe and frequent (incl. reading attached files) → allow;
-// anything that can change state or reach out → prompt.
+// Standard: reads + low-risk meta tools (report_intent, todo, thinking, search…
+// → 'other') are allowed so the chat stays smooth; only tools that change state
+// or reach out (edit / shell / mcp) prompt.
 const STANDARD: Record<ToolClass, ToolBehavior> = {
-  read: 'allow', edit: 'prompt', shell: 'prompt', mcp: 'prompt', other: 'prompt',
+  read: 'allow', edit: 'prompt', shell: 'prompt', mcp: 'prompt', other: 'allow',
 }
 
 /**
