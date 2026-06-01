@@ -160,8 +160,13 @@ const permissionBroker = new PermissionBroker({
   audit: (entry) => appendAuditEntry(entry),
   recordActivity: (entry) => recordSessionActivity(entry),
 })
-cliManager.setPermissionBroker(permissionBroker)
-void permissionBroker.start().catch((e) => log.warn('[permissions] broker start failed:', e))
+// Wire the broker into CLIManager only AFTER it's listening — otherwise a very
+// early session could read `url()` as 127.0.0.1:0 and the CLI clients would fail
+// to reach it (auto-denying tools). start() resolves within ms of boot, long
+// before any user-initiated session.
+void permissionBroker.start()
+  .then(() => cliManager.setPermissionBroker(permissionBroker))
+  .catch((e) => log.warn('[permissions] broker start failed:', e))
 // Register the global Copilot permissionRequest hook. It's env-gated (no-op for
 // the user's own terminal copilot) — see copilot-hook.mjs.
 try { ensureCopilotHook(resolvePermissionResource('copilot-hook.mjs')) }

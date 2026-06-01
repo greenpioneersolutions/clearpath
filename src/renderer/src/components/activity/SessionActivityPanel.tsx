@@ -20,13 +20,15 @@ export default function SessionActivityPanel({
 
   useEffect(() => { if (open) refresh() }, [open, refresh])
 
-  // Refetch when a turn ends (new activity likely arrived).
+  // Refetch when a turn ends (new activity likely arrived) — only while the
+  // drawer is open, so a hidden/closed panel registers no background listener.
   useEffect(() => {
+    if (!open) return
     const off = window.electronAPI.on('cli:turn-end', (d: { sessionId?: string }) => {
       if (d?.sessionId === sessionId) refresh()
     })
     return off
-  }, [sessionId, refresh])
+  }, [open, sessionId, refresh])
 
   const groups = useMemo(() => groupActivity(items), [items])
   // The prompts the user actually answered (or that timed out) — the auditable

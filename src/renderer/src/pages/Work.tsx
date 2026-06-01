@@ -1053,9 +1053,12 @@ export default function Work(): JSX.Element {
             .map((a) => ({ id: a.id, name: a.name, relPath: a.relPath })),
         ],
       }))
-      // Files attached, but into the scratch dir — nudge toward a real workspace.
-      setShowWorkspaceNudge(Boolean(res.usedFallback))
     }
+    // Refresh the nudge for EVERY non-canceled attach: show it only when files
+    // were actually staged into the scratch fallback. A later attach that stages
+    // nothing (all errors) or that resolves to a real workspace clears a stale
+    // nudge left over from a prior fallback attach.
+    setShowWorkspaceNudge(Boolean(res.usedFallback) && res.attachments.length > 0)
     if (res.errors?.length) appendStatus(selectedId, `Couldn't attach: ${res.errors.join('; ')}`)
   }, [selectedId, resolveWorkingDirectory, appendStatus])
 

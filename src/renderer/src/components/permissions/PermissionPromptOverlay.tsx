@@ -5,7 +5,7 @@ import type { PermissionRequest, PermissionDecision, GrantScope } from '../../..
  * App-wide modal that surfaces PermissionBroker tool-approval prompts wherever
  * the user is. ClearPath runs each turn headless, so the agent's write/shell/MCP
  * tool calls (anything the active policy gates) pause here until the user
- * answers — Allow once / Always this session / Deny / Always deny — which is sent
+ * answers — Allow once / Always this session / Deny / Always deny (session) — sent
  * back via `permission:respond`. Read-only tools are auto-allowed by the broker
  * and never reach this modal.
  *
@@ -112,7 +112,7 @@ export default function PermissionPromptOverlay(): JSX.Element | null {
             onClick={() => void respond('deny', 'session')}
             className="px-3 py-2 bg-red-900/40 hover:bg-red-900/60 text-red-200 text-sm font-medium rounded-lg transition-colors"
           >
-            Always deny
+            Always deny (session)
           </button>
         </div>
       </div>

@@ -31,15 +31,20 @@ export default function PermissionRequestHandler(): JSX.Element {
 
   const respond = useCallback(async (req: TrackedRequest, decision: PermissionDecision, remember?: GrantScope) => {
     try {
-      // Only mark the request resolved once the broker accepts the response. If
-      // the IPC throws (broker crash / transient error) the broker is still
-      // waiting, so we leave it pending rather than falsely showing it resolved.
-      await window.electronAPI.invoke('permission:respond', { requestId: req.requestId, decision, remember })
-      setRequests((prev) =>
-        prev.map((r) => (r.requestId === req.requestId ? { ...r, status: decision === 'allow' ? 'approved' : 'denied' } : r)),
-      )
+      const res = await window.electronAPI.invoke('permission:respond', { requestId: req.requestId, decision, remember }) as { ok?: boolean }
+      if (res?.ok) {
+        // Broker accepted our answer — reflect the decision.
+        setRequests((prev) =>
+          prev.map((r) => (r.requestId === req.requestId ? { ...r, status: decision === 'allow' ? 'approved' : 'denied' } : r)),
+        )
+      } else {
+        // ok:false → the broker no longer has this request (it already timed out
+        // or was answered elsewhere). It's stale, so drop it instead of falsely
+        // claiming our decision was applied.
+        setRequests((prev) => prev.filter((r) => r.requestId !== req.requestId))
+      }
     } catch {
-      /* leave pending for retry */
+      /* IPC threw — broker still waiting; leave it pending for retry. */
     }
   }, [])
 
@@ -83,7 +88,7 @@ export default function PermissionRequestHandler(): JSX.Element {
                 <button onClick={() => void respond(req, 'allow')} className="px-3 py-1 bg-green-600 text-white text-xs font-medium rounded-md hover:bg-green-700 transition-colors">Allow once</button>
                 <button onClick={() => void respond(req, 'allow', 'session')} className="px-3 py-1 bg-green-100 text-green-800 text-xs font-medium rounded-md hover:bg-green-200 transition-colors">Always this session</button>
                 <button onClick={() => void respond(req, 'deny')} className="px-3 py-1 bg-red-600 text-white text-xs font-medium rounded-md hover:bg-red-700 transition-colors">Deny</button>
-                <button onClick={() => void respond(req, 'deny', 'session')} className="px-3 py-1 bg-red-100 text-red-800 text-xs font-medium rounded-md hover:bg-red-200 transition-colors">Always deny</button>
+                <button onClick={() => void respond(req, 'deny', 'session')} className="px-3 py-1 bg-red-100 text-red-800 text-xs font-medium rounded-md hover:bg-red-200 transition-colors">Always deny (session)</button>
               </div>
             </div>
           ))}

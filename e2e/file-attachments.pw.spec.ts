@@ -80,6 +80,14 @@ test.describe('ClearPathAI — Session file attachments (IPC)', () => {
     expect(res.errors.join(' ')).not.toContain('workspace folder')
     expect(res.usedFallback).toBe(true)
     expect(res.baseDir).toBeTruthy()
+
+    // Clean up the scratch-dir uploads this test staged (the handler returned the
+    // resolved baseDir) so the app-managed scratch workspace doesn't accumulate
+    // across runs and reruns stay deterministic.
+    await invokeIPC(page, 'files:cleanup-session', {
+      workingDirectory: res.baseDir,
+      sessionId: 'e2e-files-no-ws',
+    })
   })
 
   test('cleans up its staged uploads', async ({ page }) => {

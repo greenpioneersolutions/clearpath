@@ -3,7 +3,7 @@
 // them at the broker:
 //   • Claude — adds a `clearpath_permission` MCP server (carrying the broker env)
 //     to --mcp-config, and uses --permission-prompt-tool.
-//   • Copilot — registers a `permissionRequest` hook in the user's ~/.copilot/
+//   • Copilot — registers a `preToolUse` hook in the user's ~/.copilot/
 //     settings.json (merge-don't-clobber). The broker env is injected into the
 //     copilot SPAWN env per session, which the hook child inherits; for the
 //     user's own terminal copilot (no broker env) the hook is a no-op allow.
