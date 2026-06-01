@@ -37,8 +37,18 @@ export default function PermissionPromptOverlay(): JSX.Element | null {
 
   const respond = useCallback(async (decision: PermissionDecision, remember?: GrantScope) => {
     if (!current) return
-    setQueue((prev) => prev.filter((r) => r.requestId !== current.requestId))
-    await window.electronAPI.invoke('permission:respond', { requestId: current.requestId, decision, remember })
+    const req = current
+    try {
+      // Dequeue only after the broker accepts the response. A resolved promise —
+      // including `{ ok: false }` (the broker already timed out / answered
+      // elsewhere, so it's stale) — means we can drop it. A THROWN invoke (broker
+      // crash / transient IPC error) leaves the broker still waiting, so we keep
+      // the item queued and let the user retry instead of silently losing it.
+      await window.electronAPI.invoke('permission:respond', { requestId: req.requestId, decision, remember })
+      setQueue((prev) => prev.filter((r) => r.requestId !== req.requestId))
+    } catch {
+      /* keep it queued for retry */
+    }
   }, [current])
 
   if (!current) return null

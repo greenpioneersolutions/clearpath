@@ -20,7 +20,11 @@ const policy = (id: string, rules: ActivePolicy['rules'] = {}): ActivePolicy => 
 describe('permissionProfileForPolicy', () => {
   it('unrestricted allows every class', () => {
     const p = permissionProfileForPolicy(policy('policy-unrestricted'))
-    expect(p.byClass).toEqual({ read: 'allow', edit: 'allow', shell: 'allow', mcp: 'allow', other: 'allow' })
+    expect(p.byClass).toEqual({ read: 'allow', edit: 'allow', shell: 'allow', fetch: 'allow', mcp: 'allow', other: 'allow' })
+  })
+
+  it('standard prompts for network (fetch) — not auto-allowed', () => {
+    expect(permissionProfileForPolicy(policy('policy-standard')).byClass.fetch).toBe('prompt')
   })
 
   it('cautious prompts for every class (incl. reads)', () => {
@@ -106,6 +110,13 @@ describe('fileMatchesPattern / isFileBlocked', () => {
     expect(isFileBlocked('/x/db_credentials.json', DEFAULT_BLOCKED_FILE_PATTERNS)).toBe(true)
     expect(isFileBlocked('/x/readme.md', DEFAULT_BLOCKED_FILE_PATTERNS)).toBe(false)
   })
+
+  it('matches a path-segment pattern (config/production.*) inside a full path', () => {
+    // Regression: previously anchored to ^...$ so the default never matched.
+    expect(fileMatchesPattern('/proj/config/production.json', 'config/production.*')).toBe(true)
+    expect(isFileBlocked('/proj/config/production.yml', DEFAULT_BLOCKED_FILE_PATTERNS)).toBe(true)
+    expect(fileMatchesPattern('/proj/config/staging.json', 'config/production.*')).toBe(false)
+  })
 })
 
 describe('toolMatchesBlocked', () => {
@@ -158,6 +169,15 @@ describe('classifyTool — Copilot sub-command tool names', () => {
     expect(classifyTool('insert')).toBe('edit')
     expect(classifyTool('view')).toBe('read')
     expect(classifyTool('report_intent')).toBe('other')
+  })
+
+  it('classifies network tools as fetch (so Standard gates them)', () => {
+    expect(classifyTool('fetch')).toBe('fetch')
+    expect(classifyTool('web_fetch')).toBe('fetch')
+    expect(classifyTool('WebFetch')).toBe('fetch')
+    expect(classifyTool('WebSearch')).toBe('fetch')
+    // and NOT misclassified as a local read
+    expect(classifyTool('fetch')).not.toBe('read')
   })
 })
 

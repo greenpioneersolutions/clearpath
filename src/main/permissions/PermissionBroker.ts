@@ -44,7 +44,10 @@ export interface BrokerDeps {
   audit?: (entry: { actionType: 'tool-approval'; summary: string; details: string; sessionId?: string }) => void
   /** Records every tool call (file read/write, fetch, shell) into the session activity log. */
   recordActivity?: (entry: Omit<SessionActivityEntry, 'id'>) => void
-  /** Decision used when the user never answers the modal. Default 'deny'. */
+  /**
+   * How long (ms) to wait for the user to answer the prompt before auto-denying.
+   * Default 120000. (The decision on timeout is always 'deny'.)
+   */
   timeoutMs?: number
 }
 
@@ -299,8 +302,13 @@ export function redactPreview(input: unknown): string {
     s = cmd ?? safeStringify(input)
   }
   s = s.replace(/\s+/g, ' ').trim()
-  // Redact obvious token/key assignments.
-  s = s.replace(/((?:token|key|secret|password|pwd|authorization|bearer)\s*[=:]\s*)\S+/gi, '$1***')
+  const SECRET = '(?:token|api[_-]?key|key|secret|password|passwd|pwd|authorization|auth|access[_-]?token|client[_-]?secret)'
+  // 1. JSON form:  "token": "abc"  /  'apiKey':'abc'
+  s = s.replace(new RegExp(`(["']${SECRET}["']\\s*:\\s*)["'][^"']+["']`, 'gi'), '$1"***"')
+  // 2. Header form: Authorization: Bearer <token>  /  Bearer abc.def
+  s = s.replace(/\bbearer\s+[A-Za-z0-9._\-]+/gi, 'Bearer ***')
+  // 3. key=val / key: val (env vars, query strings, flags).
+  s = s.replace(new RegExp(`(${SECRET}\\s*[=:]\\s*)\\S+`, 'gi'), '$1***')
   return s.length > 160 ? s.slice(0, 157) + '…' : s
 }
 

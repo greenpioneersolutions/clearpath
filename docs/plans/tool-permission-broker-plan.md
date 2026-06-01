@@ -1,6 +1,8 @@
 # Implementation Plan — Per-Tool Permission Broker (policy-driven)
 
-**Status:** PROPOSED — awaiting approval before implementation.
+**Status:** IMPLEMENTED in this PR (broker + both CLI clients + app-wide prompt
+modal + session activity log are landed and tested). See the Progress checklist
+below for what's done vs. the remaining tail. This doc is kept as the design record.
 **Goal:** Genuine per-tool approve/deny for headless CLI agents, with the default
 behavior derived from the active **Policy** (Slice 16). No blanket auto-approve.
 Fixes the reported bugs: (a) attached files unreadable ("Path does not exist"),

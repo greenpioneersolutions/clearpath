@@ -24,7 +24,10 @@ function out(decision, reason) {
   const payload = { permissionDecision: decision, behavior: decision }
   if (reason && decision === 'deny') { payload.permissionDecisionReason = reason; payload.message = reason }
   process.stdout.write(JSON.stringify(payload))
-  process.exit(0) // exit 0; the decision field carries allow/deny
+  // The JSON field is authoritative, but also signal deny via a non-zero exit
+  // (hook convention: exit 2 = block) so a deny is fail-closed even if the
+  // runner only inspects the exit code. allow → 0.
+  process.exit(decision === 'deny' ? 2 : 0)
 }
 
 async function main() {

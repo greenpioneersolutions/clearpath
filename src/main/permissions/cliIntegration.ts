@@ -98,11 +98,12 @@ function writeCopilotSettings(path: string, data: CopilotSettings): void {
 }
 
 /**
- * Ensure exactly one ClearPath permissionRequest hook is registered in the
- * user's Copilot settings.json. Idempotent; never clobbers other hooks/keys.
- * Returns the settings path written (or null if already present).
+ * Ensure exactly one ClearPath `preToolUse` hook is registered in the user's
+ * Copilot settings.json (migrating any stale `permissionRequest` entry). Always
+ * rewrites the file (idempotent — re-runs converge to the same single entry) and
+ * never clobbers the user's other hooks/keys. Returns the settings path written.
  */
-export function ensureCopilotHook(scriptPath: string, path = copilotSettingsPath()): string | null {
+export function ensureCopilotHook(scriptPath: string, path = copilotSettingsPath()): string {
   const settings = readCopilotSettings(path)
   const hooks: Record<string, unknown> = { ...(settings.hooks ?? {}) }
   // Migration: strip any stale ClearPath entry from a previously-used event

@@ -458,8 +458,21 @@ export default function Work(): JSX.Element {
   }) => {
     // Clear any prior "connect a CLI" banner — we're attempting a fresh start.
     setStartError(null)
+    // Anchor EVERY session to a concrete, writable cwd. Without a workspace the
+    // CLI would otherwise spawn in the Electron process cwd; then a later
+    // mid-session file attach (which stages into the ensureBaseDir scratch dir)
+    // wouldn't line up with where the CLI actually runs. Resolving the base dir
+    // here keeps the renderer's pinned workingDirectory and the main-process
+    // spawn cwd identical for the no-workspace case too.
+    let workingDirectory = opts.workingDirectory
+    if (!workingDirectory) {
+      try {
+        const base = await window.electronAPI.invoke('files:ensure-base-dir', {}) as { dir: string }
+        workingDirectory = base?.dir
+      } catch { /* fall through — main process resolves its own default */ }
+    }
     const startResult = (await window.electronAPI.invoke('cli:start-session', {
-      cli: opts.cli, mode: 'interactive', name: opts.name, workingDirectory: opts.workingDirectory, prompt: opts.initialPrompt, displayPrompt: opts.displayPrompt, agent: opts.agent, model: opts.model, permissionMode: opts.permissionMode, additionalDirs: opts.additionalDirs, attachedNotes: opts.attachedNotes, attachedFiles: opts.attachedFiles, sessionId: opts.sessionId, promptSlices: opts.promptSlices, noAgent: opts.noAgent,
+      cli: opts.cli, mode: 'interactive', name: opts.name, workingDirectory, prompt: opts.initialPrompt, displayPrompt: opts.displayPrompt, agent: opts.agent, model: opts.model, permissionMode: opts.permissionMode, additionalDirs: opts.additionalDirs, attachedNotes: opts.attachedNotes, attachedFiles: opts.attachedFiles, sessionId: opts.sessionId, promptSlices: opts.promptSlices, noAgent: opts.noAgent,
       // Per-session CLI toggle overrides (experimental/verbose/etc.) as explicit
       // typed fields so they beat the stored global defaults in the main-process merge.
       ...(opts.sessionFlags ?? {}),
@@ -499,7 +512,7 @@ export default function Work(): JSX.Element {
       })
     }
 
-    setSessions((prev) => { const u = new Map(prev); u.set(sessionId, { info, messages: initial, mode: 'normal', msgIdCounter: initial.length, processing: !!opts.initialPrompt, usageHistory: [], currentModel: opts.model, workingDirectory: opts.workingDirectory }); return u })
+    setSessions((prev) => { const u = new Map(prev); u.set(sessionId, { info, messages: initial, mode: 'normal', msgIdCounter: initial.length, processing: !!opts.initialPrompt, usageHistory: [], currentModel: opts.model, workingDirectory }); return u })
     setSelectedId(sessionId)
 
     // Pre-populate the context bar with what was selected (or auto-applied)

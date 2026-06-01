@@ -5,7 +5,7 @@
 // no React imports).
 
 /** Coarse category a tool falls into, used to pick a default behaviour. */
-export type ToolClass = 'read' | 'edit' | 'shell' | 'mcp' | 'other'
+export type ToolClass = 'read' | 'edit' | 'shell' | 'fetch' | 'mcp' | 'other'
 
 /** What to do with a tool request before any user interaction. */
 export type ToolBehavior = 'allow' | 'prompt' | 'deny'

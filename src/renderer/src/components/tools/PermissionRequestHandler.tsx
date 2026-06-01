@@ -30,10 +30,17 @@ export default function PermissionRequestHandler(): JSX.Element {
   }, [])
 
   const respond = useCallback(async (req: TrackedRequest, decision: PermissionDecision, remember?: GrantScope) => {
-    setRequests((prev) =>
-      prev.map((r) => (r.requestId === req.requestId ? { ...r, status: decision === 'allow' ? 'approved' : 'denied' } : r)),
-    )
-    await window.electronAPI.invoke('permission:respond', { requestId: req.requestId, decision, remember })
+    try {
+      // Only mark the request resolved once the broker accepts the response. If
+      // the IPC throws (broker crash / transient error) the broker is still
+      // waiting, so we leave it pending rather than falsely showing it resolved.
+      await window.electronAPI.invoke('permission:respond', { requestId: req.requestId, decision, remember })
+      setRequests((prev) =>
+        prev.map((r) => (r.requestId === req.requestId ? { ...r, status: decision === 'allow' ? 'approved' : 'denied' } : r)),
+      )
+    } catch {
+      /* leave pending for retry */
+    }
   }, [])
 
   const clearResolved = () => setRequests((prev) => prev.filter((r) => r.status === 'pending'))

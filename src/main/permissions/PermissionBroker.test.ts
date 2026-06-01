@@ -41,6 +41,17 @@ describe('redactPreview', () => {
     expect(redactPreview('x'.repeat(300)).length).toBeLessThanOrEqual(160)
     expect(redactPreview(null)).toBe('')
   })
+
+  it('redacts JSON-quoted secrets and Bearer headers (no leak to UI/audit)', () => {
+    const json = redactPreview('{"token":"sk-secret-abc","x":1}')
+    expect(json).not.toContain('sk-secret-abc')
+    expect(json).toContain('***')
+    const hdr = redactPreview('Authorization: Bearer eyJhbGci.tok.en')
+    expect(hdr).not.toContain('eyJhbGci.tok.en')
+    expect(hdr).toContain('***')
+    expect(redactPreview('api_key=AKIA12345')).toContain('***')
+    expect(redactPreview('api_key=AKIA12345')).not.toContain('AKIA12345')
+  })
 })
 
 describe('PermissionBroker (HTTP)', () => {

@@ -26,16 +26,16 @@ export const DEFAULT_BLOCKED_FILE_PATTERNS = [
 ]
 
 const ALLOW_ALL: Record<ToolClass, ToolBehavior> = {
-  read: 'allow', edit: 'allow', shell: 'allow', mcp: 'allow', other: 'allow',
+  read: 'allow', edit: 'allow', shell: 'allow', fetch: 'allow', mcp: 'allow', other: 'allow',
 }
 const PROMPT_ALL: Record<ToolClass, ToolBehavior> = {
-  read: 'prompt', edit: 'prompt', shell: 'prompt', mcp: 'prompt', other: 'prompt',
+  read: 'prompt', edit: 'prompt', shell: 'prompt', fetch: 'prompt', mcp: 'prompt', other: 'prompt',
 }
-// Standard: reads + low-risk meta tools (report_intent, todo, thinking, search…
-// → 'other') are allowed so the chat stays smooth; only tools that change state
-// or reach out (edit / shell / mcp) prompt.
+// Standard: reads + low-risk meta tools (report_intent, todo, thinking → 'other')
+// are allowed so the chat stays smooth; anything that changes state or REACHES
+// OUT — edit / shell / fetch (network) / mcp — prompts.
 const STANDARD: Record<ToolClass, ToolBehavior> = {
-  read: 'allow', edit: 'prompt', shell: 'prompt', mcp: 'prompt', other: 'allow',
+  read: 'allow', edit: 'prompt', shell: 'prompt', fetch: 'prompt', mcp: 'prompt', other: 'allow',
 }
 
 /**
@@ -70,8 +70,8 @@ function resolveByClass(policy: ActivePolicy): Record<ToolClass, ToolBehavior> {
     return { ...ALLOW_ALL }
   }
   if (mode === 'plan') {
-    // Read-only working mode: reads allowed, everything mutating denied.
-    return { read: 'allow', edit: 'deny', shell: 'deny', mcp: 'prompt', other: 'prompt' }
+    // Read-only working mode: reads allowed, everything mutating/outbound denied.
+    return { read: 'allow', edit: 'deny', shell: 'deny', fetch: 'deny', mcp: 'prompt', other: 'prompt' }
   }
   // 'default' / 'acceptedits' / null → Standard-like (broker is authoritative;
   // we intentionally do NOT auto-accept edits — they route through the prompt).
@@ -80,8 +80,10 @@ function resolveByClass(policy: ActivePolicy): Record<ToolClass, ToolBehavior> {
 
 // ── Tool classification ───────────────────────────────────────────────────────
 
-const CLAUDE_READ = new Set(['read', 'glob', 'grep', 'ls', 'notebookread', 'webfetch', 'websearch'])
+const CLAUDE_READ = new Set(['read', 'glob', 'grep', 'ls', 'notebookread'])
 const CLAUDE_EDIT = new Set(['edit', 'write', 'multiedit', 'notebookedit', 'applypatch'])
+// Outbound network tools — gated (not treated as local reads) so Standard prompts.
+const NETWORK = new Set(['fetch', 'web_fetch', 'webfetch', 'websearch', 'web_search', 'browse', 'curl', 'http'])
 
 /**
  * Classify a tool request into a coarse class. Handles both Claude tool names
@@ -99,6 +101,8 @@ export function classifyTool(toolName: string): ToolClass {
   // MCP tools: Claude "mcp__server__tool" or Copilot "Server(tool)".
   if (head.startsWith('mcp__')) return 'mcp'
 
+  // Outbound network FIRST so it isn't swallowed by the read check below.
+  if (NETWORK.has(head)) return 'fetch'
   if (head === 'bash' || head === 'shell' || head === 'execute' || head === 'run' || head === 'terminal') return 'shell'
   // Copilot's write-ish tools (it reports the sub-command as the tool name):
   // create / str_replace / insert / edit_file / etc.
@@ -109,8 +113,8 @@ export function classifyTool(toolName: string): ToolClass {
     head === 'update_file' || head === 'save_file' || head === 'delete_file' || head === 'remove'
   ) return 'edit'
   if (
-    CLAUDE_READ.has(head) || head === 'read' || head === 'fetch' || head === 'view' || head === 'search' ||
-    head === 'web_fetch' || head === 'open' || head === 'cat' || head === 'list' || head === 'find'
+    CLAUDE_READ.has(head) || head === 'read' || head === 'view' || head === 'search' ||
+    head === 'open' || head === 'cat' || head === 'list' || head === 'find'
   ) return 'read'
 
   // Copilot "Server(tool)" form that isn't a known built-in head → treat as MCP.
@@ -125,7 +129,11 @@ export function classifyTool(toolName: string): ToolClass {
  * tested against both the full path and its basename.
  */
 export function fileMatchesPattern(path: string, pattern: string): boolean {
-  const re = new RegExp('^' + pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.') + '$', 'i')
+  const body = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.')
+  // Anchor at a path boundary (start OR a slash) so segment patterns like
+  // "config/production.*" match "/proj/config/production.json", while basename
+  // patterns like "*.pem" / ".env*" still match anywhere in the path.
+  const re = new RegExp('(^|[/\\\\])' + body + '$', 'i')
   const base = path.split(/[/\\]/).pop() ?? path
   return re.test(path) || re.test(base)
 }
@@ -171,7 +179,7 @@ export function isNoiseTool(toolName: string): boolean {
 
 /** Classify a tool call into an activity kind for the session activity log. */
 export function activityKind(toolClass: ToolClass, target?: string): 'read' | 'write' | 'fetch' | 'shell' | 'tool' {
-  if (target && /^https?:\/\//i.test(target)) return 'fetch'
+  if (toolClass === 'fetch' || (target && /^https?:\/\//i.test(target))) return 'fetch'
   if (toolClass === 'read') return 'read'
   if (toolClass === 'edit') return 'write'
   if (toolClass === 'shell') return 'shell'
