@@ -6,6 +6,7 @@ import {
   isFileBlocked,
   toolMatchesBlocked,
   extractCommand,
+  isNoiseTool,
   DEFAULT_BLOCKED_FILE_PATTERNS,
   type ActivePolicy,
 } from './permissionProfile'
@@ -157,5 +158,19 @@ describe('classifyTool — Copilot sub-command tool names', () => {
     expect(classifyTool('insert')).toBe('edit')
     expect(classifyTool('view')).toBe('read')
     expect(classifyTool('report_intent')).toBe('other')
+  })
+})
+
+describe('isNoiseTool', () => {
+  it('flags intent/progress narration tools', () => {
+    expect(isNoiseTool('report_intent')).toBe(true)
+    expect(isNoiseTool('report_progress')).toBe(true)
+    expect(isNoiseTool('update_plan')).toBe(true)
+    expect(isNoiseTool('thinking')).toBe(true)
+  })
+  it('does NOT flag real action tools', () => {
+    expect(isNoiseTool('create')).toBe(false)
+    expect(isNoiseTool('view')).toBe(false)
+    expect(isNoiseTool('Bash')).toBe(false)
   })
 })

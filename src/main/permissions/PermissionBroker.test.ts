@@ -50,6 +50,8 @@ describe('PermissionBroker (HTTP)', () => {
   let policy: ActivePolicy
   let grantsData: ToolGrant[]
 
+  let recorded: Array<{ toolName: string; target?: string; kind: string; decision: string }>
+
   function deps(): BrokerDeps {
     const backend: GrantsBackend = { get: () => grantsData, set: (g) => { grantsData = g } }
     return {
@@ -58,12 +60,14 @@ describe('PermissionBroker (HTTP)', () => {
       grants: new GrantsStore(backend),
       getSessionMeta: () => ({ name: 'S', cli: 'claude', workspaceDir: '/p' }),
       audit: vi.fn(),
+      recordActivity: (e) => recorded.push(e as typeof recorded[number]),
       timeoutMs: 200,
     }
   }
 
   beforeEach(async () => {
     emitted = []
+    recorded = []
     policy = standard()
     grantsData = []
     broker = new PermissionBroker(deps())
@@ -116,6 +120,18 @@ describe('PermissionBroker (HTTP)', () => {
     const token = broker.tokenForSession('s1')
     const r = await post({ sessionId: 's1', token, cli: 'claude', toolName: 'Bash', input: { command: 'rm x' } })
     expect(r.decision).toBe('deny')
+  })
+
+  it('records a real tool with its target but skips noise (report_intent)', async () => {
+    const token = broker.tokenForSession('s1')
+    await post({ sessionId: 's1', token, cli: 'copilot', toolName: 'view', input: { path: '/p/README.md' } })
+    await post({ sessionId: 's1', token, cli: 'copilot', toolName: 'report_intent', input: { message: 'reading' } })
+    const targets = recorded.map((r) => r.toolName)
+    expect(targets).toContain('view')
+    expect(targets).not.toContain('report_intent')
+    const view = recorded.find((r) => r.toolName === 'view')
+    expect(view?.target).toBe('/p/README.md')
+    expect(view?.kind).toBe('read')
   })
 
   it('releaseSession drops the token so further calls are unauthorized', async () => {

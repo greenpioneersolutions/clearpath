@@ -18,6 +18,7 @@ import {
   isFileBlocked,
   extractCommand,
   activityKind,
+  isNoiseTool,
   type ActivePolicy,
 } from './permissionProfile'
 import type { GrantsStore } from './grantsStore'
@@ -183,11 +184,14 @@ export class PermissionBroker {
     const profile = permissionProfileForPolicy(policy)
 
     const target = extractCommand(body.input)
-    const record = (decision: PermissionDecision) =>
+    const record = (decision: PermissionDecision) => {
+      // Skip intent/progress narration tools — they're noise in the activity log.
+      if (isNoiseTool(toolName)) return
       this.deps.recordActivity?.({
         sessionId, cli, kind: activityKind(toolClass, target), toolName, target,
         decision, timestamp: Date.now(),
       })
+    }
 
     const stat = decideStatic({ toolName, toolClass, input: body.input, profile })
     if (stat.decision !== 'prompt') {

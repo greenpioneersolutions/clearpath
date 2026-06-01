@@ -158,6 +158,17 @@ export function toolMatchesBlocked(toolName: string, input: unknown, blocked: st
   return false
 }
 
+/**
+ * Noise tools that narrate the agent's intent/progress rather than perform a
+ * real action (Copilot's report_intent / report_progress, plan/think tools).
+ * They still pass through the permission check (auto-allowed), but they clutter
+ * the session activity log, so we don't record them there.
+ */
+export function isNoiseTool(toolName: string): boolean {
+  const h = (toolName ?? '').toLowerCase().split('(')[0].trim()
+  return /^(report_|report$|update_plan$|todo|think|thinking$|reasoning$|notify)/.test(h)
+}
+
 /** Classify a tool call into an activity kind for the session activity log. */
 export function activityKind(toolClass: ToolClass, target?: string): 'read' | 'write' | 'fetch' | 'shell' | 'tool' {
   if (target && /^https?:\/\//i.test(target)) return 'fetch'
