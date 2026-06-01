@@ -184,19 +184,19 @@ export class PermissionBroker {
     const profile = permissionProfileForPolicy(policy)
 
     const target = extractCommand(body.input)
-    const record = (decision: PermissionDecision) => {
+    const record = (decision: PermissionDecision, decidedBy: 'user' | 'grant' | 'policy' | 'timeout') => {
       // Skip intent/progress narration tools — they're noise in the activity log.
       if (isNoiseTool(toolName)) return
       this.deps.recordActivity?.({
         sessionId, cli, kind: activityKind(toolClass, target), toolName, target,
-        decision, timestamp: Date.now(),
+        decision, decidedBy, timestamp: Date.now(),
       })
     }
 
     const stat = decideStatic({ toolName, toolClass, input: body.input, profile })
     if (stat.decision !== 'prompt') {
       this.auditByName(toolName, sessionId, stat.decision, `policy:${policy.presetName}`)
-      record(stat.decision)
+      record(stat.decision, 'policy')
       return { decision: stat.decision, reason: stat.reason }
     }
 
@@ -204,13 +204,13 @@ export class PermissionBroker {
     const remembered = this.deps.grants.find(cli, toolClass, sessionId, meta.workspaceDir)
     if (remembered) {
       this.auditByName(toolName, sessionId, remembered, 'grant')
-      record(remembered)
+      record(remembered, 'grant')
       return { decision: remembered, reason: 'remembered choice' }
     }
 
     // Surface a modal and block until the user answers (or timeout → deny).
     const outcome = await this.prompt({ sessionId, cli, toolName, toolClass, input: body.input, meta, policyName: policy.presetName })
-    record(outcome.decision)
+    record(outcome.decision, /timed out/.test(outcome.reason) ? 'timeout' : 'user')
     return outcome
   }
 

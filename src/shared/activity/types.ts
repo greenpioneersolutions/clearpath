@@ -18,5 +18,13 @@ export interface SessionActivityEntry {
   target?: string
   /** Whether the tool call was allowed or denied. */
   decision: 'allow' | 'deny'
+  /**
+   * How the decision was reached:
+   *  - 'user'    — the user answered the permission prompt (their explicit choice)
+   *  - 'grant'   — a previously-remembered "Always" choice
+   *  - 'policy'  — auto-allowed/denied by the active policy (no prompt)
+   *  - 'timeout' — the prompt was never answered (auto-denied)
+   */
+  decidedBy?: 'user' | 'grant' | 'policy' | 'timeout'
   timestamp: number
 }

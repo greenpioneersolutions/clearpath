@@ -62,6 +62,16 @@ describe('SessionActivityPanel', () => {
     expect(await screen.findByText(/No activity yet/)).toBeDefined()
   })
 
+  it('shows a "Your decisions" audit section for prompts the user answered', async () => {
+    mockInvoke.mockResolvedValue([
+      e({ kind: 'write', target: '/p/out.md', decision: 'allow', decidedBy: 'user', toolName: 'create' }),
+      e({ kind: 'read', target: '/p/in.md', decision: 'allow', decidedBy: 'policy', toolName: 'view' }),
+    ])
+    render(<SessionActivityPanel sessionId="s1" open onClose={vi.fn()} />)
+    expect(await screen.findByText(/Your decisions/)).toBeDefined()
+    expect(screen.getByText('✓ Allowed')).toBeDefined()
+  })
+
   it('subscribes to cli:turn-end to refresh', () => {
     render(<SessionActivityPanel sessionId="s1" open onClose={vi.fn()} />)
     expect(mockOn).toHaveBeenCalledWith('cli:turn-end', expect.any(Function))

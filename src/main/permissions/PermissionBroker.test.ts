@@ -134,6 +134,24 @@ describe('PermissionBroker (HTTP)', () => {
     expect(view?.kind).toBe('read')
   })
 
+  it('records the user’s prompt answer as decidedBy:user (auditable)', async () => {
+    const token = broker.tokenForSession('s1')
+    const p = post({ sessionId: 's1', token, cli: 'claude', toolName: 'Write', input: { file_path: '/p/out.md' } })
+    await vi.waitFor(() => expect(emitted).toHaveLength(1))
+    broker.respond(emitted[0].requestId, 'allow')
+    await p
+    const w = recorded.find((r) => r.toolName === 'Write') as { decidedBy?: string; decision: string } | undefined
+    expect(w?.decision).toBe('allow')
+    expect(w?.decidedBy).toBe('user')
+  })
+
+  it('records a policy auto-allow as decidedBy:policy', async () => {
+    const token = broker.tokenForSession('s1')
+    await post({ sessionId: 's1', token, cli: 'claude', toolName: 'Read', input: { file_path: '/p/a.md' } })
+    const r = recorded.find((x) => x.toolName === 'Read') as { decidedBy?: string } | undefined
+    expect(r?.decidedBy).toBe('policy')
+  })
+
   it('releaseSession drops the token so further calls are unauthorized', async () => {
     const token = broker.tokenForSession('s1')
     broker.releaseSession('s1')

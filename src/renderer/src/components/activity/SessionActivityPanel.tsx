@@ -29,6 +29,12 @@ export default function SessionActivityPanel({
   }, [sessionId, refresh])
 
   const groups = useMemo(() => groupActivity(items), [items])
+  // The prompts the user actually answered (or that timed out) — the auditable
+  // decisions, newest first.
+  const decisions = useMemo(
+    () => items.filter((i) => i.decidedBy === 'user' || i.decidedBy === 'timeout').slice().reverse(),
+    [items],
+  )
 
   if (!open) return null
 
@@ -54,6 +60,28 @@ export default function SessionActivityPanel({
         <div className="flex-1 overflow-auto px-4 py-3 space-y-4">
           {items.length === 0 && (
             <p className="text-xs text-gray-500 text-center py-10">No activity yet. Files the agent reads or writes, sites it fetches, and commands it runs will appear here.</p>
+          )}
+
+          {/* Audit: the prompts you actually answered (or that timed out). */}
+          {decisions.length > 0 && (
+            <div>
+              <div className="flex items-baseline gap-2 mb-1.5">
+                <h4 className="text-[11px] font-semibold text-gray-300 uppercase tracking-wide">🔐 Your decisions</h4>
+                <span className="text-[10px] text-gray-600">{decisions.length}</span>
+              </div>
+              <div className="space-y-1">
+                {decisions.map((d) => (
+                  <div key={d.id} className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-gray-950/50 border border-gray-800/60 text-xs">
+                    <span className={`text-[11px] font-semibold flex-shrink-0 ${d.decision === 'allow' ? 'text-green-400' : 'text-red-400'}`}>
+                      {d.decidedBy === 'timeout' ? '⏲ No answer' : d.decision === 'allow' ? '✓ Allowed' : '✗ Denied'}
+                    </span>
+                    <span className="text-[10px] text-gray-500 flex-shrink-0 max-w-[80px] truncate" title={d.toolName}>{d.toolName}</span>
+                    <span className="text-gray-300 font-mono truncate flex-1" title={d.target}>{shortTarget(d.target) || '—'}</span>
+                  </div>
+                ))}
+              </div>
+              <p className="text-[10px] text-gray-600 mt-1">Tool permissions you were asked to approve this session</p>
+            </div>
           )}
 
           <Section title="Outputs" hint="Files the agent created or edited" entries={groups.write} icon="📄"
@@ -98,7 +126,8 @@ function Section({
           <div key={e.id} className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-gray-950/50 border border-gray-800/60 text-xs">
             <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${e.decision === 'allow' ? 'bg-green-500/70' : 'bg-red-500/70'}`}
               title={e.decision === 'allow' ? 'Allowed' : 'Denied'} />
-            <span className="text-[10px] text-gray-500 flex-shrink-0 max-w-[90px] truncate" title={`Tool: ${e.toolName} · ${e.decision === 'allow' ? 'allowed' : 'denied'}`}>{e.toolName}</span>
+            <span className="text-[10px] text-gray-500 flex-shrink-0 max-w-[90px] truncate" title={`Tool: ${e.toolName} · ${e.decision === 'allow' ? 'allowed' : 'denied'}${e.decidedBy ? ` (${e.decidedBy === 'user' ? 'you chose' : e.decidedBy === 'grant' ? 'remembered' : e.decidedBy === 'timeout' ? 'no answer' : 'auto by policy'})` : ''}`}>{e.toolName}</span>
+            {e.decidedBy === 'user' && <span className="text-[9px] text-violet-300 flex-shrink-0" title="You approved this prompt">• you</span>}
             <span className="text-gray-300 font-mono truncate flex-1" title={e.target}>{shortTarget(e.target) || '—'}</span>
             {actions(e)}
           </div>
