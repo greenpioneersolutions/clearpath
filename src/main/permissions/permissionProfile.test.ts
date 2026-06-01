@@ -131,4 +131,31 @@ describe('extractCommand', () => {
     expect(extractCommand({ nope: 1 })).toBeUndefined()
     expect(extractCommand(null)).toBeUndefined()
   })
+
+  it('pulls a url and ignores cwd metadata', () => {
+    expect(extractCommand({ url: 'https://example.com', cwd: '/Users/me/proj' })).toBe('https://example.com')
+    expect(extractCommand({ cwd: '/Users/me/proj', toolName: 'view' })).toBeUndefined()
+  })
+
+  it('finds the path inside a nested Copilot-style toolArgs object', () => {
+    expect(extractCommand({ toolName: 'create', cwd: '/proj', toolArgs: { path: '/proj/OUT.md' } })).toBe('/proj/OUT.md')
+  })
+
+  it('scans for a path-like string when the key is unknown', () => {
+    expect(extractCommand({ cwd: '/proj', some_weird_key: '/proj/weird/out.md' })).toBe('/proj/weird/out.md')
+  })
+
+  it('prefers the explicit target key over metadata', () => {
+    expect(extractCommand({ cwd: '/proj', path: '/proj/real.md' })).toBe('/proj/real.md')
+  })
+})
+
+describe('classifyTool — Copilot sub-command tool names', () => {
+  it('classifies Copilot file ops + meta tools', () => {
+    expect(classifyTool('create')).toBe('edit')
+    expect(classifyTool('str_replace')).toBe('edit')
+    expect(classifyTool('insert')).toBe('edit')
+    expect(classifyTool('view')).toBe('read')
+    expect(classifyTool('report_intent')).toBe('other')
+  })
 })

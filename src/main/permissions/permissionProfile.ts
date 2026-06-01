@@ -98,9 +98,19 @@ export function classifyTool(toolName: string): ToolClass {
   // MCP tools: Claude "mcp__server__tool" or Copilot "Server(tool)".
   if (head.startsWith('mcp__')) return 'mcp'
 
-  if (head === 'bash' || head === 'shell' || head === 'execute' || head === 'run') return 'shell'
-  if (CLAUDE_EDIT.has(head) || head === 'write' || head === 'edit' || head === 'apply_patch') return 'edit'
-  if (CLAUDE_READ.has(head) || head === 'read' || head === 'fetch' || head === 'view' || head === 'search') return 'read'
+  if (head === 'bash' || head === 'shell' || head === 'execute' || head === 'run' || head === 'terminal') return 'shell'
+  // Copilot's write-ish tools (it reports the sub-command as the tool name):
+  // create / str_replace / insert / edit_file / etc.
+  if (
+    CLAUDE_EDIT.has(head) || head === 'write' || head === 'edit' || head === 'apply_patch' ||
+    head === 'create' || head === 'create_file' || head === 'write_file' || head === 'edit_file' ||
+    head === 'str_replace' || head === 'str_replace_editor' || head === 'insert' ||
+    head === 'update_file' || head === 'save_file' || head === 'delete_file' || head === 'remove'
+  ) return 'edit'
+  if (
+    CLAUDE_READ.has(head) || head === 'read' || head === 'fetch' || head === 'view' || head === 'search' ||
+    head === 'web_fetch' || head === 'open' || head === 'cat' || head === 'list' || head === 'find'
+  ) return 'read'
 
   // Copilot "Server(tool)" form that isn't a known built-in head → treat as MCP.
   if (raw.includes('(') && !['shell', 'write', 'read'].includes(head)) return 'mcp'
@@ -156,13 +166,48 @@ export function activityKind(toolClass: ToolClass, target?: string): 'read' | 'w
   return 'tool'
 }
 
-/** Pull a shell command / path-ish string out of a tool input object for matching. */
+// Keys that are tool METADATA, not the target the tool acts on — never treat
+// these as the path/url even though some (cwd) are path-like.
+const META_KEYS = new Set([
+  'cwd', 'sessionid', 'session_id', 'timestamp', 'toolname', 'tool', 'name', 'type',
+  'behavior', 'permissiondecision', 'reason', 'message', 'id',
+])
+// Argument keys that hold the path / url / command, in priority order. Covers
+// Claude (file_path, command, url) and Copilot (path, target_file, …) shapes.
+const TARGET_KEYS = [
+  'command', 'cmd', 'script', 'url', 'uri', 'href', 'path', 'file_path', 'filepath',
+  'target_file', 'targetfile', 'file', 'filename', 'filepath', 'notebook_path', 'directory', 'dir', 'target',
+]
+
+/**
+ * Pull the path / url / command a tool acts on out of its (possibly unknown-shape)
+ * input object. Copilot's preToolUse args don't use a fixed key, so after the
+ * known keys we recursively scan non-metadata string values for the first
+ * path-like or url-like value. Used for the prompt preview, the blocked-file
+ * check, and the session activity target.
+ */
 export function extractCommand(input: unknown): string | undefined {
-  if (!input || typeof input !== 'object') return undefined
+  return findTarget(input, 0)
+}
+
+function findTarget(input: unknown, depth: number): string | undefined {
+  if (typeof input === 'string') return input || undefined
+  if (!input || typeof input !== 'object' || depth > 4) return undefined
   const o = input as Record<string, unknown>
-  for (const k of ['command', 'cmd', 'script', 'url', 'uri', 'path', 'file_path', 'filePath', 'file', 'target']) {
-    const v = o[k]
-    if (typeof v === 'string' && v) return v
+  const lowerToActual: Record<string, string> = {}
+  for (const k of Object.keys(o)) lowerToActual[k.toLowerCase()] = k
+
+  // 1. Known target keys, in priority order.
+  for (const key of TARGET_KEYS) {
+    const actual = lowerToActual[key]
+    if (actual) { const v = o[actual]; if (typeof v === 'string' && v.trim()) return v }
+  }
+  // 2. Fallback: first non-metadata string that looks like a path or URL, then
+  //    recurse into nested objects/arrays (Copilot nests args under toolArgs).
+  for (const [k, v] of Object.entries(o)) {
+    if (META_KEYS.has(k.toLowerCase())) continue
+    if (typeof v === 'string' && (v.includes('/') || v.includes('\\') || /^https?:/i.test(v))) return v
+    if (v && typeof v === 'object') { const nested = findTarget(v, depth + 1); if (nested) return nested }
   }
   return undefined
 }

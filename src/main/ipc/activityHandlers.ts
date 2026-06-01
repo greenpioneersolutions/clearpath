@@ -36,8 +36,9 @@ export function recordSessionActivity(entry: Omit<SessionActivityEntry, 'id'>): 
   const all = (store().get('bySession', {}) || {})
   const list = all[entry.sessionId] ?? []
   const last = list[list.length - 1]
-  if (last && last.kind === entry.kind && last.target === entry.target && last.decision === entry.decision) {
-    return // collapse immediate duplicates
+  if (last && last.toolName === entry.toolName && last.kind === entry.kind &&
+      last.target === entry.target && last.decision === entry.decision) {
+    return // collapse immediate duplicates (same tool + target + decision)
   }
   list.push({ ...entry, id: randomUUID() })
   if (list.length > MAX_PER_SESSION) list.splice(0, list.length - MAX_PER_SESSION)

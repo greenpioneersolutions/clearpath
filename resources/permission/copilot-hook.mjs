@@ -53,8 +53,14 @@ async function main() {
         sessionId: BROKER_SESSION,
         cli: 'copilot',
         toolName: req.toolName ?? req.tool ?? '',
-        // preToolUse carries the real arguments; fall back gracefully.
-        input: req.toolArgs ?? req.arguments ?? req.input ?? { cwd: req.cwd },
+        // Copilot's preToolUse arg shape isn't fixed, so forward the FULL request
+        // (toolArgs flattened in) and let the broker's extractCommand find the
+        // path/url wherever it lives. Falls back to whatever we were given.
+        input: {
+          ...req,
+          ...(req.toolArgs && typeof req.toolArgs === 'object' ? req.toolArgs : {}),
+          ...(req.arguments && typeof req.arguments === 'object' ? req.arguments : {}),
+        },
       }),
     })
     const data = await res.json()

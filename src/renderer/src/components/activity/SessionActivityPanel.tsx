@@ -57,11 +57,11 @@ export default function SessionActivityPanel({
           )}
 
           <Section title="Outputs" hint="Files the agent created or edited" entries={groups.write} icon="📄"
-            actions={(e) => <FileActions onOpen={() => openFile(e.target)} onReveal={() => revealFile(e.target)} />} />
+            actions={(e) => isFilePath(e.target) ? <FileActions onOpen={() => openFile(e.target)} onReveal={() => revealFile(e.target)} /> : null} />
           <Section title="Inputs" hint="Files the agent read" entries={groups.read} icon="📥"
-            actions={(e) => <FileActions onOpen={() => openFile(e.target)} onReveal={() => revealFile(e.target)} />} />
+            actions={(e) => isFilePath(e.target) ? <FileActions onOpen={() => openFile(e.target)} onReveal={() => revealFile(e.target)} /> : null} />
           <Section title="Web" hint="Pages the agent fetched" entries={groups.fetch} icon="🌐"
-            actions={(e) => <button onClick={() => openUrl(e.target)} className="text-[11px] text-violet-300 hover:text-violet-200">Open ↗</button>} />
+            actions={(e) => e.target ? <button onClick={() => openUrl(e.target)} className="text-[11px] text-violet-300 hover:text-violet-200">Open ↗</button> : null} />
           <Section title="Commands" hint="Shell commands the agent ran" entries={groups.shell} icon="⌘" actions={() => null} />
           <Section title="Other tools" hint="" entries={groups.tool} icon="🔧" actions={() => null} />
         </div>
@@ -98,7 +98,8 @@ function Section({
           <div key={e.id} className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-gray-950/50 border border-gray-800/60 text-xs">
             <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${e.decision === 'allow' ? 'bg-green-500/70' : 'bg-red-500/70'}`}
               title={e.decision === 'allow' ? 'Allowed' : 'Denied'} />
-            <span className="text-gray-300 font-mono truncate flex-1" title={e.target}>{shortTarget(e.target) || e.toolName}</span>
+            <span className="text-[10px] text-gray-500 flex-shrink-0 max-w-[90px] truncate" title={`Tool: ${e.toolName} · ${e.decision === 'allow' ? 'allowed' : 'denied'}`}>{e.toolName}</span>
+            <span className="text-gray-300 font-mono truncate flex-1" title={e.target}>{shortTarget(e.target) || '—'}</span>
             {actions(e)}
           </div>
         ))}
@@ -111,6 +112,11 @@ function Section({
 function shortTarget(t?: string): string {
   if (!t) return ''
   return t.length > 64 ? '…' + t.slice(-61) : t
+}
+
+/** A target we can actually open/reveal in the file manager (a path, not a URL). */
+function isFilePath(t?: string): boolean {
+  return !!t && !/^https?:\/\//i.test(t) && (t.includes('/') || t.includes('\\'))
 }
 
 interface Grouped { read: SessionActivityEntry[]; write: SessionActivityEntry[]; fetch: SessionActivityEntry[]; shell: SessionActivityEntry[]; tool: SessionActivityEntry[] }
