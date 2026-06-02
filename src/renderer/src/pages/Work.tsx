@@ -6,6 +6,7 @@ import type { BackendId } from '../../../shared/backends'
 import { providerOf, migrateLegacyBackendId, pickReadyBackend } from '../../../shared/backends'
 import { useAuthStatus, readyBackendsOf } from '../hooks/useAuthStatus'
 import OutputDisplay, { type OutputMessage, type UsageStats } from '../components/OutputDisplay'
+import SessionActivityPanel from '../components/activity/SessionActivityPanel'
 import ChatInputArea, { type ChatContextConfig } from '../components/ChatInputArea'
 import ModeIndicator, { type SessionMode, MODE_CYCLE } from '../components/ModeIndicator'
 import SessionSettingsModal, { type SessionSettingsEditChanges } from '../components/SessionSettingsModal'
@@ -65,6 +66,14 @@ interface ActiveSessionState {
   /** Currently active model — updated when the user picks one via the ModelChip. */
   currentModel?: string
   /**
+   * The concrete directory this session spawned in — the anchor for its
+   * `.clear-path/uploads/<id>/` attachments. Captured at start and refreshed
+   * after a mid-session attach so staging and the `<files>` framing always use
+   * the SAME dir (otherwise re-resolving could pick a different root and the
+   * agent's relative paths wouldn't exist). `undefined` until known.
+   */
+  workingDirectory?: string
+  /**
    * Most recent post-lint token breakdown for this session. Driven by
    * `cli:prompt-shaped` (Token Coach Phase 2) so the meter chip can reflect
    * the actual numbers that went out the wire instead of the typing estimate.
@@ -85,6 +94,8 @@ export default function Work(): JSX.Element {
   const [activeTemplate, setActiveTemplate] = useState<PromptTemplate | null>(null)
   const [showSessionManager, setShowSessionManager] = useState(false)
   const [viewingStoppedSession, setViewingStoppedSession] = useState(false)
+  // Session id whose "Files & activity" drawer is open (null = closed).
+  const [activitySessionId, setActivitySessionId] = useState<string | null>(null)
   const [selectedNoteIds, setSelectedNoteIds] = useState<Set<string>>(new Set())
   // Mid-session file attachments, staged into the active session's uploads dir
   // and framed onto the NEXT send. Keyed by sessionId so switching sessions
@@ -134,6 +145,11 @@ export default function Work(): JSX.Element {
   // isn't ready (CLI_NOT_READY). Rendered as a banner above the launchpad and
   // cleared on the next successful start.
   const [startError, setStartError] = useState<string | null>(null)
+  // Non-blocking hint shown after a mid-session file attach that fell back to the
+  // app-managed scratch dir (no real workspace selected). Files DID attach — this
+  // just nudges the user to pick a workspace so the next session's files land in
+  // their repo. Dismissed on click-through, on the next clean attach, or via ×.
+  const [showWorkspaceNudge, setShowWorkspaceNudge] = useState(false)
 
   // selectedId is derived from the URL — `?id=<sessionId>`. When absent, the
   // launchpad renders. setSelectedId() pushes the id into the URL so deep
@@ -202,7 +218,7 @@ export default function Work(): JSX.Element {
 
       // 2. Load persisted sessions from disk (survive app restart)
       const persisted = await window.electronAPI.invoke('cli:get-persisted-sessions') as
-        Array<{ sessionId: string; cli: BackendId; name?: string; firstPrompt?: string; startedAt: number; endedAt?: number; messageLog: Array<{ type: string; content: string; metadata?: unknown; sender?: string; timestamp?: number; attachedNotes?: Array<{ id: string; title: string }>; attachedAgent?: { id: string; name: string }; attachedSkills?: Array<{ id: string; name: string }>; attachedFiles?: Array<{ id: string; name: string; relPath: string }>; attachedDirs?: Array<{ path: string; name: string }> }> }>
+        Array<{ sessionId: string; cli: BackendId; name?: string; firstPrompt?: string; startedAt: number; endedAt?: number; workingDirectory?: string; messageLog: Array<{ type: string; content: string; metadata?: unknown; sender?: string; timestamp?: number; attachedNotes?: Array<{ id: string; title: string }>; attachedAgent?: { id: string; name: string }; attachedSkills?: Array<{ id: string; name: string }>; attachedFiles?: Array<{ id: string; name: string; relPath: string }>; attachedDirs?: Array<{ path: string; name: string }> }> }>
 
       // Build a set of active session IDs so we don't duplicate
       const activeIds = new Set(activeSessions.map((s) => s.sessionId))
@@ -284,6 +300,7 @@ export default function Work(): JSX.Element {
             msgIdCounter: messages.length,
             processing: false,
             usageHistory: [],
+            workingDirectory: ps.workingDirectory,
           })
         }
 
@@ -441,8 +458,21 @@ export default function Work(): JSX.Element {
   }) => {
     // Clear any prior "connect a CLI" banner — we're attempting a fresh start.
     setStartError(null)
+    // Anchor EVERY session to a concrete, writable cwd. Without a workspace the
+    // CLI would otherwise spawn in the Electron process cwd; then a later
+    // mid-session file attach (which stages into the ensureBaseDir scratch dir)
+    // wouldn't line up with where the CLI actually runs. Resolving the base dir
+    // here keeps the renderer's pinned workingDirectory and the main-process
+    // spawn cwd identical for the no-workspace case too.
+    let workingDirectory = opts.workingDirectory
+    if (!workingDirectory) {
+      try {
+        const base = await window.electronAPI.invoke('files:ensure-base-dir', {}) as { dir: string }
+        workingDirectory = base?.dir
+      } catch { /* fall through — main process resolves its own default */ }
+    }
     const startResult = (await window.electronAPI.invoke('cli:start-session', {
-      cli: opts.cli, mode: 'interactive', name: opts.name, workingDirectory: opts.workingDirectory, prompt: opts.initialPrompt, displayPrompt: opts.displayPrompt, agent: opts.agent, model: opts.model, permissionMode: opts.permissionMode, additionalDirs: opts.additionalDirs, attachedNotes: opts.attachedNotes, attachedFiles: opts.attachedFiles, sessionId: opts.sessionId, promptSlices: opts.promptSlices, noAgent: opts.noAgent,
+      cli: opts.cli, mode: 'interactive', name: opts.name, workingDirectory, prompt: opts.initialPrompt, displayPrompt: opts.displayPrompt, agent: opts.agent, model: opts.model, permissionMode: opts.permissionMode, additionalDirs: opts.additionalDirs, attachedNotes: opts.attachedNotes, attachedFiles: opts.attachedFiles, sessionId: opts.sessionId, promptSlices: opts.promptSlices, noAgent: opts.noAgent,
       // Per-session CLI toggle overrides (experimental/verbose/etc.) as explicit
       // typed fields so they beat the stored global defaults in the main-process merge.
       ...(opts.sessionFlags ?? {}),
@@ -482,7 +512,7 @@ export default function Work(): JSX.Element {
       })
     }
 
-    setSessions((prev) => { const u = new Map(prev); u.set(sessionId, { info, messages: initial, mode: 'normal', msgIdCounter: initial.length, processing: !!opts.initialPrompt, usageHistory: [], currentModel: opts.model }); return u })
+    setSessions((prev) => { const u = new Map(prev); u.set(sessionId, { info, messages: initial, mode: 'normal', msgIdCounter: initial.length, processing: !!opts.initialPrompt, usageHistory: [], currentModel: opts.model, workingDirectory }); return u })
     setSelectedId(sessionId)
 
     // Pre-populate the context bar with what was selected (or auto-applied)
@@ -784,7 +814,10 @@ export default function Work(): JSX.Element {
       const capturedFiles = pendingFilesBySession[selectedId] ?? []
       if (capturedFiles.length > 0) {
         try {
-          const workingDirectory = await resolveWorkingDirectory()
+          // Use the SAME dir handleAttachFiles staged into (pinned on the session),
+          // not a fresh resolve — otherwise the bundle could frame a different
+          // uploads root than where the files actually live.
+          const workingDirectory = sessionsRef.current.get(selectedId)?.workingDirectory ?? await resolveWorkingDirectory()
           const bundle = await window.electronAPI.invoke('files:get-bundle-for-prompt', {
             workingDirectory, sessionId: selectedId, ids: capturedFiles.map((f) => f.id),
           }) as { framedPrompt: string; fileCount: number }
@@ -990,12 +1023,26 @@ export default function Work(): JSX.Element {
   // Stage files into the active session's uploads dir for the next turn.
   const handleAttachFiles = useCallback(async () => {
     if (!selectedId) return
-    const workingDirectory = await resolveWorkingDirectory()
+    // Prefer the dir this session ACTUALLY spawned in over a fresh resolve, so
+    // mid-session files land in the same `.clear-path/uploads/<id>/` root the CLI
+    // is running in (re-resolving could pick a different workspace). The handler
+    // falls back to an app-managed scratch dir when neither is set, so this no
+    // longer hard-fails without a workspace — it reports `usedFallback` instead.
+    const knownDir = sessionsRef.current.get(selectedId)?.workingDirectory
+    const workingDirectory = knownDir ?? await resolveWorkingDirectory()
     const res = await window.electronAPI.invoke('files:pick-and-stage', {
       workingDirectory,
       sessionId: selectedId,
-    }) as { canceled?: boolean; attachments: Array<{ id: string; name: string; relPath: string }>; errors: string[] }
+    }) as { canceled?: boolean; attachments: Array<{ id: string; name: string; relPath: string }>; errors: string[]; baseDir?: string; usedFallback?: boolean }
     if (res.canceled) return
+    // Pin the session to the dir staging actually used so the matching
+    // `files:get-bundle-for-prompt` call (in handleSend) frames the same root.
+    if (res.baseDir) {
+      setSessions((prev) => {
+        const s = prev.get(selectedId); if (!s || s.workingDirectory === res.baseDir) return prev
+        const u = new Map(prev); u.set(selectedId, { ...s, workingDirectory: res.baseDir }); return u
+      })
+    }
     if (res.attachments.length > 0) {
       setPendingFilesBySession((prev) => ({
         ...prev,
@@ -1007,8 +1054,17 @@ export default function Work(): JSX.Element {
         ],
       }))
     }
+    // Refresh the nudge for EVERY non-canceled attach: show it only when files
+    // were actually staged into the scratch fallback. A later attach that stages
+    // nothing (all errors) or that resolves to a real workspace clears a stale
+    // nudge left over from a prior fallback attach.
+    setShowWorkspaceNudge(Boolean(res.usedFallback) && res.attachments.length > 0)
     if (res.errors?.length) appendStatus(selectedId, `Couldn't attach: ${res.errors.join('; ')}`)
   }, [selectedId, resolveWorkingDirectory, appendStatus])
+
+  // The workspace nudge is tied to the last attach in the *current* session;
+  // clear it when the user switches sessions so it never lingers out of context.
+  useEffect(() => { setShowWorkspaceNudge(false) }, [selectedId])
 
   const handleRemovePendingFile = useCallback((id: string) => {
     if (!selectedId) return
@@ -1141,6 +1197,13 @@ export default function Work(): JSX.Element {
               {selectedSession && (
                 <>
                   <ModeIndicator mode={selectedSession.mode} onToggle={handleModeToggle} />
+                  <button
+                    onClick={() => setActivitySessionId(selectedSession.info.sessionId)}
+                    title="Files this session read/created, sites it fetched, commands it ran"
+                    className="px-2 py-1 text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-700 rounded-md"
+                  >
+                    Files &amp; activity
+                  </button>
                   {selectedSession.processing && (
                     <span className="flex items-center gap-1.5 text-xs text-yellow-400">
                       <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse" /> Thinking...
@@ -1237,6 +1300,33 @@ export default function Work(): JSX.Element {
                       }}
                       onCompact={() => handleSlashCommand('/compact')}
                     />
+                  )}
+                  {showWorkspaceNudge && (
+                    <div
+                      data-testid="work-workspace-nudge"
+                      role="status"
+                      className="mb-2 flex items-start gap-2 rounded-lg border border-sky-700/40 bg-sky-900/15 px-3 py-2"
+                    >
+                      <span className="text-sky-300 text-sm leading-5">ℹ</span>
+                      <div className="flex-1">
+                        <p className="text-sky-100 text-xs">
+                          Files were attached to a temporary folder. Select a workspace so files land in your project.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => { setShowWorkspaceNudge(false); navigate('/workspaces') }}
+                          className="mt-1 text-xs font-semibold text-violet-300 hover:text-violet-200"
+                        >
+                          Select a workspace →
+                        </button>
+                      </div>
+                      <button
+                        type="button"
+                        aria-label="Dismiss"
+                        onClick={() => setShowWorkspaceNudge(false)}
+                        className="text-sky-400 hover:text-sky-200"
+                      >×</button>
+                    </div>
                   )}
                   <ChatInputArea
                     cli={selectedSession.info.cli}
@@ -1500,6 +1590,14 @@ export default function Work(): JSX.Element {
           sessionName={selectedSession?.info.name}
           sessionId={selectedSession?.info.sessionId}
           onClose={() => setShowSaveNoteModal(null)}
+        />
+      )}
+
+      {activitySessionId && (
+        <SessionActivityPanel
+          sessionId={activitySessionId}
+          open={true}
+          onClose={() => setActivitySessionId(null)}
         />
       )}
     </div>

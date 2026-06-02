@@ -39,6 +39,13 @@ import { registerFileExplorerHandlers } from './ipc/fileExplorerHandlers'
 import { registerPolicyHandlers } from './ipc/policyHandlers'
 import { registerWorkspaceHandlers } from './ipc/workspaceHandlers'
 import { registerComplianceHandlers } from './ipc/complianceHandlers'
+import { PermissionBroker } from './permissions/PermissionBroker'
+import { GrantsStore } from './permissions/grantsStore'
+import { registerPermissionHandlers } from './ipc/permissionHandlers'
+import { getActivePolicy } from './ipc/policyHandlers'
+import { ensureCopilotHook, removeCopilotHook, resolvePermissionResource } from './permissions/cliIntegration'
+import type { ToolGrant } from '../shared/permissions/types'
+import { registerActivityHandlers, recordSessionActivity, clearSessionActivity } from './ipc/activityHandlers'
 import { registerNotificationHandlers } from './ipc/notificationHandlers'
 import { NotificationManager } from './notifications/NotificationManager'
 import { registerSchedulerHandlers } from './ipc/schedulerHandlers'
@@ -128,6 +135,43 @@ const pricingService = new PricingService()
 // CLIManager uses pricingService.getEffectiveTable() for every cost record so
 // user overrides (and the optional remote-sync layer) take effect immediately.
 cliManager.setPricingService(pricingService)
+
+// Append an entry to the compliance audit log (shared by the CLIManager audit
+// callback and the PermissionBroker so tool-approval decisions are recorded).
+function appendAuditEntry(entry: { actionType: string; summary: string; details: string; sessionId?: string }): void {
+  const compStore = new Store({ name: 'clear-path-compliance', encryptionKey: getStoreEncryptionKey() })
+  const auditLog = compStore.get('auditLog', []) as unknown[]
+  auditLog.push({ ...entry, id: randomUUID(), timestamp: Date.now() })
+  if (auditLog.length > 10000) auditLog.splice(0, auditLog.length - 10000)
+  compStore.set('auditLog', auditLog)
+}
+
+// Per-tool permission broker — the policy-driven gate the bundled CLI permission
+// clients (Claude MCP tool / Copilot hook) call for each tool decision.
+const grantsBackingStore = new Store({ name: 'clear-path-tool-grants', encryptionKey: getStoreEncryptionKey() })
+const permissionBroker = new PermissionBroker({
+  getActivePolicy: async () => getActivePolicy(),
+  getWebContents,
+  grants: new GrantsStore({
+    get: () => grantsBackingStore.get('grants', []) as ToolGrant[],
+    set: (g) => grantsBackingStore.set('grants', g),
+  }),
+  getSessionMeta: (id) => cliManager.getSessionMeta(id),
+  audit: (entry) => appendAuditEntry(entry),
+  recordActivity: (entry) => recordSessionActivity(entry),
+})
+// Wire the broker into CLIManager only AFTER it's listening — otherwise a very
+// early session could read `url()` as 127.0.0.1:0 and the CLI clients would fail
+// to reach it (auto-denying tools). start() resolves within ms of boot, long
+// before any user-initiated session.
+void permissionBroker.start()
+  .then(() => cliManager.setPermissionBroker(permissionBroker))
+  .catch((e) => log.warn('[permissions] broker start failed:', e))
+// Register the global Copilot permissionRequest hook. It's env-gated (no-op for
+// the user's own terminal copilot) — see copilot-hook.mjs.
+try { ensureCopilotHook(resolvePermissionResource('copilot-hook.mjs')) }
+catch (e) { log.warn('[permissions] could not register Copilot hook:', e) }
+
 const schedulerService = new SchedulerService(cliManager, notificationManager)
 const extensionRegistry = new ExtensionRegistry()
 const extensionStoreFactory = new ExtensionStoreFactory()
@@ -157,6 +201,8 @@ registerFileExplorerHandlers(ipcMain, getWebContents)
 registerPolicyHandlers(ipcMain, notificationManager)
 registerWorkspaceHandlers(ipcMain)
 registerComplianceHandlers(ipcMain, notificationManager)
+registerPermissionHandlers(ipcMain, permissionBroker)
+registerActivityHandlers(ipcMain)
 registerNotificationHandlers(ipcMain, notificationManager)
 registerSchedulerHandlers(ipcMain, schedulerService)
 registerKnowledgeBaseHandlers(ipcMain, cliManager)
@@ -459,13 +505,7 @@ cliManager.setNotifyCallback((args) => {
 })
 
 // Wire CLIManager to log audit events through the compliance system
-cliManager.setAuditCallback((entry) => {
-  const compStore = new Store({ name: 'clear-path-compliance', encryptionKey: getStoreEncryptionKey() })
-  const log = compStore.get('auditLog', []) as unknown[]
-  log.push({ ...entry, id: randomUUID(), timestamp: Date.now() })
-  if (log.length > 10000) log.splice(0, log.length - 10000)
-  compStore.set('auditLog', log)
-})
+cliManager.setAuditCallback((entry) => appendAuditEntry(entry))
 
 // Wire CLIManager to record cost data for every completed turn and sub-agent
 cliManager.setCostRecordCallback((args) => {
@@ -763,6 +803,10 @@ app.on('window-all-closed', () => {
 // we don't leave an orphaned `clearmemory serve` process bound to 8080/9700.
 let clearMemoryShutdownStarted = false
 app.on('before-quit', (event) => {
+  // Tear down the permission broker + remove the global Copilot hook (best
+  // effort; the hook is env-gated so a lingering entry after a crash is inert).
+  try { permissionBroker.stop() } catch { /* ignore */ }
+  try { removeCopilotHook() } catch { /* ignore */ }
   if (clearMemoryShutdownStarted) return
   if (clearMemoryService.status === 'stopped' || clearMemoryService.status === 'missing-binary') return
   clearMemoryShutdownStarted = true

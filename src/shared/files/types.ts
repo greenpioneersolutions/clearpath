@@ -61,6 +61,21 @@ export interface PickAndStageResult {
   attachments: SessionFileAttachment[]
   /** Human-readable per-file rejection reasons (too large, over budget, etc.). */
   errors: string[]
+  /**
+   * The directory files were actually staged under (`<baseDir>/.clear-path/uploads/…`).
+   * Populated only by the IPC handlers that resolve it via `ensureBaseDir`
+   * (`files:stage-paths`, `files:pick-and-stage`) — the lower-level `stagePaths()`
+   * core omits it. When present it's concrete even if the caller passed no
+   * workspace; the renderer reuses it for the matching `files:get-bundle-for-prompt`
+   * call so staging and framing never disagree.
+   */
+  baseDir?: string
+  /**
+   * `true` when no usable workspace dir was supplied and staging fell back to the
+   * app-managed scratch dir. Drives the non-blocking "Select a workspace →" nudge
+   * so files ideally land in the user's real repo on the next session.
+   */
+  usedFallback?: boolean
 }
 
 export interface FilesBundleResult {

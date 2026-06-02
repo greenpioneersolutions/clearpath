@@ -18,6 +18,7 @@ import type {
 } from '../../renderer/src/types/install'
 import { resolveInShell, getScopedSpawnEnv, getSpawnEnv } from '../utils/shellEnv'
 import { claudeKeychainTokenExists } from '../utils/claudeKeychain'
+import { parseJsonc } from '../utils/jsonc'
 import { parseBrowserUrl } from './urlDetector'
 import {
   canResolveClaudeSdk,
@@ -28,47 +29,6 @@ import {
 } from './SdkAuthProbe'
 
 const ANSI_RE = /\x1b(?:[@-Z\\-_]|\[[0-9;]*[ -/]*[@-~])/g
-
-/**
- * Parse JSON that may contain comments (JSONC). Copilot CLI writes
- * `~/.copilot/config.json` with leading `//` banner comments
- * ("// This file is managed automatically."), which the stock `JSON.parse`
- * rejects with "Unexpected token '/'" — silently dropping us into the
- * unauthenticated branch even when the user is fully logged in.
- *
- * Strips `//` line comments and `/* *\/` block comments before parsing. The
- * scan is string-aware so values containing `//` (e.g. "https://github.com")
- * are never clobbered.
- */
-function parseJsonc(raw: string): unknown {
-  let out = ''
-  let inString = false
-  let inLineComment = false
-  let inBlockComment = false
-  for (let i = 0; i < raw.length; i++) {
-    const ch = raw[i]
-    const next = raw[i + 1]
-    if (inLineComment) {
-      if (ch === '\n') { inLineComment = false; out += ch }
-      continue
-    }
-    if (inBlockComment) {
-      if (ch === '*' && next === '/') { inBlockComment = false; i++ }
-      continue
-    }
-    if (inString) {
-      out += ch
-      if (ch === '\\') { out += next ?? ''; i++ } // keep escaped char verbatim
-      else if (ch === '"') inString = false
-      continue
-    }
-    if (ch === '"') { inString = true; out += ch; continue }
-    if (ch === '/' && next === '/') { inLineComment = true; i++; continue }
-    if (ch === '/' && next === '*') { inBlockComment = true; i++; continue }
-    out += ch
-  }
-  return JSON.parse(out)
-}
 
 const AUTH_CACHE_TTL    = 5  * 60 * 1000  // 5 min
 const INSTALL_CACHE_TTL = 10 * 60 * 1000  // 10 min

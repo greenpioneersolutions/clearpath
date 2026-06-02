@@ -553,6 +553,23 @@ describe('CopilotAdapter', () => {
       expect(await a.isAuthenticated()).toBe(true)
     })
 
+    it('returns true when config.json is JSONC (leading // banner comments)', async () => {
+      // Regression: Copilot CLI writes config.json with managed-by-CLI `//`
+      // banner comments. A plain JSON.parse throws on those, which made the
+      // session-start gate report "isn't signed in" even though the launchpad
+      // (which uses the JSONC-tolerant parser) showed Copilot as connected.
+      mkdirSync(configDir, { recursive: true })
+      writeFileSync(
+        configPath,
+        '// This file is managed automatically.\n' +
+        '// Do not edit.\n' +
+        '{ "loggedInUsers": [{ "host": "https://github.com", "login": "user1" }] }\n',
+      )
+      existsSyncMock.mockReturnValue(true)
+      const a = new CopilotAdapterClass()
+      expect(await a.isAuthenticated()).toBe(true)
+    })
+
     it('returns true when config file has logged_in_users (legacy snake_case)', async () => {
       mkdirSync(configDir, { recursive: true })
       writeFileSync(configPath, JSON.stringify({ logged_in_users: ['user1'] }))

@@ -3,6 +3,7 @@ import { Outlet, useLocation } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import KeyboardShortcutModal from './KeyboardShortcutModal'
 import ActiveSessionsBanner from './layout/ActiveSessionsBanner'
+import PermissionPromptOverlay from './permissions/PermissionPromptOverlay'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
 
 // ── Route Announcer (screen reader page-change notifications) ────────────
@@ -109,6 +110,8 @@ export default function Layout(): JSX.Element {
       </div>
       <RouteAnnouncer />
       <KeyboardShortcutModal isOpen={showShortcuts} onClose={() => setShowShortcuts(false)} />
+      <PermissionPromptOverlay />
+
     </div>
   )
 }

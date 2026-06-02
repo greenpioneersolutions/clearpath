@@ -140,8 +140,21 @@ function escapeAttr(value: string): string {
  * read-only on a packaged app). The returned dir is used for BOTH staging and
  * the CLI spawn, so the relative `.clear-path/uploads/...` paths always resolve.
  */
+/** True only when `p` is an existing, statable directory (a file path is NOT usable). */
+export function isUsableDir(p?: string): boolean {
+  if (!p) return false
+  try {
+    return statSync(p).isDirectory()
+  } catch {
+    return false
+  }
+}
+
 export function ensureBaseDir(preferred?: string): string {
-  if (preferred && existsSync(preferred)) return preferred
+  // `existsSync` would accept a FILE path; staging then throws ENOTDIR from the
+  // pre-loop mkdirSync in stagePaths (outside its per-file try/catch). Require a
+  // real directory so a non-dir falls through to the scratch workspace.
+  if (isUsableDir(preferred)) return preferred as string
   const base = join(app.getPath('userData'), 'session-files')
   mkdirSync(base, { recursive: true })
   return base
@@ -342,22 +355,27 @@ export function registerFileAttachmentHandlers(
 
   // Copy already-picked source paths into a session's uploads dir.
   ipcMain.handle('files:stage-paths', (_e, args: { workingDirectory?: string; sessionId: string; sourcePaths: string[] }): PickAndStageResult => {
+    const usedFallback = !isUsableDir(args.workingDirectory)
     const baseDir = ensureBaseDir(args.workingDirectory)
-    return stagePaths(baseDir, args.sessionId, args.sourcePaths ?? [])
+    return { ...stagePaths(baseDir, args.sessionId, args.sourcePaths ?? []), baseDir, usedFallback }
   })
 
   // Convenience for mid-session attach (existing session → cwd + id are known):
-  // pick + copy in one round-trip.
+  // pick + copy in one round-trip. Mirrors the launchpad's `ensureBaseDir` safety
+  // net so attaching mid-session never hard-fails for a user without a configured
+  // workspace — it falls back to the app-managed scratch dir and reports
+  // `usedFallback` so the renderer can nudge them to pick a real workspace.
   ipcMain.handle('files:pick-and-stage', async (_e, args: { workingDirectory?: string; sessionId: string }): Promise<PickAndStageResult> => {
-    if (!args.workingDirectory) return { attachments: [], errors: ['Select a workspace folder before attaching files.'] }
+    const usedFallback = !isUsableDir(args.workingDirectory)
+    const baseDir = ensureBaseDir(args.workingDirectory)
     const win = BrowserWindow.getFocusedWindow()
     const dialogOpts = {
       properties: ['openFile' as const, 'multiSelections' as const],
       filters: [{ name: 'All Files', extensions: ['*'] }],
     }
     const result = await (win ? dialog.showOpenDialog(win, dialogOpts) : dialog.showOpenDialog(dialogOpts))
-    if (result.canceled || result.filePaths.length === 0) return { canceled: true, attachments: [], errors: [] }
-    return stagePaths(args.workingDirectory, args.sessionId, result.filePaths)
+    if (result.canceled || result.filePaths.length === 0) return { canceled: true, attachments: [], errors: [], baseDir, usedFallback }
+    return { ...stagePaths(baseDir, args.sessionId, result.filePaths), baseDir, usedFallback }
   })
 
   // List files staged for a session.

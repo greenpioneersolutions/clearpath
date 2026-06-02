@@ -35,6 +35,13 @@ export interface SessionOptions {
    * silently overrides their choice with the default.
    */
   noAgent?: boolean
+  /**
+   * Extra env injected into the CLI spawn. Main-process only (never set by the
+   * renderer) — CLIManager uses it to pass the PermissionBroker's BROKER_URL /
+   * BROKER_TOKEN / BROKER_SESSION so the Copilot permissionRequest hook child
+   * (which inherits the copilot process env) can reach the broker.
+   */
+  brokerEnv?: Record<string, string>
   workingDirectory?: string   // spawn cwd
   additionalDirs?: string[]   // --add-dir (both CLIs)
   pluginDirs?: string[]       // --plugin-dir (both CLIs, repeatable on Claude; Copilot accepts the same shape)

@@ -13,30 +13,44 @@ import { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync, readdirSync 
 import { join } from 'path'
 import { tmpdir } from 'os'
 
-// Electron is imported at module top — stub it so import doesn't blow up.
-vi.mock('electron', () => ({
-  dialog: { showOpenDialog: vi.fn() },
-  BrowserWindow: { getFocusedWindow: () => null },
-  shell: { openPath: vi.fn() },
-  app: { getPath: () => tmpdir() },
-}))
+// `electron` resolves to src/test/electron-mock.ts via the vitest alias (see
+// vitest.config.ts). We drive `dialog.showOpenDialog` and `app.getPath` directly
+// off that shared mock so the handlers-under-test and the test see the SAME stubs
+// (a per-file vi.mock would NOT — the alias wins, so test + source would diverge).
 
 // Tiny limits passed directly to stagePaths so caps can be exercised with
 // tiny files (the real defaults are 25 MB / 200 MB).
 const TINY_LIMITS = { maxFileBytes: 100, maxSessionBytes: 250 }
 
+import type { IpcMain } from 'electron'
+import { dialog, app } from 'electron'
 import {
   stagePaths,
   buildFilesBundle,
   cleanupSessionUploads,
   sweepOrphanUploads,
   ensureBaseDir,
+  registerFileAttachmentHandlers,
   getUploadsDir,
   getUploadsRoot,
 } from './fileAttachmentHandlers'
 
+const mockShowOpenDialog = dialog.showOpenDialog as unknown as ReturnType<typeof vi.fn>
+
+/** A minimal ipcMain that records `handle()` registrations so tests can invoke them. */
+function makeFakeIpc() {
+  const handlers = new Map<string, (...a: unknown[]) => unknown>()
+  const ipcMain = { handle: (ch: string, fn: (...a: unknown[]) => unknown) => handlers.set(ch, fn) } as unknown as IpcMain
+  return {
+    ipcMain,
+    invoke: <T>(ch: string, args: unknown): Promise<T> =>
+      Promise.resolve(handlers.get(ch)!({} as unknown, args) as T),
+  }
+}
+
 let workspace: string
 let srcDir: string
+let scratchHome: string
 const SID = 'session-aaaa'
 
 function makeSource(name: string, content: string): string {
@@ -48,11 +62,19 @@ function makeSource(name: string, content: string): string {
 beforeEach(() => {
   workspace = mkdtempSync(join(tmpdir(), 'cp-files-ws-'))
   srcDir = mkdtempSync(join(tmpdir(), 'cp-files-src-'))
+  // The shared electron mock returns a non-writable '/mock/path' for getPath;
+  // point userData at a real temp dir so ensureBaseDir's scratch fallback can mkdir.
+  scratchHome = mkdtempSync(join(tmpdir(), 'cp-files-home-'))
+  vi.mocked(app.getPath).mockReturnValue(scratchHome)
 })
 
 afterEach(() => {
   rmSync(workspace, { recursive: true, force: true })
   rmSync(srcDir, { recursive: true, force: true })
+  rmSync(scratchHome, { recursive: true, force: true })
+  // Restore the shared mock defaults so other test files aren't affected.
+  vi.mocked(app.getPath).mockReturnValue('/mock/path')
+  vi.mocked(dialog.showOpenDialog).mockResolvedValue({ canceled: true, filePaths: [] })
 })
 
 describe('stagePaths', () => {
@@ -158,8 +180,46 @@ describe('ensureBaseDir', () => {
   it('returns the preferred workspace dir when it exists (the common case)', () => {
     expect(ensureBaseDir(workspace)).toBe(workspace)
   })
-  // The no-workspace fallback (mkdir under app userData) is covered manually —
-  // the test harness's global electron mock returns a non-writable app path.
+
+  it('falls back to a concrete, writable scratch dir when no workspace is given', () => {
+    // This is the safety net that lets mid-session attach work without a
+    // workspace — it must never return an empty string.
+    const dir = ensureBaseDir(undefined)
+    expect(dir).toBeTruthy()
+    expect(existsSync(dir)).toBe(true)
+    expect(dir).not.toBe(workspace)
+  })
+
+  it('falls back when the preferred dir does not exist on disk', () => {
+    const ghost = join(tmpdir(), 'cp-does-not-exist-xyz')
+    expect(ensureBaseDir(ghost)).not.toBe(ghost)
+  })
+
+  // Finding C (PR #62): a FILE path passed as workingDirectory must NOT be
+  // accepted (existsSync was true for files), else stagePaths' pre-loop mkdir
+  // throws ENOTDIR. ensureBaseDir must fall back to the scratch dir instead.
+  it('falls back (no throw) when the preferred path is a file, not a directory', () => {
+    const filePath = makeSource('not-a-dir.txt', 'x')
+    expect(() => ensureBaseDir(filePath)).not.toThrow()
+    expect(ensureBaseDir(filePath)).not.toBe(filePath)
+  })
+})
+
+describe('files:stage-paths with a file path as workingDirectory (Finding C)', () => {
+  it('does not throw, stages into the scratch fallback, reports usedFallback:true', async () => {
+    const filePath = makeSource('not-a-dir.txt', 'x')
+    const src = makeSource('doc.md', 'hello')
+    const { ipcMain, invoke } = makeFakeIpc()
+    registerFileAttachmentHandlers(ipcMain, () => [])
+    const res = await invoke<{ attachments: unknown[]; baseDir?: string; usedFallback?: boolean }>(
+      'files:stage-paths',
+      { workingDirectory: filePath, sessionId: SID, sourcePaths: [src] },
+    )
+    expect(res.usedFallback).toBe(true)
+    expect(res.baseDir).not.toBe(filePath)
+    expect(res.attachments).toHaveLength(1)
+    expect(existsSync(getUploadsDir(res.baseDir as string, SID))).toBe(true)
+  })
 })
 
 describe('cleanupSessionUploads', () => {
@@ -189,5 +249,77 @@ describe('sweepOrphanUploads', () => {
 
   it('returns 0 when the uploads root does not exist', () => {
     expect(sweepOrphanUploads(workspace, [])).toBe(0)
+  })
+})
+
+// The mid-session attach path used to hard-fail with "Select a workspace folder
+// before attaching files." whenever no workspace was selected — even though the
+// at-start launchpad path silently fell back via ensureBaseDir. These tests pin
+// the fixed, symmetric behaviour: it ALWAYS stages, and reports `usedFallback`
+// + the concrete `baseDir` so the renderer can pin the session + nudge the user.
+describe('files:pick-and-stage handler', () => {
+  beforeEach(() => { mockShowOpenDialog.mockReset() })
+
+  it('stages into the workspace and reports usedFallback:false when a workspace is set', async () => {
+    const src = makeSource('notes.md', '# hi')
+    mockShowOpenDialog.mockResolvedValue({ canceled: false, filePaths: [src] })
+    const { ipcMain, invoke } = makeFakeIpc()
+    registerFileAttachmentHandlers(ipcMain, () => [])
+
+    const res = await invoke<{ attachments: unknown[]; errors: string[]; baseDir?: string; usedFallback?: boolean }>(
+      'files:pick-and-stage', { workingDirectory: workspace, sessionId: SID },
+    )
+    expect(res.attachments).toHaveLength(1)
+    expect(res.errors).toHaveLength(0)
+    expect(res.usedFallback).toBe(false)
+    expect(res.baseDir).toBe(workspace)
+    expect(existsSync(getUploadsDir(workspace, SID))).toBe(true)
+  })
+
+  it('still stages (no hard error) and reports usedFallback:true when NO workspace is set', async () => {
+    const src = makeSource('mid.md', 'x')
+    mockShowOpenDialog.mockResolvedValue({ canceled: false, filePaths: [src] })
+    const { ipcMain, invoke } = makeFakeIpc()
+    registerFileAttachmentHandlers(ipcMain, () => [])
+
+    const res = await invoke<{ attachments: unknown[]; errors: string[]; baseDir?: string; usedFallback?: boolean }>(
+      'files:pick-and-stage', { workingDirectory: undefined, sessionId: SID },
+    )
+    // The old behaviour returned zero attachments + a "workspace folder" error.
+    expect(res.attachments).toHaveLength(1)
+    expect(res.errors).toHaveLength(0)
+    expect(res.errors.join(' ')).not.toMatch(/workspace folder/)
+    expect(res.usedFallback).toBe(true)
+    expect(res.baseDir).toBeTruthy()
+    // Files landed under the resolved fallback base dir, not nowhere.
+    expect(existsSync(getUploadsDir(res.baseDir as string, SID))).toBe(true)
+  })
+
+  it('returns canceled with baseDir + usedFallback when the picker is dismissed', async () => {
+    mockShowOpenDialog.mockResolvedValue({ canceled: true, filePaths: [] })
+    const { ipcMain, invoke } = makeFakeIpc()
+    registerFileAttachmentHandlers(ipcMain, () => [])
+
+    const res = await invoke<{ canceled?: boolean; baseDir?: string; usedFallback?: boolean }>(
+      'files:pick-and-stage', { workingDirectory: workspace, sessionId: SID },
+    )
+    expect(res.canceled).toBe(true)
+    expect(res.baseDir).toBe(workspace)
+    expect(res.usedFallback).toBe(false)
+  })
+})
+
+describe('files:stage-paths handler', () => {
+  it('returns the resolved baseDir + usedFallback alongside the staged files', async () => {
+    const src = makeSource('launch.md', 'y')
+    const { ipcMain, invoke } = makeFakeIpc()
+    registerFileAttachmentHandlers(ipcMain, () => [])
+
+    const res = await invoke<{ attachments: unknown[]; baseDir?: string; usedFallback?: boolean }>(
+      'files:stage-paths', { workingDirectory: workspace, sessionId: SID, sourcePaths: [src] },
+    )
+    expect(res.attachments).toHaveLength(1)
+    expect(res.baseDir).toBe(workspace)
+    expect(res.usedFallback).toBe(false)
   })
 })
